@@ -8,8 +8,8 @@ class WifiAnalyzerScreen : public ListScreen
 public:
   const char* title() override { return _title; }
 
-  // Keep WiFi awake while sniffing clients or mid-scan (promiscuous/scan use the radio).
-  bool inhibitPowerSave() override { return _state == STATE_CLIENTS || _scanInFlight; }
+  // Keep WiFi awake while sniffing a selected AP (promiscuous uses the radio).
+  bool inhibitPowerSave() override { return _state == STATE_CLIENTS; }
 
   void onInit() override;
   void onUpdate() override;
@@ -21,31 +21,26 @@ private:
   static constexpr int MAX_SCAN    = 20;
   static constexpr int MAX_CLIENTS = 32;  // keep in sync with kMaxClients in .cpp
 
-  // Live-scan tuning: how long to rest between completed async scans, and
-  // how long an AP can go unseen before it's dropped from the list.
-  static constexpr uint32_t SCAN_CYCLE_GAP_MS = 3000;
-  static constexpr uint32_t STALE_TIMEOUT_MS  = 15000;
+  // Per-channel dwell for the one-shot scan. 600 ms x up to 14 channels = 8.4 s,
+  // which stays under the framework's hard 10 s sync-scan timeout (see
+  // WifiEapolCaptureScreen::_selectWifi for the full rationale).
+  static constexpr int SCAN_DWELL_MS = 600;
 
   enum State { STATE_SCAN, STATE_CLIENTS };
   State _state = STATE_SCAN;
 
   struct WifiEntry {
-    char     ssid[33];
-    char     bssid[18];
-    char     rssi[20];
-    char     channel[4];
-    char     encryption[20];
-    int      rssiValue = 0;
-    uint32_t lastSeen  = 0;
+    char ssid[33];
+    char bssid[18];
+    char rssi[20];
+    char channel[4];
+    char encryption[20];
+    int  rssiValue = 0;
   };
 
-  char      _title[16]         = "WiFi Analyzer";
+  char      _title[16]   = "WiFi Analyzer";
   WifiEntry _entries[MAX_SCAN];
-  int       _entryCount        = 0;
-
-  bool      _scanInFlight      = false;
-  uint32_t  _nextScanAt        = 0;
-  uint32_t  _lastPruneAt       = 0;
+  int       _entryCount  = 0;
 
   ListItem       _scanItems[MAX_SCAN];
   ScrollListView _scrollView;
@@ -59,14 +54,15 @@ private:
   int                 _lastClientCount   = -1;
   uint32_t            _lastClientRefresh = 0;
 
+  // Live RSSI of the selected AP, sampled from its own transmissions by the
+  // promiscuous callback. Sentinel 1 dBm = "nothing rendered yet".
+  char _rssiRow[24]     = {};
+  int  _lastRssiShown   = 1;
+
+  void _doScan();
   void _showScan();
   void _showClients(int index);
   void _stopClients();
   void _refreshClients(bool force);
-
-  void _startLiveScan();
-  void _pollLiveScan();
-  void _mergeScanResult(int idx);
-  void _pruneStale();
   void _rebuildScanItems();
 };
