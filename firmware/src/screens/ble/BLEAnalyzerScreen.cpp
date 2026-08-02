@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
 #include "screens/ble/BLEMenuScreen.h"
+#include "ui/actions/ShowStatusAction.h"
 
 static String _toHex(const std::string& data)
 {
@@ -309,14 +310,34 @@ static String _buildPayloadText(NimBLEAdvertisedDevice& dev)
   return s;
 }
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────
+// ── Live RSSI watcher ───────────────────────────────────────────────────────
+//
+// While a device is selected we keep an indefinite, duplicate-passing scan
+// running and record the RSSI of every advertisement from the picked address.
+// setMaxResults(0) makes NimBLEScan drop each result right after the callback,
+// so the scan's results vector never grows behind our back — but it also
+// invalidates _scanResults, which is why the info view reads _selDev instead.
+// The callback runs on the NimBLE host task; _selRssi is a single aligned word,
+// so volatile is enough.
 
-portMUX_TYPE  BLEAnalyzerScreen::_scanLock      = portMUX_INITIALIZER_UNLOCKED;
-volatile bool BLEAnalyzerScreen::_scanCycleDone = false;
+static NimBLEAddress _rssiTarget;
+static volatile int  _selRssi = 0;   // 0 = no advertisement seen yet
+
+class RssiWatcher : public NimBLEAdvertisedDeviceCallbacks {
+public:
+  void onResult(NimBLEAdvertisedDevice* dev) override
+  {
+    if (dev->getAddress() == _rssiTarget) _selRssi = dev->getRSSI();
+  }
+};
+static RssiWatcher _rssiWatcher;
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────
 
 BLEAnalyzerScreen::~BLEAnalyzerScreen()
 {
   if (_bleScan != nullptr) {
+    _stopRssiWatch();   // unregister the callback before the scan object goes away
     _bleScan->stop();
     NimBLEDevice::deinit(true);
     _bleScan = nullptr;
@@ -327,27 +348,27 @@ void BLEAnalyzerScreen::onInit()
 {
   NimBLEDevice::init("");
   _bleScan = NimBLEDevice::getScan();
-  _startScan();
+  _doScan();
 }
 
 void BLEAnalyzerScreen::onItemSelected(uint8_t index)
 {
   if (_state == STATE_LIST) {
-    if (index < (uint8_t)_scanResults.getCount()) {
-      _stopLiveScan();
+    if (index < _devCount) {
       _selectedDeviceIdx = index;
+      _selDev            = _scanResults.getDevice(index);  // snapshot before the watcher runs
       _showInfo();
+      _startRssiWatch();
     }
   } else if (_state == STATE_INFO) {
-    NimBLEAdvertisedDevice dev = _scanResults.getDevice(_selectedDeviceIdx);
-    if (index == 11 && dev.getServiceUUIDCount() > 0)
-      _showDetail("Service UUIDs", _buildServiceUUIDText(dev));
-    else if (index == 12 && dev.getManufacturerDataCount() > 0)
-      _showDetail("Mfr Data", _buildMfrDataText(dev));
-    else if (index == 13 && dev.getServiceDataCount() > 0)
-      _showDetail("Service Data", _buildServiceDataText(dev));
-    else if (index == 15 && dev.getPayloadLength() > 0)
-      _showDetail("Payload", _buildPayloadText(dev));
+    if (index == 11 && _selDev.getServiceUUIDCount() > 0)
+      _showDetail("Service UUIDs", _buildServiceUUIDText(_selDev));
+    else if (index == 12 && _selDev.getManufacturerDataCount() > 0)
+      _showDetail("Mfr Data", _buildMfrDataText(_selDev));
+    else if (index == 13 && _selDev.getServiceDataCount() > 0)
+      _showDetail("Service Data", _buildServiceDataText(_selDev));
+    else if (index == 15 && _selDev.getPayloadLength() > 0)
+      _showDetail("Payload", _buildPayloadText(_selDev));
   }
 }
 
@@ -356,11 +377,11 @@ void BLEAnalyzerScreen::onBack()
   if (_state == STATE_DETAIL) {
     _showInfo();
   } else if (_state == STATE_INFO) {
+    _stopRssiWatch();
     _selectedDeviceIdx = -1;
-    _showList();
-    _nextScanAt = millis();  // resume live scanning
+    _doScan();   // leaving the detail view re-scans, so the list stays current
   } else {
-    _stopLiveScan();
+    _bleScan->stop();
     Screen.goBack();
   }
 }
@@ -372,16 +393,11 @@ void BLEAnalyzerScreen::onUpdate()
   if (_state != STATE_DETAIL) {
     ListScreen::onUpdate();
 
-    if (_state == STATE_LIST || _state == STATE_SCAN) {
-      if (_scanInFlight) {
-        _pollLiveScan();
-      } else if (millis() >= _nextScanAt) {
-        _startLiveScan();
-      }
-      if (millis() - _lastPruneAt >= 1000) {
-        _lastPruneAt = millis();
-        _pruneStale();
-      }
+    // Only the RSSI row of a selected device tracks in real time — the device
+    // list itself is a static snapshot of the last scan.
+    if (_state == STATE_INFO && millis() - _lastRssiRefresh >= 500) {
+      _lastRssiRefresh = millis();
+      _refreshRssiRow();
     }
     return;
   }
@@ -413,52 +429,26 @@ void BLEAnalyzerScreen::_showDetail(const char* titleText, const String& content
 
 // ── Private ────────────────────────────────────────────────────────────────
 
-// ── Live scan (rolling) ──────────────────────────────────────────────────────
+// ── Scan ─────────────────────────────────────────────────────────────────────
 //
-// NimBLEScan::start(duration, cb, is_continue=true) restarts scanning without
-// clearing previous results — the library itself merges by address and
-// refreshes RSSI/payload/timestamp in place for repeat sightings, so we get
-// "existing device updates, new device appends" for free. We only add the
-// restart cadence and staleness pruning (erase() for devices not re-seen in
-// a while) on top. The completion callback fires on the NimBLE host task —
-// it only flips a lock-protected flag; _pollLiveScan() does the real work
-// (reading results, building rows) on the main loop during the safe window
-// between one cycle ending and the next being kicked off.
+// One blocking sweep, same as every other BLE module (Whisper Pair, Chameleon
+// Scan): the list is a snapshot, not a live radar. Re-entering the list — on
+// open, or on BACK out of a device's info view — takes a fresh snapshot.
 
-void BLEAnalyzerScreen::_startScan()
+void BLEAnalyzerScreen::_doScan()
 {
+  _state             = STATE_SCAN;
   _selectedDeviceIdx = -1;
+  ShowStatusAction::show("Scanning BLE...", 0);
+
+  // Undo the watcher's scan config before a storing scan.
+  _bleScan->setAdvertisedDeviceCallbacks(nullptr, false);
+  _bleScan->setMaxResults(0xFF);
   _bleScan->clearResults();
-  _scanResults = NimBLEScanResults();
-  _showList();
-  _nextScanAt = millis();
-}
 
-void BLEAnalyzerScreen::_startLiveScan()
-{
-  _bleScan->start(kScanCycleSeconds, &BLEAnalyzerScreen::_onScanComplete, true);
-  _scanInFlight = true;
-}
+  _scanResults = _bleScan->start(kScanSeconds, false);
 
-void BLEAnalyzerScreen::_onScanComplete(NimBLEScanResults /*results*/)
-{
-  portENTER_CRITICAL(&_scanLock);
-  _scanCycleDone = true;
-  portEXIT_CRITICAL(&_scanLock);
-}
-
-void BLEAnalyzerScreen::_pollLiveScan()
-{
-  bool done;
-  portENTER_CRITICAL(&_scanLock);
-  done = _scanCycleDone;
-  if (done) _scanCycleDone = false;
-  portEXIT_CRITICAL(&_scanLock);
-  if (!done) return;
-
-  _scanInFlight = false;
-  _nextScanAt   = millis() + kScanCycleGapMs;
-  _scanResults  = _bleScan->getResults();
+  if (_scanResults.getCount() == 0) ShowStatusAction::show("No devices found");
 
   int ns = Achievement.inc("ble_analyzer_scan");
   if (ns == 1) Achievement.unlock("ble_analyzer_scan");
@@ -467,31 +457,49 @@ void BLEAnalyzerScreen::_pollLiveScan()
     if (n20 == 1) Achievement.unlock("ble_analyzer_20");
   }
 
-  _rebuildDevItems();
-  setCount(_devCount);
-  render();
+  _showList();
 }
 
-void BLEAnalyzerScreen::_pruneStale()
+// ── Live RSSI of the selected device ────────────────────────────────────────
+
+void BLEAnalyzerScreen::_startRssiWatch()
 {
-  if (_state != STATE_LIST || _scanInFlight) return;
+  _rssiTarget      = _selDev.getAddress();
+  _selRssi         = 0;
+  _lastRssiShown   = 1;
+  _lastRssiRefresh = millis();
 
-  time_t now     = time(nullptr);
-  bool   changed = false;
+  _bleScan->setMaxResults(0);                              // don't store results
+  _bleScan->setAdvertisedDeviceCallbacks(&_rssiWatcher, true);  // pass duplicates
+  _bleScan->start(0, nullptr, false);                      // 0 = scan indefinitely
+  _rssiWatching = true;
+}
 
-  for (int i = (int)_scanResults.getCount() - 1; i >= 0; i--) {
-    NimBLEAdvertisedDevice dev = _scanResults.getDevice(i);
-    if (now - dev.getTimestamp() <= kStaleTimeoutSec) continue;
+void BLEAnalyzerScreen::_stopRssiWatch()
+{
+  if (!_rssiWatching) return;
+  _bleScan->stop();
+  _bleScan->setAdvertisedDeviceCallbacks(nullptr, false);
+  _bleScan->setMaxResults(0xFF);
+  _rssiWatching = false;
+}
 
-    _bleScan->erase(dev.getAddress());
-    changed = true;
-    if (_selectedIndex > i) _selectedIndex--;
-  }
+void BLEAnalyzerScreen::_refreshRssiRow()
+{
+  const int rssi = _selRssi;
+  if (rssi == 0 || rssi == _lastRssiShown) return;
+  _lastRssiShown = rssi;
 
-  if (!changed) return;
-  _scanResults = _bleScan->getResults();
-  _rebuildDevItems();
-  setCount(_devCount);
+  _infoVal[5]   = String(rssi) + " dBm";
+  _infoItems[5] = {"RSSI", _infoVal[5].c_str()};
+
+  // Distance is derived from RSSI, so it has to follow along.
+  bool   haveTx = _selDev.haveTXPower();
+  int8_t tx     = haveTx ? _selDev.getTXPower() : 0;
+  _infoVal[7]   = _distanceEstimate(rssi, tx, haveTx);
+  _infoItems[7] = {"Distance",
+                   _infoVal[7].length() > 0 ? _infoVal[7].c_str() : nullptr};
+
   render();
 }
 
@@ -517,17 +525,6 @@ void BLEAnalyzerScreen::_rebuildDevItems()
   }
 }
 
-void BLEAnalyzerScreen::_stopLiveScan()
-{
-  if (_scanInFlight) {
-    _bleScan->stop();
-    _scanInFlight = false;
-    portENTER_CRITICAL(&_scanLock);
-    _scanCycleDone = false;
-    portEXIT_CRITICAL(&_scanLock);
-  }
-}
-
 void BLEAnalyzerScreen::_showList()
 {
   _state = STATE_LIST;
@@ -543,7 +540,7 @@ void BLEAnalyzerScreen::_showInfo()
   int nd = Achievement.inc("ble_analyzer_detail");
   if (nd == 1) Achievement.unlock("ble_analyzer_detail");
 
-  NimBLEAdvertisedDevice dev = _scanResults.getDevice(_selectedDeviceIdx);
+  NimBLEAdvertisedDevice& dev = _selDev;
 
   const char* addrType;
   switch (dev.getAddressType()) {
@@ -575,12 +572,16 @@ void BLEAnalyzerScreen::_showInfo()
     _infoVal[4] = "";
   }
 
-  _infoVal[5] = String(dev.getRSSI()) + " dBm";
+  // Prefer the live sample (BACK out of a detail view returns here mid-watch);
+  // _lastRssiShown tracks the raw watcher value so the next sample always draws.
+  const int rssi = (_selRssi != 0) ? (int)_selRssi : (int)dev.getRSSI();
+  _lastRssiShown = _selRssi;
+  _infoVal[5]    = String(rssi) + " dBm";
 
   bool haveTx = dev.haveTXPower();
   int8_t tx   = haveTx ? dev.getTXPower() : 0;
   _infoVal[6] = haveTx ? (String((int)tx) + " dBm") : String();
-  _infoVal[7] = _distanceEstimate(dev.getRSSI(), tx, haveTx);
+  _infoVal[7] = _distanceEstimate(rssi, tx, haveTx);
 
   _infoVal[8] = _advTypeName(dev.getAdvType());
   _infoVal[9] = _advFlagsString(dev.getAdvFlags());
