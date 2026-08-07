@@ -4,6 +4,7 @@
 #include "core/ConfigManager.h"
 #include "core/AchievementManager.h"
 #include "screens/wifi/WifiMenuScreen.h"
+#include "ui/actions/ShowStatusAction.h"
 
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -12,9 +13,11 @@
 // ── Client sniffer (promiscuous) ─────────────────────────────────────────────
 //
 // When an AP is selected we lock the radio to its channel, turn on promiscuous
-// mode and record the unique station MACs seen talking to/from that BSSID.
-// The callback runs in the WiFi task, so the shared store is guarded with a
+// mode and record the unique station MACs seen talking to/from that BSSID,
+// plus the live RSSI of the AP's own frames (beacons alone give ~10 samples/s).
+// The callback runs in the WiFi task, so the shared MAC store is guarded with a
 // portMUX spinlock; the screen copies it out and renders on the main loop.
+// _apRssi is a single aligned word — volatile is enough, no lock needed.
 
 static constexpr uint8_t kMaxClients = 32;  // must match MAX_CLIENTS in the header
 
@@ -22,6 +25,7 @@ static portMUX_TYPE _cliMux = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t      _cliMacs[kMaxClients][6];
 static volatile uint8_t _cliCount = 0;
 static uint8_t      _targetBssid[6];
+static volatile int _apRssi = 0;   // 0 = no frame from the AP seen yet
 
 // Multicast/broadcast group bit (LSB of the first octet). Group-addressed
 // frames never identify a real station, so they are ignored.
@@ -57,6 +61,10 @@ static void _clientSnifferCb(void* buf, wifi_promiscuous_pkt_type_t type)
   const uint8_t* a2 = pl + 10;   // addr2
   const uint8_t* a3 = pl + 16;   // addr3
 
+  // Live RSSI: only frames the AP itself transmitted (addr2 == BSSID) measure
+  // the AP's signal — a client's uplink frame would report the client's level.
+  if (memcmp(a2, _targetBssid, 6) == 0) _apRssi = pkt->rx_ctrl.rssi;
+
   // Resolve which address is the BSSID and which is the station from the
   // toDS/fromDS flags. WDS (both set) uses a 4-address header — skip it.
   const uint8_t* bssid;
@@ -78,8 +86,7 @@ static void _clientSnifferCb(void* buf, wifi_promiscuous_pkt_type_t type)
 void WifiAnalyzerScreen::onInit()
 {
   _entryCount = 0;
-  _showScan();
-  _nextScanAt = millis();
+  _doScan();
 }
 
 void WifiAnalyzerScreen::onUpdate()
@@ -87,13 +94,15 @@ void WifiAnalyzerScreen::onUpdate()
   if (_state == STATE_CLIENTS) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) { _stopClients(); _showScan(); return; }
+      if (dir == INavigation::DIR_BACK) { _stopClients(); _doScan(); return; }
 #ifndef DEVICE_HAS_KEYBOARD
-      if (dir == INavigation::DIR_PRESS) { _stopClients(); _showScan(); return; }
+      if (dir == INavigation::DIR_PRESS) { _stopClients(); _doScan(); return; }
 #endif
       _scrollView.onNav(dir);
     }
-    if (millis() - _lastClientRefresh >= 700) {
+    // 500 ms cadence so the live RSSI reads as a moving value; _refreshClients
+    // bails out early when neither the RSSI nor the client count changed.
+    if (millis() - _lastClientRefresh >= 500) {
       _lastClientRefresh = millis();
       _refreshClients(false);
     }
@@ -101,17 +110,6 @@ void WifiAnalyzerScreen::onUpdate()
   }
 
   ListScreen::onUpdate();
-
-  if (_scanInFlight) {
-    _pollLiveScan();
-  } else if (millis() >= _nextScanAt) {
-    _startLiveScan();
-  }
-
-  if (millis() - _lastPruneAt >= 1000) {
-    _lastPruneAt = millis();
-    _pruneStale();
-  }
 }
 
 void WifiAnalyzerScreen::onItemSelected(uint8_t index)
@@ -134,45 +132,73 @@ void WifiAnalyzerScreen::onBack()
 {
   if (_state == STATE_CLIENTS) {
     _stopClients();
-    _showScan();
+    _doScan();      // leaving the detail view re-scans, so the list stays current
   } else {
     WiFi.scanDelete();
-    _scanInFlight = false;
     Screen.goBack();
   }
 }
 
 // ── Private ────────────────────────────────────────────────────────────────
 
-// ── Live scan ────────────────────────────────────────────────────────────────
+// ── Scan ─────────────────────────────────────────────────────────────────────
 //
-// Instead of one blocking WiFi.scanNetworks() call, we kick an async scan,
-// poll it from onUpdate(), merge results into _entries[] in place (existing
-// BSSIDs keep their row/index so the cursor doesn't jump), then immediately
-// schedule the next cycle. _pruneStale() separately drops APs that haven't
-// been seen in a while, so the list behaves like a live radar while walking.
+// One blocking sweep, same as every other WiFi module (Deauther, EAPOL Capture,
+// Evil Twin): the list is a snapshot, not a live radar. Re-entering the list —
+// on open, or on BACK out of an AP's detail view — takes a fresh snapshot.
+// Real-time tracking is limited to the RSSI of a selected AP, sampled from its
+// own frames by the promiscuous callback.
 
-void WifiAnalyzerScreen::_startLiveScan()
+static const char* _strengthLabel(int rssi)
 {
-  WiFi.mode(WIFI_STA);
-  WiFi.scanNetworks(true, true);  // async
-  _scanInFlight = true;
+  if (rssi >= -50) return "Very Good";
+  if (rssi >= -60) return "Good";
+  if (rssi >= -70) return "Better";
+  if (rssi >= -80) return "Low";
+  return "Very Low";
 }
 
-void WifiAnalyzerScreen::_pollLiveScan()
+void WifiAnalyzerScreen::_doScan()
 {
-  int total = WiFi.scanComplete();
-  if (total == WIFI_SCAN_RUNNING || total == WIFI_SCAN_FAILED) {
-    if (total == WIFI_SCAN_FAILED) { _scanInFlight = false; _nextScanAt = millis() + SCAN_CYCLE_GAP_MS; }
+  _state = STATE_SCAN;
+  strncpy(_title, "WiFi Analyzer", sizeof(_title));
+  ShowStatusAction::show("Scanning (10s)...", 0);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  int total = WiFi.scanNetworks(false, false, false, SCAN_DWELL_MS, 0);
+
+  _entryCount = 0;
+  if (total <= 0) {
+    ShowStatusAction::show("No networks found");
+    setItems(_scanItems, 0);
     return;
   }
 
   if (total > MAX_SCAN) total = MAX_SCAN;
-  for (int i = 0; i < total; i++) _mergeScanResult(i);
+  for (int i = 0; i < total; i++) {
+    const int   rssi = (int)WiFi.RSSI(i);
+    WifiEntry&  e    = _entries[_entryCount++];
+
+    snprintf(e.ssid,    sizeof(e.ssid),    "%s", WiFi.SSID(i).c_str());
+    snprintf(e.bssid,   sizeof(e.bssid),   "%s", WiFi.BSSIDstr(i).c_str());
+    snprintf(e.rssi,    sizeof(e.rssi),    "[%d] %s", rssi, _strengthLabel(rssi));
+    snprintf(e.channel, sizeof(e.channel), "%d", (int)WiFi.channel(i));
+    e.rssiValue = rssi;
+
+    switch (WiFi.encryptionType(i)) {
+      case WIFI_AUTH_OPEN:           snprintf(e.encryption, sizeof(e.encryption), "OPEN");            break;
+      case WIFI_AUTH_WEP:            snprintf(e.encryption, sizeof(e.encryption), "WEP");             break;
+      case WIFI_AUTH_WPA_PSK:        snprintf(e.encryption, sizeof(e.encryption), "WPA_PSK");         break;
+      case WIFI_AUTH_WPA2_PSK:       snprintf(e.encryption, sizeof(e.encryption), "WPA2_PSK");        break;
+      case WIFI_AUTH_WPA_WPA2_PSK:   snprintf(e.encryption, sizeof(e.encryption), "WPA_WPA2_PSK");    break;
+      case WIFI_AUTH_WPA2_ENTERPRISE:snprintf(e.encryption, sizeof(e.encryption), "WPA2_ENTERPRISE"); break;
+      case WIFI_AUTH_WPA3_PSK:       snprintf(e.encryption, sizeof(e.encryption), "WPA3_PSK");        break;
+      default:                       snprintf(e.encryption, sizeof(e.encryption), "UNKNOWN");         break;
+    }
+  }
 
   WiFi.scanDelete();
-  _scanInFlight = false;
-  _nextScanAt   = millis() + SCAN_CYCLE_GAP_MS;
 
   int na = Achievement.inc("wifi_analyzer_scan");
   if (na == 1) Achievement.unlock("wifi_analyzer_scan");
@@ -181,73 +207,7 @@ void WifiAnalyzerScreen::_pollLiveScan()
     if (n20 == 1) Achievement.unlock("wifi_analyzer_20aps");
   }
 
-  _rebuildScanItems();
-  setCount(_entryCount);
-  render();
-}
-
-void WifiAnalyzerScreen::_mergeScanResult(int idx)
-{
-  String bssid = WiFi.BSSIDstr(idx);
-
-  int slot = -1;
-  for (int i = 0; i < _entryCount; i++) {
-    if (bssid.equalsIgnoreCase(_entries[i].bssid)) { slot = i; break; }
-  }
-  if (slot < 0) {
-    if (_entryCount >= MAX_SCAN) return;  // list full — ignore new APs until one drops
-    slot = _entryCount++;
-  }
-
-  int32_t rssi = WiFi.RSSI(idx);
-  const char* strength;
-  if      (rssi >= -50) strength = "Very Good";
-  else if (rssi >= -60) strength = "Good";
-  else if (rssi >= -70) strength = "Better";
-  else if (rssi >= -80) strength = "Low";
-  else                  strength = "Very Low";
-
-  WifiEntry& e = _entries[slot];
-  snprintf(e.ssid,    sizeof(e.ssid),    "%s", WiFi.SSID(idx).c_str());
-  snprintf(e.bssid,   sizeof(e.bssid),   "%s", bssid.c_str());
-  snprintf(e.rssi,    sizeof(e.rssi),    "[%d] %s", (int)rssi, strength);
-  snprintf(e.channel, sizeof(e.channel), "%d", (int)WiFi.channel(idx));
-  e.rssiValue = (int)rssi;
-  e.lastSeen  = millis();
-
-  switch (WiFi.encryptionType(idx)) {
-    case WIFI_AUTH_OPEN:           snprintf(e.encryption, sizeof(e.encryption), "OPEN");            break;
-    case WIFI_AUTH_WEP:            snprintf(e.encryption, sizeof(e.encryption), "WEP");             break;
-    case WIFI_AUTH_WPA_PSK:        snprintf(e.encryption, sizeof(e.encryption), "WPA_PSK");         break;
-    case WIFI_AUTH_WPA2_PSK:       snprintf(e.encryption, sizeof(e.encryption), "WPA2_PSK");        break;
-    case WIFI_AUTH_WPA_WPA2_PSK:   snprintf(e.encryption, sizeof(e.encryption), "WPA_WPA2_PSK");    break;
-    case WIFI_AUTH_WPA2_ENTERPRISE:snprintf(e.encryption, sizeof(e.encryption), "WPA2_ENTERPRISE"); break;
-    case WIFI_AUTH_WPA3_PSK:       snprintf(e.encryption, sizeof(e.encryption), "WPA3_PSK");        break;
-    default:                       snprintf(e.encryption, sizeof(e.encryption), "UNKNOWN");         break;
-  }
-}
-
-void WifiAnalyzerScreen::_pruneStale()
-{
-  if (_state != STATE_SCAN || _entryCount == 0) return;
-
-  uint32_t now     = millis();
-  bool     changed = false;
-
-  for (int i = _entryCount - 1; i >= 0; i--) {
-    if (now - _entries[i].lastSeen <= STALE_TIMEOUT_MS) continue;
-
-    for (int j = i; j < _entryCount - 1; j++) _entries[j] = _entries[j + 1];
-    _entryCount--;
-    changed = true;
-
-    if (_selectedIndex > i) _selectedIndex--;
-  }
-
-  if (!changed) return;
-  _rebuildScanItems();
-  setCount(_entryCount);
-  render();
+  _showScan();
 }
 
 void WifiAnalyzerScreen::_rebuildScanItems()
@@ -266,18 +226,10 @@ void WifiAnalyzerScreen::_showScan()
 
   _rebuildScanItems();
   setItems(_scanItems, _entryCount);
-  _nextScanAt = millis();
 }
 
 void WifiAnalyzerScreen::_showClients(int index)
 {
-  // Hand the radio over to the client sniffer — abort any in-flight scan
-  // first so it doesn't collide with the promiscuous/channel-lock setup.
-  if (_scanInFlight) {
-    WiFi.scanDelete();
-    _scanInFlight = false;
-  }
-
   _selectedAp = index;
   _state      = STATE_CLIENTS;
 
@@ -289,8 +241,10 @@ void WifiAnalyzerScreen::_showClients(int index)
   for (int i = 0; i < 6; i++) _targetBssid[i] = (uint8_t)v[i];
   _cliCount = 0;
   portEXIT_CRITICAL(&_cliMux);
+  _apRssi = 0;
 
   _lastClientCount   = -1;
+  _lastRssiShown     = 1;
   _lastClientRefresh = millis();
   _scrollView.resetScroll();
 
@@ -324,13 +278,25 @@ void WifiAnalyzerScreen::_refreshClients(bool force)
   for (uint8_t i = 0; i < n; i++) memcpy(macs[i], _cliMacs[i], 6);
   portEXIT_CRITICAL(&_cliMux);
 
-  if (!force && (int)n == _lastClientCount) return;  // nothing new to show
+  const int rssi = _apRssi;
+
+  // Nothing new to show — skip the rebuild and the full-body redraw.
+  if (!force && (int)n == _lastClientCount && rssi == _lastRssiShown) return;
   _lastClientCount = n;
+  _lastRssiShown   = rssi;
+
+  // Live RSSI from the AP's own frames; falls back to the scan value until the
+  // first beacon lands on this channel.
+  if (rssi != 0) {
+    snprintf(_rssiRow, sizeof(_rssiRow), "[%d] %s", rssi, _strengthLabel(rssi));
+  } else {
+    snprintf(_rssiRow, sizeof(_rssiRow), "%s", _entries[_selectedAp].rssi);
+  }
 
   // Row 0..4: the AP details (kept visible regardless of client count).
   _rows[0] = {"SSID",       _entries[_selectedAp].ssid};
   _rows[1] = {"BSSID",      _entries[_selectedAp].bssid};
-  _rows[2] = {"RSSI",       _entries[_selectedAp].rssi};
+  _rows[2] = {"RSSI",       _rssiRow};
   _rows[3] = {"Channel",    _entries[_selectedAp].channel};
   _rows[4] = {"Encryption", _entries[_selectedAp].encryption};
 
