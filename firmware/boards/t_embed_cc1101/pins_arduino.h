@@ -25,6 +25,9 @@ static const uint8_t SCK  = SPI_SCK_PIN;
 static const uint8_t SDA = GROVE_SDA;
 static const uint8_t SCL = GROVE_SCL;
 
+// ─── PN532 NFC ────────────────────────────────────────────
+#define PN532_RESET_PIN  45   // RSTPDN — must be driven HIGH to bring PN532 out of reset/power-down
+
 // ─── LCD ──────────────────────────────────────────────────
 #define LCD_CS  41
 #define LCD_DC  16
