@@ -33,6 +33,12 @@ private:
     SP_COUNT
   };
 
+  enum TextPage : uint8_t {
+    PAGE_ABC = 0,
+    PAGE_SYM1,
+    PAGE_SYM2
+  };
+
   enum SpecialNum {
     SPN_SAVE = 0,
     SPN_DELETE,
@@ -40,7 +46,7 @@ private:
     SPN_COUNT
   };
 
-  static constexpr int      MAX_SETS   = 20;
+  static constexpr int      MAX_SETS   = 60;
   static constexpr uint32_t COMMIT_MS  = 1000;
   static constexpr uint32_t BLINK_MS   = 500;
   static constexpr int      PAD        = 4;
@@ -64,6 +70,8 @@ private:
   String      _pendingChar;
 
   CharSet     _sets[MAX_SETS];
+  char        _keyChars[30][3]  = {};
+  char        _keyLabels[30][2] = {};
   int         _setCount    = 0;
   int         _scrollPos   = 0;
 
@@ -73,6 +81,7 @@ private:
   Mode        _mode        = INPUT_TEXT;
   bool        _capsLock    = false;
   bool        _symbolMode  = false;
+  TextPage    _page        = PAGE_ABC;
   bool        _done        = false;
   bool        _cancelled   = false;
 
@@ -115,27 +124,70 @@ private:
       _sets[_setCount++] = { nullptr, "",     false, SP_SAVE   };  // spacer
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
     } else {
-      static constexpr const char* charLabels[] = {
-        " 0",    ",.1",   "abc2",  "def3",  "ghi4",
-        "jkl5",  "mno6",  "pqrs7", "tuv8",  "wxyz9",
-      };
-      static constexpr const char* symbolLabels[] = {
-        " ",     ",.'- ", "*/\\@", "+-=_",  ":;?",
-        "!$#",   "\"&%|", "()[]",  "<>{}",  "^~`",
+      // Compact 6x5 grid optimized for small displays.
+      // Three ASCII pages: ABC -> SYM1 -> SYM2 -> ABC.
+      struct KeyPair {
+        char normal;
+        char shifted;
       };
 
-      const char* const* sets = _symbolMode ? symbolLabels : charLabels;
-      for (int i = 0; i < 10; i++) {
-        _sets[_setCount++] = { sets[i], sets[i], false, SP_SAVE };
+      static constexpr KeyPair alphaKeys[30] = {
+        {'a','A'}, {'b','B'}, {'c','C'}, {'d','D'}, {'e','E'}, {'f','F'},
+        {'g','G'}, {'h','H'}, {'i','I'}, {'j','J'}, {'k','K'}, {'l','L'},
+        {'m','M'}, {'n','N'}, {'o','O'}, {'p','P'}, {'q','Q'}, {'r','R'},
+        {'s','S'}, {'t','T'}, {'u','U'}, {'v','V'}, {'w','W'}, {'x','X'},
+        {'y','Y'}, {'z','Z'}, {'.','.'}, {':',':'}, {'/','/'}, {'-','-'},
+      };
+
+      static constexpr KeyPair sym1Keys[30] = {
+        {'1','1'}, {'2','2'}, {'3','3'}, {'4','4'}, {'5','5'}, {'6','6'},
+        {'7','7'}, {'8','8'}, {'9','9'}, {'0','0'}, {'@','@'}, {'_','_'},
+        {'!','!'}, {'?','?'}, {',',','}, {';',';'}, {'+','+'}, {'=','='},
+        {'*','*'}, {'#','#'}, {'$','$'}, {'%','%'}, {'&','&'}, {'|','|'},
+        {'\\','\\'}, {'\'','\''}, {'"','"'}, {'`','`'}, {'~','~'}, {'^','^'},
+      };
+
+      // SYM2 intentionally contains only delimiter pairs; unused cells remain blank.
+      static constexpr KeyPair sym2Keys[8] = {
+        {'(', '('}, {')', ')'}, {'[', '['}, {']', ']'}, {'{', '{'}, {'}', '}'},
+        {'<', '<'}, {'>', '>'},
+      };
+
+      const KeyPair* keys = alphaKeys;
+      int keyCount = 30;
+      if (_page == PAGE_SYM1) {
+        keys = sym1Keys;
+      } else if (_page == PAGE_SYM2) {
+        keys = sym2Keys;
+        keyCount = 8;
       }
 
-      static constexpr const char* specialLabels[SP_COUNT] = {
-        "CNCL", "DEL", "CAPS", "SYM", "SAVE"
+      // Always reserve the full 6x5 character grid. Blank cells on SYM2 are
+      // represented by null character sets and are skipped by selection.
+      for (int i = 0; i < 30; i++) {
+        if (i < keyCount) {
+          _keyChars[i][0] = keys[i].normal;
+          _keyChars[i][1] = keys[i].shifted;
+          _keyChars[i][2] = '\0';
+
+          _keyLabels[i][0] = keys[i].normal;
+          _keyLabels[i][1] = '\0';
+
+          _sets[_setCount++] = { _keyChars[i], _keyLabels[i], false, SP_SAVE };
+        } else {
+          _sets[_setCount++] = { nullptr, "", false, SP_SAVE };
+        }
+      }
+
+      // Six footer actions. The page button label is rendered dynamically.
+      static constexpr const char* specialLabels[6] = {
+        "SYM1", "CAPS", "SPACE", "DEL", "SAVE", "EXIT"
       };
-      static constexpr Special specialMap[SP_COUNT] = {
-        SP_CANCEL, SP_DELETE, SP_CAPS, SP_SYMBOL, SP_SAVE
+      static constexpr Special specialMap[6] = {
+        SP_SYMBOL, SP_CAPS, SP_SYMBOL, SP_DELETE, SP_SAVE, SP_CANCEL
       };
-      for (int i = 0; i < SP_COUNT; i++) {
+
+      for (int i = 0; i < 6; i++) {
         _sets[_setCount++] = { nullptr, specialLabels[i], true, specialMap[i] };
       }
     }
@@ -173,10 +225,35 @@ private:
 
   // ── grid scroll mode ────────────────────────────────────────────────────────
 
-  int _gridCols()  const { return 5; }
-  int _gridRows()  const { return (_setCount + _gridCols() - 1) / _gridCols(); }
-  int _gridCellW() const { return Uni.Lcd.width() / _gridCols(); }
-  int _gridCellH() const { return (Uni.Lcd.height() - HDR_H) / _gridRows(); }
+  int _gridCols() const { return _mode == INPUT_TEXT ? 6 : 5; }
+
+  int _charCount() const {
+    return _mode == INPUT_TEXT ? 30 : _setCount;
+  }
+
+  int _charRows() const {
+    return (_charCount() + _gridCols() - 1) / _gridCols();
+  }
+
+  int _actionCount() const {
+    return _mode == INPUT_TEXT ? 6 : 0;
+  }
+
+  int _gridRows() const {
+    return _charRows() + (_actionCount() > 0 ? 1 : 0);
+  }
+
+  int _gridCellW() const {
+    return Uni.Lcd.width() / _gridCols();
+  }
+
+  int _gridCellH() const {
+    return (Uni.Lcd.height() - HDR_H) / _gridRows();
+  }
+
+  int _actionCellW() const {
+    return _actionCount() > 0 ? Uni.Lcd.width() / _actionCount() : Uni.Lcd.width();
+  }
 
   String _runScroll() {
     _lastBlinkTime = millis();
@@ -207,7 +284,18 @@ private:
         int16_t tx = Uni.Nav->lastTouchX();
         int16_t ty = Uni.Nav->lastTouchY();
         if (tx >= 0 && ty >= HDR_H) {
-          int idx = (int)(ty - HDR_H) / _gridCellH() * _gridCols() + (int)tx / _gridCellW();
+          int relY = ty - HDR_H;
+          int row = relY / _gridCellH();
+          int idx = -1;
+
+          if (_mode == INPUT_TEXT && row >= _charRows()) {
+            int action = tx / _actionCellW();
+            if (action >= 6) action = 5;
+            idx = 30 + action;
+          } else {
+            idx = row * _gridCols() + tx / _gridCellW();
+          }
+
           if (idx >= 0 && idx < _setCount) {
             const CharSet& hit = _sets[idx];
             if (!hit.isSpecial && hit.chars == nullptr) { delay(10); continue; }
@@ -217,9 +305,10 @@ private:
               _scrollPos = idx;
             }
             bool pc = _capsLock, ps = _symbolMode;
+            TextPage pp = _page;
             _handleSelect();
             if (!_done && !_cancelled) {
-              if (pc != _capsLock || ps != _symbolMode) _drawFullGrid();
+              if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
               else { _drawGridCell(prev); _drawGridCell(_scrollPos); }
               _cursorVisible = true; _lastBlinkTime = millis();
               _drawGridInput();
@@ -231,27 +320,80 @@ private:
 #endif
 
       const bool nav4 = Uni.Nav->is4Way();
-      if (nav4 && dir == INavigation::DIR_UP) {
+
+      if (_mode == INPUT_TEXT && nav4 &&
+          (dir == INavigation::DIR_UP || dir == INavigation::DIR_DOWN)) {
+        _commitTap();
+
+        if (_scrollPos < 30) {
+          int col = _scrollPos % _gridCols();
+          int row = _scrollPos / _gridCols();
+
+          if (dir == INavigation::DIR_UP) {
+            if (row == 0) {
+              // Jump to the closest action button in the bottom row.
+              int a = (col * 6) / _gridCols();
+              if (a >= 6) a = 5;
+              _scrollPos = 30 + a;
+            } else {
+              _scrollPos -= _gridCols();
+            }
+          } else {
+            if (row == _charRows() - 1) {
+              int a = (col * 6) / _gridCols();
+              if (a >= 6) a = 5;
+              _scrollPos = 30 + a;
+            } else {
+              _scrollPos += _gridCols();
+            }
+          }
+        } else {
+          // From the action row, UP/DOWN returns to the bottom character row.
+          int a = _scrollPos - 30;
+          int col = (a * _gridCols()) / 6;
+          if (col >= _gridCols()) col = _gridCols() - 1;
+          _scrollPos = (_charRows() - 1) * _gridCols() + col;
+        }
+
+        // SYM2 has intentionally blank cells. If vertical navigation lands on
+        // one, move to the nearest valid character/action instead.
+        if (_scrollPos < 30 && _sets[_scrollPos].chars == nullptr) {
+          int col = _scrollPos % _gridCols();
+          if (_page == PAGE_SYM2 && col < 2) {
+            _scrollPos = 6 + col;  // < or >
+          } else {
+            _scrollPos = 30 + min(col, 5);
+          }
+        }
+
+      } else if (nav4 && dir == INavigation::DIR_UP) {
         _commitTap();
         do { _scrollPos = (_scrollPos - _gridCols() + _setCount) % _setCount; }
         while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+
       } else if (nav4 && dir == INavigation::DIR_DOWN) {
         _commitTap();
         do { _scrollPos = (_scrollPos + _gridCols()) % _setCount; }
         while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+
       } else if (dir == INavigation::DIR_LEFT || dir == INavigation::DIR_UP) {
         _commitTap();
-        do { _scrollPos = (_scrollPos - 1 + _setCount) % _setCount; }
-        while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+        do {
+          _scrollPos = (_scrollPos - 1 + _setCount) % _setCount;
+        } while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+
       } else if (dir == INavigation::DIR_RIGHT || dir == INavigation::DIR_DOWN) {
         _commitTap();
-        do { _scrollPos = (_scrollPos + 1) % _setCount; }
-        while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+        do {
+          _scrollPos = (_scrollPos + 1) % _setCount;
+        } while (!_sets[_scrollPos].isSpecial && _sets[_scrollPos].chars == nullptr);
+
       } else if (dir == INavigation::DIR_PRESS) {
         bool pc = _capsLock, ps = _symbolMode;
+        TextPage pp = _page;
         _handleSelect();
         if (!_done && !_cancelled) {
-          if (pc != _capsLock || ps != _symbolMode) _drawFullGrid();
+          if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
           else _drawGridCell(prev);
           _cursorVisible = true; _lastBlinkTime = millis();
           _drawGridInput();
@@ -302,13 +444,23 @@ private:
             _input.remove(_input.length() - 1);
           }
           break;
-        case SP_CAPS:   _capsLock = !_capsLock;         break;
+        case SP_CAPS:
+          _capsLock = !_capsLock;
+          break;
         case SP_SYMBOL:
-          _symbolMode  = !_symbolMode;
-          _buildSets();
-          _scrollPos   = 0;
-          _tapCount    = 0;
-          _pendingChar = "";
+          if (_mode == INPUT_TEXT && _scrollPos == 30) {
+            // Cycle text pages: ABC -> SYM1 -> SYM2 -> ABC.
+            if (_page == PAGE_ABC)       _page = PAGE_SYM1;
+            else if (_page == PAGE_SYM1) _page = PAGE_SYM2;
+            else                         _page = PAGE_ABC;
+
+            _symbolMode = (_page != PAGE_ABC);
+            _buildSets();
+            _scrollPos = 30;
+          } else {
+            // SPACE
+            _input += ' ';
+          }
           break;
         case SP_CANCEL: _cancelled = true;              break;
         default: break;
@@ -316,35 +468,70 @@ private:
     } else {
       const char* chars = s.chars;
       if (!chars || chars[0] == '\0') return;
-      int  len = strlen(chars);
-      if (len == 1) {
-        char c = chars[0];
-        if (_capsLock && isalpha(c)) c = toupper(c);
-        _input      += c;
+
+      if (_mode == INPUT_TEXT) {
+        // QWERTY keys insert immediately. chars[0] is normal, chars[1] shifted.
+        char c = (_page == PAGE_ABC && _capsLock && chars[1] != '\0')
+                   ? chars[1] : chars[0];
+        _input += c;
         _pendingChar = "";
-        _tapCount    = 0;
+        _tapCount = 0;
         _lastTapTime = 0;
       } else {
-        char c = chars[_tapCount % len];
-        if (_capsLock && isalpha(c)) c = toupper(c);
-        _pendingChar = String(c);
-        _tapCount++;
-        _lastTapTime = millis();
+        int len = strlen(chars);
+        if (len == 1) {
+          char c = chars[0];
+          if (_capsLock && isalpha(c)) c = toupper(c);
+          _input += c;
+          _pendingChar = "";
+          _tapCount = 0;
+          _lastTapTime = 0;
+        } else {
+          char c = chars[_tapCount % len];
+          if (_capsLock && isalpha(c)) c = toupper(c);
+          _pendingChar = String(c);
+          _tapCount++;
+          _lastTapTime = millis();
+        }
       }
     }
   }
 
   void _drawFullGrid() {
     auto& lcd = Uni.Lcd;
+    uint16_t theme = Config.getThemeColor();
+
     lcd.fillScreen(TFT_BLACK);
     lcd.setTextSize(1);
     lcd.setTextDatum(TL_DATUM);
-    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+
+    // Match the rest of UniGeek: black canvas + current primary/theme colour
+    // for the active screen accent.
+    lcd.setTextColor(theme, TFT_BLACK);
     lcd.drawString(_title, PAD, PAD);
+
     int ix = PAD + lcd.textWidth(_title) + PAD;
-    if (_capsLock)   { lcd.setTextColor(TFT_GREEN, TFT_BLACK); lcd.drawString("CAPS", ix, PAD); ix += lcd.textWidth("CAPS") + PAD; }
-    if (_symbolMode) { lcd.setTextColor(TFT_CYAN,  TFT_BLACK); lcd.drawString("SYM",  ix, PAD); }
+    lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    if (_capsLock) {
+      lcd.drawString("CAPS", ix, PAD);
+      ix += lcd.textWidth("CAPS") + PAD;
+    }
+    if (_page == PAGE_SYM1) {
+      lcd.drawString("SYM1", ix, PAD);
+    } else if (_page == PAGE_SYM2) {
+      lcd.drawString("SYM2", ix, PAD);
+    }
+
+    // Thin theme separator, echoing the normal UniGeek screen chrome.
+    lcd.drawFastHLine(PAD, PAD + 10, lcd.width() - PAD * 2, theme);
+
     _drawGridInput();
+
+    if (_mode == INPUT_TEXT) {
+      int footerY = HDR_H + _charRows() * _gridCellH();
+      lcd.drawFastHLine(PAD, footerY, lcd.width() - PAD * 2, TFT_DARKGREY);
+    }
+
     for (int i = 0; i < _setCount; i++) _drawGridCell(i);
   }
 
@@ -354,7 +541,7 @@ private:
     Sprite sp(&lcd);
     sp.createSprite(iW, INP_H);
     sp.fillSprite(TFT_BLACK);
-    sp.drawRoundRect(0, 0, iW, INP_H, 2, TFT_DARKGREY);
+    sp.drawRoundRect(0, 0, iW, INP_H, 2, Config.getThemeColor());
     sp.setTextColor(TFT_WHITE, TFT_BLACK);
     sp.setTextDatum(TL_DATUM);
     String display = _input + _pendingChar;
@@ -369,8 +556,21 @@ private:
     if (idx < 0 || idx >= _setCount) return;
     auto&    lcd   = Uni.Lcd;
     uint16_t theme = Config.getThemeColor();
-    int cW  = _gridCellW(), cH = _gridCellH();
-    int col = idx % _gridCols(), row = idx / _gridCols();
+    int cH = _gridCellH();
+    int cW;
+    int col;
+    int row;
+
+    if (_mode == INPUT_TEXT && idx >= 30) {
+      cW = _actionCellW();
+      col = idx - 30;
+      row = _charRows();
+    } else {
+      cW = _gridCellW();
+      col = idx % _gridCols();
+      row = idx / _gridCols();
+    }
+
     bool sel = (idx == _scrollPos);
     const CharSet& s = _sets[idx];
 
@@ -386,17 +586,35 @@ private:
     Sprite sp(&lcd);
     sp.createSprite(cW, cH);
     sp.fillSprite(TFT_BLACK);
-    sp.setTextSize(1);
+
+    // Character cells have plenty of horizontal room in the 6-column layout.
+    // Draw them at 2x for legibility; keep footer/action labels at 1x so
+    // SAVE/CAPS/SPACE/DEL/EXIT continue to fit comfortably.
+    const bool largeKey = (_mode == INPUT_TEXT && !s.isSpecial);
+    sp.setTextSize(largeKey ? 2 : 1);
     sp.setTextDatum(MC_DATUM);
+
     if (sel) {
-      sp.fillRoundRect(1, 1, cW - 2, cH - 2, 3, theme);
+      sp.fillRoundRect(2, 2, cW - 4, cH - 4, 3, theme);
       sp.setTextColor(TFT_WHITE, theme);
     } else {
-      sp.drawRoundRect(1, 1, cW - 2, cH - 2, 3, 0x2104);
-      sp.setTextColor(s.isSpecial ? TFT_CYAN : TFT_LIGHTGREY, TFT_BLACK);
+      sp.drawRoundRect(2, 2, cW - 4, cH - 4, 3, TFT_DARKGREY);
+      sp.setTextColor(s.isSpecial ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
     }
-    String lbl = String(s.label);
-    if (!s.isSpecial && _capsLock && _mode == INPUT_TEXT) lbl.toUpperCase();
+
+    String lbl;
+    if (!s.isSpecial && _mode == INPUT_TEXT && s.chars) {
+      char shown = (_page == PAGE_ABC && _capsLock && s.chars[1] != '\0')
+                     ? s.chars[1] : s.chars[0];
+      lbl = String(shown);
+    } else if (_mode == INPUT_TEXT && idx == 30) {
+      if (_page == PAGE_ABC)       lbl = "SYM1";
+      else if (_page == PAGE_SYM1) lbl = "SYM2";
+      else                         lbl = "ABC";
+    } else {
+      lbl = String(s.label);
+    }
+
     sp.drawString(lbl.c_str(), cW / 2, cH / 2);
     sp.pushSprite(col * cW, HDR_H + row * cH);
     sp.deleteSprite();
