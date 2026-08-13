@@ -35,8 +35,7 @@ private:
 
   enum TextPage : uint8_t {
     PAGE_ABC = 0,
-    PAGE_SYM1,
-    PAGE_SYM2
+    PAGE_SYM
   };
 
   enum SpecialNum {
@@ -70,8 +69,8 @@ private:
   String      _pendingChar;
 
   CharSet     _sets[MAX_SETS];
-  char        _keyChars[30][3]  = {};
-  char        _keyLabels[30][2] = {};
+  char        _keyChars[36][3]  = {};
+  char        _keyLabels[36][2] = {};
   int         _setCount    = 0;
   int         _scrollPos   = 0;
 
@@ -124,69 +123,53 @@ private:
       _sets[_setCount++] = { nullptr, "",     false, SP_SAVE   };  // spacer
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
     } else {
-      // Compact 6x5 grid optimized for small displays.
-      // Three ASCII pages: ABC -> SYM1 -> SYM2 -> ABC.
+      // Compact 6x6 grid optimized for small displays.
+      // Two ASCII pages: ABC <-> SYM.
       struct KeyPair {
         char normal;
         char shifted;
       };
 
-      static constexpr KeyPair alphaKeys[30] = {
+      static constexpr KeyPair alphaKeys[36] = {
         {'a','A'}, {'b','B'}, {'c','C'}, {'d','D'}, {'e','E'}, {'f','F'},
         {'g','G'}, {'h','H'}, {'i','I'}, {'j','J'}, {'k','K'}, {'l','L'},
         {'m','M'}, {'n','N'}, {'o','O'}, {'p','P'}, {'q','Q'}, {'r','R'},
         {'s','S'}, {'t','T'}, {'u','U'}, {'v','V'}, {'w','W'}, {'x','X'},
-        {'y','Y'}, {'z','Z'}, {'.','.'}, {':',':'}, {'/','/'}, {'-','-'},
+        {'y','Y'}, {'z','Z'}, {'.','.'}, {',',','}, {':',':'}, {';',';'},
+        {'?','?'}, {'!','!'}, {'-','-'}, {'_','_'}, {'/','/'}, {'\\','\\'},
       };
 
-      static constexpr KeyPair sym1Keys[30] = {
+      static constexpr KeyPair symbolKeys[32] = {
         {'1','1'}, {'2','2'}, {'3','3'}, {'4','4'}, {'5','5'}, {'6','6'},
-        {'7','7'}, {'8','8'}, {'9','9'}, {'0','0'}, {'@','@'}, {'_','_'},
-        {'!','!'}, {'?','?'}, {',',','}, {';',';'}, {'+','+'}, {'=','='},
-        {'*','*'}, {'#','#'}, {'$','$'}, {'%','%'}, {'&','&'}, {'|','|'},
-        {'\\','\\'}, {'\'','\''}, {'"','"'}, {'`','`'}, {'~','~'}, {'^','^'},
-      };
-
-      // SYM2 intentionally contains only delimiter pairs; unused cells remain blank.
-      static constexpr KeyPair sym2Keys[8] = {
+        {'7','7'}, {'8','8'}, {'9','9'}, {'0','0'}, {'@','@'}, {'#','#'},
+        {'$','$'}, {'%','%'}, {'^','^'}, {'&','&'}, {'*','*'}, {'|','|'},
+        {'+','+'}, {'=','='}, {'\'','\''}, {'"','"'}, {'`','`'}, {'~','~'},
         {'(', '('}, {')', ')'}, {'[', '['}, {']', ']'}, {'{', '{'}, {'}', '}'},
         {'<', '<'}, {'>', '>'},
       };
 
-      const KeyPair* keys = alphaKeys;
-      int keyCount = 30;
-      if (_page == PAGE_SYM1) {
-        keys = sym1Keys;
-      } else if (_page == PAGE_SYM2) {
-        keys = sym2Keys;
-        keyCount = 8;
-      }
+      const KeyPair* keys = (_page == PAGE_SYM) ? symbolKeys : alphaKeys;
+      const int keyCount = (_page == PAGE_SYM) ? 32 : 36;
 
-      // Always reserve the full 6x5 character grid. Blank cells on SYM2 are
-      // represented by null character sets and are skipped by selection.
-      for (int i = 0; i < 30; i++) {
+      for (int i = 0; i < 36; i++) {
         if (i < keyCount) {
           _keyChars[i][0] = keys[i].normal;
           _keyChars[i][1] = keys[i].shifted;
           _keyChars[i][2] = '\0';
-
           _keyLabels[i][0] = keys[i].normal;
           _keyLabels[i][1] = '\0';
-
           _sets[_setCount++] = { _keyChars[i], _keyLabels[i], false, SP_SAVE };
         } else {
           _sets[_setCount++] = { nullptr, "", false, SP_SAVE };
         }
       }
 
-      // Six footer actions. The page button label is rendered dynamically.
       static constexpr const char* specialLabels[6] = {
-        "SYM1", "CAPS", "SPACE", "DEL", "SAVE", "EXIT"
+        "123", "CAPS", "SPACE", "BKSP", "SAVE", "EXIT"
       };
       static constexpr Special specialMap[6] = {
         SP_SYMBOL, SP_CAPS, SP_SYMBOL, SP_DELETE, SP_SAVE, SP_CANCEL
       };
-
       for (int i = 0; i < 6; i++) {
         _sets[_setCount++] = { nullptr, specialLabels[i], true, specialMap[i] };
       }
@@ -228,7 +211,7 @@ private:
   int _gridCols() const { return _mode == INPUT_TEXT ? 6 : 5; }
 
   int _charCount() const {
-    return _mode == INPUT_TEXT ? 30 : _setCount;
+    return _mode == INPUT_TEXT ? 36 : _setCount;
   }
 
   int _charRows() const {
@@ -291,7 +274,7 @@ private:
           if (_mode == INPUT_TEXT && row >= _charRows()) {
             int action = tx / _actionCellW();
             if (action >= 6) action = 5;
-            idx = 30 + action;
+            idx = 36 + action;
           } else {
             idx = row * _gridCols() + tx / _gridCellW();
           }
@@ -325,7 +308,7 @@ private:
           (dir == INavigation::DIR_UP || dir == INavigation::DIR_DOWN)) {
         _commitTap();
 
-        if (_scrollPos < 30) {
+        if (_scrollPos < 36) {
           int col = _scrollPos % _gridCols();
           int row = _scrollPos / _gridCols();
 
@@ -334,7 +317,7 @@ private:
               // Jump to the closest action button in the bottom row.
               int a = (col * 6) / _gridCols();
               if (a >= 6) a = 5;
-              _scrollPos = 30 + a;
+              _scrollPos = 36 + a;
             } else {
               _scrollPos -= _gridCols();
             }
@@ -342,28 +325,23 @@ private:
             if (row == _charRows() - 1) {
               int a = (col * 6) / _gridCols();
               if (a >= 6) a = 5;
-              _scrollPos = 30 + a;
+              _scrollPos = 36 + a;
             } else {
               _scrollPos += _gridCols();
             }
           }
         } else {
           // From the action row, UP/DOWN returns to the bottom character row.
-          int a = _scrollPos - 30;
+          int a = _scrollPos - 36;
           int col = (a * _gridCols()) / 6;
           if (col >= _gridCols()) col = _gridCols() - 1;
           _scrollPos = (_charRows() - 1) * _gridCols() + col;
         }
 
-        // SYM2 has intentionally blank cells. If vertical navigation lands on
-        // one, move to the nearest valid character/action instead.
-        if (_scrollPos < 30 && _sets[_scrollPos].chars == nullptr) {
+        // SYM has four intentionally blank tail cells.
+        if (_scrollPos < 36 && _sets[_scrollPos].chars == nullptr) {
           int col = _scrollPos % _gridCols();
-          if (_page == PAGE_SYM2 && col < 2) {
-            _scrollPos = 6 + col;  // < or >
-          } else {
-            _scrollPos = 30 + min(col, 5);
-          }
+          _scrollPos = 36 + min(col, 5);
         }
 
       } else if (nav4 && dir == INavigation::DIR_UP) {
@@ -448,17 +426,12 @@ private:
           _capsLock = !_capsLock;
           break;
         case SP_SYMBOL:
-          if (_mode == INPUT_TEXT && _scrollPos == 30) {
-            // Cycle text pages: ABC -> SYM1 -> SYM2 -> ABC.
-            if (_page == PAGE_ABC)       _page = PAGE_SYM1;
-            else if (_page == PAGE_SYM1) _page = PAGE_SYM2;
-            else                         _page = PAGE_ABC;
-
-            _symbolMode = (_page != PAGE_ABC);
+          if (_mode == INPUT_TEXT && _scrollPos == 36) {
+            _page = (_page == PAGE_ABC) ? PAGE_SYM : PAGE_ABC;
+            _symbolMode = (_page == PAGE_SYM);
             _buildSets();
-            _scrollPos = 30;
+            _scrollPos = 36;
           } else {
-            // SPACE
             _input += ' ';
           }
           break;
@@ -516,10 +489,8 @@ private:
       lcd.drawString("CAPS", ix, PAD);
       ix += lcd.textWidth("CAPS") + PAD;
     }
-    if (_page == PAGE_SYM1) {
-      lcd.drawString("SYM1", ix, PAD);
-    } else if (_page == PAGE_SYM2) {
-      lcd.drawString("SYM2", ix, PAD);
+    if (_page == PAGE_SYM) {
+      lcd.drawString("123", ix, PAD);
     }
 
     // Thin theme separator, echoing the normal UniGeek screen chrome.
@@ -561,9 +532,9 @@ private:
     int col;
     int row;
 
-    if (_mode == INPUT_TEXT && idx >= 30) {
+    if (_mode == INPUT_TEXT && idx >= 36) {
       cW = _actionCellW();
-      col = idx - 30;
+      col = idx - 36;
       row = _charRows();
     } else {
       cW = _gridCellW();
@@ -590,8 +561,10 @@ private:
     // Character cells have plenty of horizontal room in the 6-column layout.
     // Draw them at 2x for legibility; keep footer/action labels at 1x so
     // SAVE/CAPS/SPACE/DEL/EXIT continue to fit comfortably.
-    const bool largeKey = (_mode == INPUT_TEXT && !s.isSpecial);
-    sp.setTextSize(largeKey ? 2 : 1);
+    // Use UniGeek's standard built-in UI font/size for maximum consistency
+    // and compatibility across display backends.
+    sp.setTextFont(1);
+    sp.setTextSize(1);
     sp.setTextDatum(MC_DATUM);
 
     if (sel) {
@@ -607,10 +580,8 @@ private:
       char shown = (_page == PAGE_ABC && _capsLock && s.chars[1] != '\0')
                      ? s.chars[1] : s.chars[0];
       lbl = String(shown);
-    } else if (_mode == INPUT_TEXT && idx == 30) {
-      if (_page == PAGE_ABC)       lbl = "SYM1";
-      else if (_page == PAGE_SYM1) lbl = "SYM2";
-      else                         lbl = "ABC";
+    } else if (_mode == INPUT_TEXT && idx == 36) {
+      lbl = (_page == PAGE_ABC) ? "123" : "ABC";
     } else {
       lbl = String(s.label);
     }
