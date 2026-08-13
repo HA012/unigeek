@@ -45,6 +45,7 @@ public:
   }
 
   void tone(uint16_t freq, uint32_t durationMs) override {
+    if (!isSoundEnabled()) return;
     _stopTask();
     _freq     = freq;
     _duration = durationMs;
@@ -73,7 +74,12 @@ public:
 
   bool isPlaying() override { return _taskHandle != nullptr; }
 
+  bool isSoundEnabled() const {
+    return Config.get(APP_CONFIG_SOUND, APP_CONFIG_SOUND_DEFAULT).toInt();
+  }
+
   void beep() override {
+    if (!isSoundEnabled()) return;
     if (!Config.get(APP_CONFIG_NAV_SOUND, APP_CONFIG_NAV_SOUND_DEFAULT).toInt()) return;
     if (_taskHandle) return;  // already playing — skip rapid beeps to avoid DMA stall
     playRandomTone();
@@ -87,6 +93,7 @@ public:
   }
 
   void playWav(const uint8_t* data, size_t size) override {
+    if (!isSoundEnabled()) return;
     _stopTask();
     if (size < 44) return;
 
@@ -123,6 +130,7 @@ public:
   void playLose()         override { if (_taskHandle) return; playWav(LOSE_SOUND,         sizeof(LOSE_SOUND));         }
 
   void playCorrectAnswer() override {
+    if (!isSoundEnabled()) return;
     if (_taskHandle) return;
     _seq[0] = {523,  180, 100};
     _seq[1] = {784,  120, 0  };
@@ -131,6 +139,7 @@ public:
   }
 
   void playWrongAnswer() override {
+    if (!isSoundEnabled()) return;
     if (_taskHandle) return;
     _seq[0] = {1109, 150, 100};
     _seq[1] = {1109, 150, 0  };

@@ -31,6 +31,7 @@ private:
     SETT_VOLUME,
 #endif
 #ifdef DEVICE_HAS_SOUND
+    SETT_SOUND,
     SETT_NAV_SOUND,
     SETT_SPEAKER_TEST,
 #endif
@@ -72,6 +73,7 @@ private:
   String _volSub;
 #endif
 #ifdef DEVICE_HAS_SOUND
+  String _soundSub;
   String _navSndSub;
 #endif
   String _colorSub;
@@ -103,6 +105,7 @@ private:
     {"Volume",           ""},
 #endif
 #ifdef DEVICE_HAS_SOUND
+    {"Sound",            ""},
     {"Navigation Sound", ""},
     {"Speaker Test"},
 #endif
