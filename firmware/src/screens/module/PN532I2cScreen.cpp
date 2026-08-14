@@ -6,6 +6,7 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputNumberAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/views/ProgressView.h"
 
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
@@ -85,7 +86,10 @@ const char* PN532I2cScreen::title() {
     case STATE_MAGIC_MENU:      return "Magic Card";
     case STATE_RAW_RESULT:      return "Result";
     case STATE_EMULATE:         return "Emulate Card";
-    case STATE_NTAG_MENU:       return "NTAG Emulate";
+    case STATE_NTAG_MENU:       return "Emulate NDEF";
+    case STATE_NDEF_WRITE_MENU: return "Write NDEF";
+    case STATE_NDEF_RESULT:     return "NDEF Result";
+    case STATE_NDEF_FILE_SELECT:return "NDEF Files";
   }
   return "PN532 I2C";
 }
@@ -125,6 +129,20 @@ void PN532I2cScreen::onUpdate() {
     }
     return;
   }
+  if (_state == STATE_NDEF_RESULT) {
+    if (Uni.Nav->wasPressed()) {
+      auto dir = Uni.Nav->readDirection();
+      if (dir == INavigation::DIR_BACK) {
+        _goUltralight();
+      } else if (dir == INavigation::DIR_PRESS && _hasNdef) {
+        _showNdefActions();
+      } else {
+        _scrollView.onNav(dir);
+      }
+    }
+    return;
+  }
+
   if (_state == STATE_INFO || _state == STATE_MIFARE_KEYS || _state == STATE_RAW_RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -143,7 +161,8 @@ void PN532I2cScreen::onUpdate() {
 void PN532I2cScreen::onRender() {
   if (_state == STATE_INFO || _state == STATE_SCAN_RESULT ||
       _state == STATE_MIFARE_DUMP || _state == STATE_MIFARE_KEYS ||
-      _state == STATE_RAW_RESULT || _state == STATE_EMULATE) {
+      _state == STATE_RAW_RESULT || _state == STATE_NDEF_RESULT ||
+      _state == STATE_EMULATE) {
     _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
     return;
   }
@@ -154,12 +173,11 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
       switch (index) {
-        case 0: _doScan14A();        break;
-        case 1: _goMifare();         break;
-        case 2: _goUltralight();     break;
-        case 3: _goMagic();          break;
-        case 4: _showFirmwareInfo(); break;
-        case 5: _doNtagMenu();       break;
+        case 0: _doScan14A();         break;
+        case 1: _goMifare();          break;
+        case 2: _goUltralight();      break;
+        case 3: _goMagic();           break;
+        case 4: _showFirmwareInfo();  break;
       }
       break;
     case STATE_MIFARE_MENU:
@@ -172,9 +190,20 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       break;
     case STATE_ULTRALIGHT_MENU:
       switch (index) {
-        case 0: _doUltralightDump();  break;
-        case 1: _doUltralightWrite(); break;
+        case 0: _doReadNdef();        break;
+        case 1: _goNdefWrite();       break;
+        case 2: _doEraseNdef();       break;
+        case 3: _doUltralightDump();  break;
+        case 4: _doUltralightWrite(); break;
       }
+      break;
+    case STATE_NDEF_WRITE_MENU:
+      if (index == 0) _doWriteNdefText();
+      else if (index == 1) _doWriteNdefUrl();
+      else if (index == 2) _doWriteNdefFromFile();
+      break;
+    case STATE_NDEF_FILE_SELECT:
+      _doWriteNdefFileSelected(index);
       break;
     case STATE_MAGIC_MENU:
       switch (index) {
@@ -217,6 +246,22 @@ void PN532I2cScreen::onBack() {
       break;
     case STATE_NTAG_MENU:
       _goMain();
+      break;
+    case STATE_NDEF_WRITE_MENU:
+      _goUltralight();
+      break;
+    case STATE_NDEF_RESULT:
+      _goUltralight();
+      break;
+    case STATE_NDEF_FILE_SELECT:
+      if (_ndefPickDir == _dumpPath || _ndefPickDir.length() == 0) {
+        _ndefPickDir = "";
+        _goNdefWrite();
+      } else {
+        int slash = _ndefPickDir.lastIndexOf('/');
+        _ndefPickDir = (slash > 0) ? _ndefPickDir.substring(0, slash) : _dumpPath;
+        _doWriteNdefFromFile();
+      }
       break;
     default:
       _goMain();
@@ -307,7 +352,7 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 6);
+  setItems(_mainItems, 5);
   render();
 }
 
@@ -320,6 +365,12 @@ void PN532I2cScreen::_goMifare() {
 void PN532I2cScreen::_goUltralight() {
   _state = STATE_ULTRALIGHT_MENU;
   setItems(_ulItems);
+  render();
+}
+
+void PN532I2cScreen::_goNdefWrite() {
+  _state = STATE_NDEF_WRITE_MENU;
+  setItems(_ndefWriteItems, 3);
   render();
 }
 
@@ -347,6 +398,58 @@ String PN532I2cScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
     char buf[4];
     sprintf(buf, "%s%02X", i == 0 ? "" : " ", data[i]);
     s += buf;
+  }
+  return s;
+}
+
+
+static String _ndefUriPrefix(uint8_t code) {
+  switch (code) {
+    case 0x00: return "";
+    case 0x01: return "http://www.";
+    case 0x02: return "https://www.";
+    case 0x03: return "http://";
+    case 0x04: return "https://";
+    case 0x05: return "tel:";
+    case 0x06: return "mailto:";
+    case 0x07: return "ftp://anonymous:anonymous@";
+    case 0x08: return "ftp://ftp.";
+    case 0x09: return "ftps://";
+    case 0x0A: return "sftp://";
+    case 0x0B: return "smb://";
+    case 0x0C: return "nfs://";
+    case 0x0D: return "ftp://";
+    case 0x0E: return "dav://";
+    case 0x0F: return "news:";
+    case 0x10: return "telnet://";
+    case 0x11: return "imap:";
+    case 0x12: return "rtsp://";
+    case 0x13: return "urn:";
+    case 0x14: return "pop:";
+    case 0x15: return "sip:";
+    case 0x16: return "sips:";
+    case 0x17: return "tftp:";
+    case 0x18: return "btspp://";
+    case 0x19: return "btl2cap://";
+    case 0x1A: return "btgoep://";
+    case 0x1B: return "tcpobex://";
+    case 0x1C: return "irdaobex://";
+    case 0x1D: return "file://";
+    case 0x1E: return "urn:epc:id:";
+    case 0x1F: return "urn:epc:tag:";
+    case 0x20: return "urn:epc:pat:";
+    case 0x21: return "urn:epc:raw:";
+    case 0x22: return "urn:epc:";
+    case 0x23: return "urn:nfc:";
+    default:   return "";
+  }
+}
+
+static String _bytesToPrintable(const uint8_t* data, size_t len) {
+  String s;
+  for (size_t i = 0; i < len; i++) {
+    char c = (char)data[i];
+    s += (c >= 32 && c <= 126) ? c : '.';
   }
   return s;
 }
@@ -726,9 +829,16 @@ void PN532I2cScreen::_doUltralightDump() {
   }
   if (!ok) { ShowStatusAction::show("No card"); _goUltralight(); return; }
 
-  _state = STATE_RAW_RESULT;
+  _state = STATE_NDEF_RESULT;
   _resetRows();
+  memcpy(_uid, uid, uidLen);
+  _uidLen = uidLen;
   _pushRow("UID", _hexUid(uid, uidLen));
+
+  memcpy(_uid, uid, uidLen);
+  _uidLen = uidLen;
+  _hasNdef = false;
+  _ndefLen = 0;
 
   ProgressView::init();
   for (uint8_t page = 0; page < 64; page++) {
@@ -779,6 +889,644 @@ void PN532I2cScreen::_doUltralightWrite() {
   } else {
     ShowStatusAction::show("Write failed");
   }
+  _goUltralight();
+}
+
+
+void PN532I2cScreen::_doReadNdef() {
+  ShowStatusAction::show("Place UL/NTAG on reader...", 0);
+
+  uint8_t uid[7];
+  uint8_t uidLen = 0;
+  uint32_t start = millis();
+  bool ok = false;
+
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _goUltralight();
+      return;
+    }
+
+    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) {
+      ok = true;
+      break;
+    }
+    delay(50);
+  }
+
+  if (!ok) {
+    ShowStatusAction::show("No card");
+    _goUltralight();
+    return;
+  }
+
+  // Type 2 Tag user memory starts at page 4. Read a conservative 60 pages
+  // (240 bytes), enough for common short NDEF records and matching the current
+  // UniGeek Ultralight page range.
+  static constexpr uint8_t FIRST_PAGE = 4;
+  static constexpr uint8_t LAST_PAGE  = 63;
+  static constexpr size_t USER_BYTES  = (LAST_PAGE - FIRST_PAGE + 1) * 4;
+
+  uint8_t user[USER_BYTES] = {};
+  size_t userLen = 0;
+
+  ProgressView::init();
+  for (uint8_t page = FIRST_PAGE; page <= LAST_PAGE; page++) {
+    char msg[24];
+    snprintf(msg, sizeof(msg), "Reading page %u", page);
+    ProgressView::progress(msg, (page - FIRST_PAGE) * 100 / (LAST_PAGE - FIRST_PAGE + 1));
+
+    uint8_t data[4];
+    if (!_nfc->mifareultralight_ReadPage(page, data)) break;
+
+    memcpy(&user[userLen], data, 4);
+    userLen += 4;
+  }
+  ProgressView::finish();
+
+  // Parse the Type 2 Tag TLV stream and locate the first NDEF Message TLV (0x03).
+  const uint8_t* ndef = nullptr;
+  size_t ndefLen = 0;
+  size_t pos = 0;
+
+  while (pos < userLen) {
+    uint8_t tlv = user[pos++];
+
+    if (tlv == 0x00) continue; // NULL TLV
+    if (tlv == 0xFE) break;    // Terminator TLV
+    if (pos >= userLen) break;
+
+    size_t len = user[pos++];
+    if (len == 0xFF) {
+      if (pos + 1 >= userLen) break;
+      len = ((size_t)user[pos] << 8) | user[pos + 1];
+      pos += 2;
+    }
+
+    if (pos + len > userLen) break;
+
+    if (tlv == 0x03) {
+      ndef = &user[pos];
+      ndefLen = len;
+      break;
+    }
+
+    pos += len;
+  }
+
+  _state = STATE_NDEF_RESULT;
+  _resetRows();
+  _pushRow("UID", _hexUid(uid, uidLen));
+
+  if (!ndef) {
+    _pushRow("NDEF", "Not found");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  if (ndefLen <= MAX_NDEF_BYTES) {
+    memcpy(_ndefBuf, ndef, ndefLen);
+    _ndefLen = ndefLen;
+    _hasNdef = true;
+  }
+
+  char lenBuf[24];
+  snprintf(lenBuf, sizeof(lenBuf), "%u bytes", (unsigned)ndefLen);
+  _pushRow("NDEF Size", lenBuf);
+
+  if (ndefLen == 0) {
+    _pushRow("NDEF", "Empty");
+    _pushRow("[Press]", "Actions");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  if (ndefLen < 3) {
+    _pushRow("NDEF", "Invalid record");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  // Decode the first NDEF record. Support both Short Record (SR) and normal
+  // payload-length encoding. Text and URI are decoded; other record types fall
+  // back to a compact generic view.
+  size_t p = 0;
+  uint8_t flagsTnf = ndef[p++];
+  bool sr = (flagsTnf & 0x10) != 0;
+  bool il = (flagsTnf & 0x08) != 0;
+  uint8_t tnf = flagsTnf & 0x07;
+
+  if (p >= ndefLen) {
+    _pushRow("NDEF", "Invalid record");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  uint8_t typeLen = ndef[p++];
+  uint32_t payloadLen = 0;
+
+  if (sr) {
+    if (p >= ndefLen) {
+      _pushRow("NDEF", "Invalid record");
+      _scrollView.setRows(_rows, _rowCount);
+      render();
+      return;
+    }
+    payloadLen = ndef[p++];
+  } else {
+    if (p + 3 >= ndefLen) {
+      _pushRow("NDEF", "Invalid record");
+      _scrollView.setRows(_rows, _rowCount);
+      render();
+      return;
+    }
+    payloadLen = ((uint32_t)ndef[p] << 24) |
+                 ((uint32_t)ndef[p + 1] << 16) |
+                 ((uint32_t)ndef[p + 2] << 8) |
+                 (uint32_t)ndef[p + 3];
+    p += 4;
+  }
+
+  uint8_t idLen = 0;
+  if (il) {
+    if (p >= ndefLen) {
+      _pushRow("NDEF", "Invalid record");
+      _scrollView.setRows(_rows, _rowCount);
+      render();
+      return;
+    }
+    idLen = ndef[p++];
+  }
+
+  if (p + typeLen + idLen + payloadLen > ndefLen) {
+    _pushRow("NDEF", "Truncated record");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  const uint8_t* type = &ndef[p];
+  p += typeLen;
+  p += idLen;
+  const uint8_t* payload = &ndef[p];
+
+  char tnfBuf[8];
+  snprintf(tnfBuf, sizeof(tnfBuf), "%u", tnf);
+  _pushRow("TNF", tnfBuf);
+
+  String typeStr = _bytesToPrintable(type, typeLen);
+  _pushRow("Type", typeStr.length() ? typeStr : "(empty)");
+
+  // NFC Forum Well Known Text record ("T").
+  if (tnf == 0x01 && typeLen == 1 && type[0] == 'T' && payloadLen >= 1) {
+    uint8_t status = payload[0];
+    bool utf16 = (status & 0x80) != 0;
+    uint8_t langLen = status & 0x3F;
+
+    if ((size_t)1 + langLen <= payloadLen) {
+      String lang;
+      for (uint8_t i = 0; i < langLen; i++) lang += (char)payload[1 + i];
+
+      _pushRow("Record", "Text");
+      _pushRow("Encoding", utf16 ? "UTF-16" : "UTF-8");
+      if (lang.length()) _pushRow("Language", lang);
+
+      if (!utf16) {
+        String text;
+        for (size_t i = 1 + langLen; i < payloadLen; i++) text += (char)payload[i];
+        _pushRow("Text", text);
+      } else {
+        _pushRow("Text", "(UTF-16 raw)");
+        uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
+        _pushRow("Raw", _hexBlock(payload, rawLen));
+      }
+    }
+  }
+  // NFC Forum Well Known URI record ("U").
+  else if (tnf == 0x01 && typeLen == 1 && type[0] == 'U' && payloadLen >= 1) {
+    String uri = _ndefUriPrefix(payload[0]);
+    for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
+
+    _pushRow("Record", "URI");
+    _pushRow("URI", uri);
+  }
+  else {
+    _pushRow("Record", "Unsupported");
+    uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
+    _pushRow("Payload", _hexBlock(payload, rawLen));
+  }
+
+  if (_hasNdef) _pushRow("[Press]", "Actions");
+
+  _scrollView.setRows(_rows, _rowCount);
+  render();
+}
+
+
+bool PN532I2cScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLen) {
+  if (!ndef || ndefLen == 0 || ndefLen > 254) {
+    ShowStatusAction::show("NDEF too large");
+    return false;
+  }
+
+  ShowStatusAction::show("Place UL/NTAG on reader...", 0);
+
+  uint8_t uid[7];
+  uint8_t uidLen = 0;
+  uint32_t start = millis();
+  bool ok = false;
+
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      return false;
+    }
+
+    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) {
+      ok = true;
+      break;
+    }
+    delay(50);
+  }
+
+  if (!ok) {
+    ShowStatusAction::show("No card");
+    return false;
+  }
+
+  // Read the NFC Forum Type 2 Capability Container from page 3.
+  // CC byte 2 gives the data area size in multiples of 8 bytes.
+  uint8_t cc[4] = {};
+  if (!_nfc->mifareultralight_ReadPage(3, cc)) {
+    ShowStatusAction::show("Failed to read CC");
+    return false;
+  }
+
+  if (cc[0] != 0xE1) {
+    ShowStatusAction::show("Not NDEF formatted");
+    return false;
+  }
+
+  size_t capacity = (size_t)cc[2] * 8;
+  if (capacity == 0) {
+    ShowStatusAction::show("Invalid NDEF capacity");
+    return false;
+  }
+
+  // Type 2 Tag memory layout:
+  // 03 <LEN> <NDEF message> FE
+  size_t tlvLen = ndefLen + 3;
+  size_t paddedLen = (tlvLen + 3) & ~((size_t)3);
+
+  if (paddedLen > capacity) {
+    ShowStatusAction::show("NDEF does not fit");
+    return false;
+  }
+
+  uint8_t* payload = new uint8_t[paddedLen];
+  if (!payload) {
+    ShowStatusAction::show("Out of memory");
+    return false;
+  }
+
+  memset(payload, 0x00, paddedLen);
+  payload[0] = 0x03;
+  payload[1] = (uint8_t)ndefLen;
+  memcpy(&payload[2], ndef, ndefLen);
+  payload[2 + ndefLen] = 0xFE;
+
+  ProgressView::init();
+  bool success = true;
+
+  for (size_t offset = 0; offset < paddedLen; offset += 4) {
+    uint8_t page = 4 + (offset / 4);
+
+    char msg[24];
+    snprintf(msg, sizeof(msg), "Writing page %u", page);
+    ProgressView::progress(msg, (int)(offset * 100 / paddedLen));
+
+    if (!_nfc->mifareultralight_WritePage(page, &payload[offset])) {
+      success = false;
+      break;
+    }
+  }
+
+  ProgressView::finish();
+  delete[] payload;
+
+  ShowStatusAction::show(success ? "NDEF write OK" : "NDEF write failed");
+  return success;
+}
+
+void PN532I2cScreen::_doWriteNdefText() {
+  String text = InputTextAction::popup("Enter text", "");
+  if (InputTextAction::wasCancelled() || text.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  // Short-record NDEF Text:
+  // D1 01 <payloadLen> 54 02 'e' 'n' <text>
+  size_t payloadLen = 1 + 2 + text.length();
+  size_t ndefLen = 4 + payloadLen;
+
+  if (ndefLen > 254 || payloadLen > 255) {
+    ShowStatusAction::show("Text too long");
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen];
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefWrite();
+    return;
+  }
+
+  ndef[0] = 0xD1;                    // MB | ME | SR | TNF=Well Known
+  ndef[1] = 0x01;                    // Type length
+  ndef[2] = (uint8_t)payloadLen;
+  ndef[3] = 'T';
+  ndef[4] = 0x02;                    // UTF-8, language code length 2
+  ndef[5] = 'e';
+  ndef[6] = 'n';
+  memcpy(&ndef[7], text.c_str(), text.length());
+
+  _writeNdefRecord(ndef, ndefLen);
+  delete[] ndef;
+  _goUltralight();
+}
+
+void PN532I2cScreen::_doWriteNdefUrl() {
+  String url = InputTextAction::popup("Enter URL", "https://");
+  if (InputTextAction::wasCancelled() || url.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t prefix = 0x00;
+  const char* body = url.c_str();
+
+  if      (url.startsWith("https://www.")) { prefix = 0x02; body += 12; }
+  else if (url.startsWith("http://www."))  { prefix = 0x01; body += 11; }
+  else if (url.startsWith("https://"))     { prefix = 0x04; body += 8; }
+  else if (url.startsWith("http://"))      { prefix = 0x03; body += 7; }
+
+  size_t bodyLen = strlen(body);
+  size_t payloadLen = 1 + bodyLen;
+  size_t ndefLen = 4 + payloadLen;
+
+  if (ndefLen > 254 || payloadLen > 255) {
+    ShowStatusAction::show("URL too long");
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen];
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefWrite();
+    return;
+  }
+
+  ndef[0] = 0xD1;                    // MB | ME | SR | TNF=Well Known
+  ndef[1] = 0x01;                    // Type length
+  ndef[2] = (uint8_t)payloadLen;
+  ndef[3] = 'U';
+  ndef[4] = prefix;
+  memcpy(&ndef[5], body, bodyLen);
+
+  _writeNdefRecord(ndef, ndefLen);
+  delete[] ndef;
+  _goUltralight();
+}
+
+
+
+void PN532I2cScreen::_showNdefActions() {
+  if (!_hasNdef) return;
+
+  static const InputSelectAction::Option opts[] = {
+    {"Write to Tag", "write"},
+    {"Save to File", "save"},
+    {"Emulate [TODO]", "emulate"},
+  };
+
+  const char* choice = InputSelectAction::popup("NDEF Actions", opts, 3, nullptr);
+  if (!choice) {
+    render();
+    return;
+  }
+
+  if (strcmp(choice, "write") == 0) {
+    _doWriteCurrentNdef();
+  } else if (strcmp(choice, "save") == 0) {
+    _doSaveNdef();
+  } else if (strcmp(choice, "emulate") == 0) {
+    ShowStatusAction::show("Not implemented yet");
+    render();
+  }
+}
+
+void PN532I2cScreen::_doWriteCurrentNdef() {
+  if (!_hasNdef) {
+    ShowStatusAction::show("No NDEF in memory");
+    render();
+    return;
+  }
+
+  if (_ndefLen == 0) {
+    ShowStatusAction::show("NDEF is empty");
+    render();
+    return;
+  }
+
+  _writeNdefRecord(_ndefBuf, _ndefLen);
+  _state = STATE_NDEF_RESULT;
+  render();
+}
+
+void PN532I2cScreen::_doSaveNdef() {
+  if (!_hasNdef || _ndefLen == 0) {
+    ShowStatusAction::show(_hasNdef ? "NDEF is empty" : "No NDEF to save");
+    render();
+    return;
+  }
+
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable");
+    render();
+    return;
+  }
+
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir(_dumpPath);
+
+  String uid = _hexUid(_uid, _uidLen);
+  uid.replace(":", "");
+  if (uid.length() == 0) uid = "unknown";
+
+  // Follow the project's duplicate-name convention:
+  // <UID>.ndef, <UID>_(2).ndef, <UID>_(3).ndef, ...
+  String path = String(_dumpPath) + "/" + uid + ".ndef";
+  if (Uni.Storage->exists(path.c_str())) {
+    for (int n = 2; n < 1000; n++) {
+      String candidate = String(_dumpPath) + "/" + uid + "_(" + n + ").ndef";
+      if (!Uni.Storage->exists(candidate.c_str())) {
+        path = candidate;
+        break;
+      }
+    }
+  }
+
+  fs::File f = Uni.Storage->open(path.c_str(), "w");
+  if (!f) {
+    ShowStatusAction::show("Save failed");
+    render();
+    return;
+  }
+
+  size_t written = f.write(_ndefBuf, _ndefLen);
+  f.close();
+
+  if (written == _ndefLen) {
+    int slash = path.lastIndexOf('/');
+    String name = (slash >= 0) ? path.substring(slash + 1) : path;
+    ShowStatusAction::show(("Saved: " + name).c_str(), 1500);
+  } else {
+    ShowStatusAction::show("Save failed");
+  }
+  render();
+}
+
+void PN532I2cScreen::_doWriteNdefFromFile() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable");
+    _goNdefWrite();
+    return;
+  }
+
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir(_dumpPath);
+
+  _state = STATE_NDEF_FILE_SELECT;
+  if (_ndefPickDir.length() == 0) _ndefPickDir = _dumpPath;
+  _browser.root = _dumpPath;
+
+  uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
+  if (n == 0 && _ndefPickDir == _dumpPath) {
+    ShowStatusAction::show("No .ndef files");
+    _ndefPickDir = "";
+    _goNdefWrite();
+    return;
+  }
+
+  setItems(_browser.items(), n);
+  render();
+}
+
+void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
+  if (fileIndex >= _browser.count()) return;
+
+  const auto& e = _browser.entry(fileIndex);
+  if (e.isDir) {
+    _ndefPickDir = e.path;
+    _doWriteNdefFromFile();
+    return;
+  }
+
+  fs::File f = Uni.Storage->open(e.path.c_str(), "r");
+  if (!f) {
+    ShowStatusAction::show("Read failed");
+    _doWriteNdefFromFile();
+    return;
+  }
+
+  size_t len = f.size();
+  if (len == 0 || len > MAX_NDEF_BYTES) {
+    f.close();
+    ShowStatusAction::show(len == 0 ? "Empty .ndef file" : "NDEF file too large");
+    _doWriteNdefFromFile();
+    return;
+  }
+
+  uint8_t buf[MAX_NDEF_BYTES];
+  size_t got = f.read(buf, len);
+  f.close();
+
+  if (got != len) {
+    ShowStatusAction::show("Read failed");
+    _doWriteNdefFromFile();
+    return;
+  }
+
+  bool ok = _writeNdefRecord(buf, len);
+  _ndefPickDir = "";
+
+  if (ok) _goUltralight();
+  else _goNdefWrite();
+}
+
+void PN532I2cScreen::_doEraseNdef() {
+  ShowStatusAction::show("Place UL/NTAG on reader...", 0);
+
+  uint8_t uid[7];
+  uint8_t uidLen = 0;
+  uint32_t start = millis();
+  bool ok = false;
+
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _goUltralight();
+      return;
+    }
+
+    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) {
+      ok = true;
+      break;
+    }
+    delay(50);
+  }
+
+  if (!ok) {
+    ShowStatusAction::show("No card");
+    _goUltralight();
+    return;
+  }
+
+  // Read NFC Forum Type 2 Capability Container from page 3.
+  uint8_t cc[4] = {};
+  if (!_nfc->mifareultralight_ReadPage(3, cc)) {
+    ShowStatusAction::show("Failed to read CC");
+    _goUltralight();
+    return;
+  }
+
+  if (cc[0] != 0xE1) {
+    ShowStatusAction::show("Not NDEF formatted");
+    _goUltralight();
+    return;
+  }
+
+  // Logical NDEF erase:
+  // 03 = NDEF Message TLV
+  // 00 = zero-length NDEF message
+  // FE = Terminator TLV
+  // The previous bytes after the terminator are no longer part of the active NDEF.
+  uint8_t emptyNdef[4] = {0x03, 0x00, 0xFE, 0x00};
+
+  bool success = _nfc->mifareultralight_WritePage(4, emptyNdef);
+
+  ShowStatusAction::show(success ? "NDEF erased" : "NDEF erase failed");
   _goUltralight();
 }
 

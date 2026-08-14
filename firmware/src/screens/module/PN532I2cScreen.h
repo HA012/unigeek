@@ -34,6 +34,9 @@ private:
     STATE_RAW_RESULT,
     STATE_EMULATE,
     STATE_NTAG_MENU,
+    STATE_NDEF_WRITE_MENU,
+    STATE_NDEF_RESULT,
+    STATE_NDEF_FILE_SELECT,
   };
 
   State_e      _state    = STATE_MAIN_MENU;
@@ -64,13 +67,12 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[6] = {
+  ListItem _mainItems[5] = {
     {"Scan ISO14443A"},
     {"MIFARE Classic"},
     {"MIFARE Ultralight"},
     {"Magic Card"},
     {"Firmware Info"},
-    {"NTAG Emulate"},
   };
 
   ListItem _mfItems[4] = {
@@ -80,7 +82,10 @@ private:
     {"Dictionary Attack"},
   };
 
-  ListItem _ulItems[2] = {
+  ListItem _ulItems[5] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+    {"Erase NDEF"},
     {"Read All Pages"},
     {"Write Page"},
   };
@@ -96,10 +101,23 @@ private:
     {"URL Record"},
   };
 
+  ListItem _ndefWriteItems[3] = {
+    {"Text"},
+    {"URL"},
+    {"From File"},
+  };
+
   // MIFARE dump image — filled by _doDumpMemory(), saved by _doSaveDump()
   static constexpr const char* _dumpPath = "/unigeek/nfc/dumps";
   uint8_t  _dumpImg[1024] = {};
   bool     _hasDump = false;
+
+  // Raw NDEF message retained after Read NDEF (without the Type 2 TLV wrapper).
+  static constexpr size_t MAX_NDEF_BYTES = 254;
+  uint8_t  _ndefBuf[MAX_NDEF_BYTES] = {};
+  size_t   _ndefLen = 0;
+  bool     _hasNdef = false;
+  String   _ndefPickDir;
 
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
   BrowseFileView _browser;
@@ -122,6 +140,17 @@ private:
   void _doDictionaryAttackWithFile(uint8_t fileIndex);
   void _doUltralightDump();
   void _doUltralightWrite();
+  void _doReadNdef();
+  void _goNdefWrite();
+  void _doWriteNdefText();
+  void _doWriteNdefUrl();
+  void _doWriteNdefFromFile();
+  void _doWriteNdefFileSelected(uint8_t fileIndex);
+  void _showNdefActions();
+  void _doSaveNdef();
+  void _doWriteCurrentNdef();
+  void _doEraseNdef();
+  bool _writeNdefRecord(const uint8_t* ndef, size_t ndefLen);
   void _doDetectGen1a();
   void _doGen3SetUid();
   void _doGen3LockUid();
