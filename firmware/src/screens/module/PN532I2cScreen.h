@@ -125,6 +125,7 @@ private:
   static constexpr size_t MAX_NDEF_BYTES = 254;
   uint8_t  _ndefBuf[MAX_NDEF_BYTES] = {};
   size_t   _ndefLen = 0;
+  size_t   _ndefCapacity = 0;
   bool     _hasNdef = false;
   String   _ndefPickDir;
 

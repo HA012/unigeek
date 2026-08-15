@@ -931,6 +931,7 @@ void PN532I2cScreen::_doReadNdef() {
   _ndefTarget = NDEF_TARGET_ULTRALIGHT;
   _hasNdef = false;
   _ndefLen = 0;
+  _ndefCapacity = 0;
   ShowStatusAction::show("Place UL/NTAG on reader...", 0);
 
   uint8_t uid[7];
@@ -1045,6 +1046,16 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
   char lenBuf[24];
   snprintf(lenBuf, sizeof(lenBuf), "%u bytes", (unsigned)ndefLen);
   _pushRow("NDEF Size", lenBuf);
+
+  if (_ndefCapacity > 0) {
+    char capBuf[24];
+    char freeBuf[24];
+    snprintf(capBuf, sizeof(capBuf), "%u bytes", (unsigned)_ndefCapacity);
+    size_t freeBytes = (_ndefCapacity > ndefLen) ? (_ndefCapacity - ndefLen) : 0;
+    snprintf(freeBuf, sizeof(freeBuf), "%u bytes", (unsigned)freeBytes);
+    _pushRow("Capacity", capBuf);
+    _pushRow("Free", freeBuf);
+  }
 
   if (ndefLen == 0) {
     _pushRow("NDEF", "Empty");
@@ -1343,6 +1354,7 @@ void PN532I2cScreen::_doReadClassicNdef() {
   _ndefTarget = NDEF_TARGET_MIFARE_CLASSIC;
   _hasNdef = false;
   _ndefLen = 0;
+  _ndefCapacity = 0;
 
   if (!_scanCardOrShow(5000)) {
     _goMifare();
@@ -1362,6 +1374,11 @@ void PN532I2cScreen::_doReadClassicNdef() {
     ShowStatusAction::show("No NDEF sectors in MAD");
     _goMifare();
     return;
+  }
+
+  _ndefCapacity = 0;
+  for (size_t i = 0; i < sectorCount; i++) {
+    _ndefCapacity += (sectors[i] < 32) ? 48 : 240;
   }
 
   uint8_t* area = nullptr;
@@ -1845,12 +1862,16 @@ void PN532I2cScreen::_doSaveNdef() {
   uid.replace(":", "");
   if (uid.length() == 0) uid = "unknown";
 
-  // Follow the project's duplicate-name convention:
-  // <UID>.ndef, <UID>_(2).ndef, <UID>_(3).ndef, ...
-  String path = String(_dumpPath) + "/" + uid + ".ndef";
+  const char* tagSuffix =
+      (_ndefTarget == NDEF_TARGET_MIFARE_CLASSIC) ? "_mifare" : "_ntag";
+  String baseName = uid + tagSuffix;
+
+  // <UID>_<type>.ndef, <UID>_<type>_(2).ndef, ...
+  String path = String(_dumpPath) + "/" + baseName + ".ndef";
   if (Uni.Storage->exists(path.c_str())) {
     for (int n = 2; n < 1000; n++) {
-      String candidate = String(_dumpPath) + "/" + uid + "_(" + n + ").ndef";
+      String candidate =
+          String(_dumpPath) + "/" + baseName + "_(" + n + ").ndef";
       if (!Uni.Storage->exists(candidate.c_str())) {
         path = candidate;
         break;
@@ -1989,6 +2010,8 @@ void PN532I2cScreen::_doEraseNdef() {
     _goUltralight();
     return;
   }
+
+  _ndefCapacity = (size_t)cc[2] * 8;
 
   // Logical NDEF erase:
   // 03 = NDEF Message TLV
