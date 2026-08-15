@@ -960,6 +960,13 @@ void PN532I2cScreen::_doReadNdef() {
     return;
   }
 
+  // NFC Forum Type 2 Capability Container (page 3).
+  // Byte 2 gives the data-area capacity in units of 8 bytes.
+  uint8_t cc[4] = {};
+  if (_nfc->mifareultralight_ReadPage(3, cc) && cc[0] == 0xE1) {
+    _ndefCapacity = (size_t)cc[2] * 8;
+  }
+
   // Type 2 Tag user memory starts at page 4. Read a conservative 60 pages
   // (240 bytes), enough for common short NDEF records and matching the current
   // UniGeek Ultralight page range.
@@ -1044,15 +1051,19 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
   }
 
   char lenBuf[24];
+  char capBuf[24];
+  char freeBuf[24];
+
   snprintf(lenBuf, sizeof(lenBuf), "%u bytes", (unsigned)ndefLen);
   _pushRow("NDEF Size", lenBuf);
 
   if (_ndefCapacity > 0) {
-    char capBuf[24];
-    char freeBuf[24];
+    const size_t freeBytes =
+        (_ndefCapacity > ndefLen) ? (_ndefCapacity - ndefLen) : 0;
+
     snprintf(capBuf, sizeof(capBuf), "%u bytes", (unsigned)_ndefCapacity);
-    size_t freeBytes = (_ndefCapacity > ndefLen) ? (_ndefCapacity - ndefLen) : 0;
     snprintf(freeBuf, sizeof(freeBuf), "%u bytes", (unsigned)freeBytes);
+
     _pushRow("Capacity", capBuf);
     _pushRow("Free", freeBuf);
   }
@@ -2011,7 +2022,6 @@ void PN532I2cScreen::_doEraseNdef() {
     return;
   }
 
-  _ndefCapacity = (size_t)cc[2] * 8;
 
   // Logical NDEF erase:
   // 03 = NDEF Message TLV
