@@ -75,7 +75,10 @@ private:
     {"Firmware Info"},
   };
 
-  ListItem _mfItems[4] = {
+  ListItem _mfItems[7] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+    {"Erase NDEF"},
     {"Authenticate"},
     {"Dump Memory"},
     {"Discovered Keys"},
@@ -112,7 +115,13 @@ private:
   uint8_t  _dumpImg[1024] = {};
   bool     _hasDump = false;
 
-  // Raw NDEF message retained after Read NDEF (without the Type 2 TLV wrapper).
+  enum NdefTarget_e {
+    NDEF_TARGET_ULTRALIGHT,
+    NDEF_TARGET_MIFARE_CLASSIC,
+  };
+  NdefTarget_e _ndefTarget = NDEF_TARGET_ULTRALIGHT;
+
+  // Raw NDEF message retained after Read NDEF (without the tag-specific TLV wrapper).
   static constexpr size_t MAX_NDEF_BYTES = 254;
   uint8_t  _ndefBuf[MAX_NDEF_BYTES] = {};
   size_t   _ndefLen = 0;
@@ -141,7 +150,11 @@ private:
   void _doUltralightDump();
   void _doUltralightWrite();
   void _doReadNdef();
+  void _doReadClassicNdef();
+  void _showNdefResult(const uint8_t* uid, uint8_t uidLen,
+                       const uint8_t* ndef, size_t ndefLen);
   void _goNdefWrite();
+  void _goNdefParent();
   void _doWriteNdefText();
   void _doWriteNdefUrl();
   void _doWriteNdefFromFile();
@@ -150,7 +163,14 @@ private:
   void _doSaveNdef();
   void _doWriteCurrentNdef();
   void _doEraseNdef();
+  void _doEraseClassicNdef();
   bool _writeNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  bool _writeUltralightNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  bool _writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  bool _classicNdefSectors(uint8_t* sectors, size_t maxSectors, size_t& count);
+  bool _classicAuthSector(uint8_t sector, const uint8_t key[6]);
+  bool _classicReadNdefArea(const uint8_t* sectors, size_t sectorCount,
+                            uint8_t*& area, size_t& areaLen);
   void _doDetectGen1a();
   void _doGen3SetUid();
   void _doGen3LockUid();
