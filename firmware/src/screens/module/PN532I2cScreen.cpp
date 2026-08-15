@@ -1795,20 +1795,33 @@ void PN532I2cScreen::_showNdefActions() {
 }
 
 void PN532I2cScreen::_doWriteCurrentNdef() {
-  if (!_hasNdef) {
-    ShowStatusAction::show("No NDEF in memory");
+  if (!_hasNdef || _ndefLen == 0) {
+    ShowStatusAction::show("No NDEF loaded");
     render();
     return;
   }
 
-  if (_ndefLen == 0) {
-    ShowStatusAction::show("NDEF is empty");
+  static const InputSelectAction::Option targets[] = {
+    {"Ultralight / NTAG", "ul"},
+    {"MIFARE Classic",    "mfc"},
+  };
+
+  const char* choice =
+      InputSelectAction::popup("Write to Tag", targets, 2, nullptr);
+
+  if (!choice) {
     render();
     return;
   }
 
-  _writeNdefRecord(_ndefBuf, _ndefLen);
-  _state = STATE_NDEF_RESULT;
+  if (strcmp(choice, "ul") == 0) {
+    _writeUltralightNdefRecord(_ndefBuf, _ndefLen);
+  } else if (strcmp(choice, "mfc") == 0) {
+    _writeClassicNdefRecord(_ndefBuf, _ndefLen);
+  }
+
+  // Keep the NDEF result/action context tied to the source tag.
+  // The selected write target is deliberately independent of _ndefTarget.
   render();
 }
 
