@@ -547,17 +547,19 @@ bool ChameleonClient::mf1CheckKeysOfBlock(uint8_t block, uint8_t keyType,
 
 bool ChameleonClient::mf1LoadBlockData(uint8_t slot, uint8_t startBlock,
                                         const uint8_t* data, uint16_t dataLen) {
+  // CMD_MF1_LOAD_BLOCK operates on the active emulator slot. Its payload is
+  // [startBlock][block data...]; the slot number is not part of the command.
+  if (!setActiveSlot(slot)) return false;
+
   uint16_t st = 0;
-  // Buffer on heap to keep stack small.
-  uint8_t* buf = (uint8_t*)malloc(2 + dataLen);
+  uint8_t* buf = (uint8_t*)malloc(1 + dataLen);
   if (!buf) return false;
-  buf[0] = slot;
-  buf[1] = startBlock;
-  memcpy(buf + 2, data, dataLen);
-  bool ok = sendCommand(CMD_MF1_LOAD_BLOCK, buf, 2 + dataLen,
+  buf[0] = startBlock;
+  memcpy(buf + 1, data, dataLen);
+  bool ok = sendCommand(CMD_MF1_LOAD_BLOCK, buf, 1 + dataLen,
                         nullptr, nullptr, &st, 3000);
   free(buf);
-  return ok && st == 0;
+  return ok && (st == 0 || st == 0x68);
 }
 
 bool ChameleonClient::mf1GetBlockData(uint8_t startBlock, uint8_t count, uint8_t* out,

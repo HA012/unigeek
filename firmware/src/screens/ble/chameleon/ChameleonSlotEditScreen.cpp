@@ -226,7 +226,21 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   if (tagType == 0) { f.close(); return false; }
 
   auto& c = ChameleonClient::get();
-  if (!c.setSlotTagType(_slot, tagType)) { f.close(); return false; }
+  if (!c.setSlotTagType(_slot, tagType)) {
+    f.close();
+    ShowStatusAction::show("HF fail: type");
+    return false;
+  }
+  if (!c.setSlotDataDefault(_slot, tagType)) {
+    f.close();
+    ShowStatusAction::show("HF fail: init");
+    return false;
+  }
+  if (!c.setActiveSlot(_slot)) {
+    f.close();
+    ShowStatusAction::show("HF fail: active");
+    return false;
+  }
 
   // Block 0 holds UID / BCC / SAK / ATQA for anti-collision.
   uint8_t block0[16] = {};
@@ -235,12 +249,18 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   uint8_t acoPayload[11] = {};
   acoPayload[0] = uidLen;
   memcpy(acoPayload + 1, block0, uidLen);
-  acoPayload[1 + uidLen] = block0[7];  // ATQA reversed for anti-coll payload
-  acoPayload[2 + uidLen] = block0[6];
+  acoPayload[1 + uidLen] = block0[6];  // ATQA in dump order
+  acoPayload[2 + uidLen] = block0[7];
   acoPayload[3 + uidLen] = block0[5];  // SAK
+  acoPayload[4 + uidLen] = 0;          // ATS length (MIFARE Classic: no ATS)
   uint16_t st = 0;
-  c.sendCommand(ChameleonClient::CMD_MF1_SET_ANTI_COLL,
-                acoPayload, 4 + uidLen, nullptr, nullptr, &st);
+  if (!c.sendCommand(ChameleonClient::CMD_MF1_SET_ANTI_COLL,
+                     acoPayload, 5 + uidLen, nullptr, nullptr, &st) ||
+      (st != 0 && st != 0x68)) {
+    f.close();
+    ShowStatusAction::show("HF fail: anticoll");
+    return false;
+  }
 
   // Stream blocks to the slot 8 blocks (128 B) at a time.
   f.seek(0);
@@ -254,7 +274,10 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   }
   f.close();
 
-  c.setSlotEnable(_slot, 2, true);    // HF = freq 2
+  if (!c.setSlotEnable(_slot, 2, true)) {
+    ShowStatusAction::show("HF fail: enable");
+    return false;
+  } // HF = freq 2
   _hfType = tagType;
   _hfEnabled = true;
   return true;
@@ -280,8 +303,9 @@ bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
 
   auto& c = ChameleonClient::get();
   if (!c.setSlotTagType(_slot, 100)) return false;   // EM4100
+  if (!c.setActiveSlot(_slot))       return false;
   if (!c.setEM410XSlot(uid))         return false;
-  c.setSlotEnable(_slot, 1, true);                   // LF = freq 1
+  if (!c.setSlotEnable(_slot, 1, true)) return false; // LF = freq 1
   _lfType    = 100;
   _lfEnabled = true;
   return true;
