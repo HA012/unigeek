@@ -277,12 +277,12 @@ void PN532I2cScreen::onBack() {
       _goNdefParent();
       break;
     case STATE_NDEF_FILE_SELECT:
-      if (_ndefPickDir == _dumpPath || _ndefPickDir.length() == 0) {
+      if (_ndefPickDir == "/" || _ndefPickDir.length() == 0) {
         _ndefPickDir = "";
         _goNdefWrite();
       } else {
         int slash = _ndefPickDir.lastIndexOf('/');
-        _ndefPickDir = (slash > 0) ? _ndefPickDir.substring(0, slash) : _dumpPath;
+        _ndefPickDir = (slash > 0) ? _ndefPickDir.substring(0, slash) : "/";
         _doWriteNdefFromFile();
       }
       break;
@@ -2070,16 +2070,9 @@ void PN532I2cScreen::_doWriteNdefFromFile() {
 
   _state = STATE_NDEF_FILE_SELECT;
   if (_ndefPickDir.length() == 0) _ndefPickDir = _dumpPath;
-  _browser.root = _dumpPath;
+  _browser.root = "/";
 
   uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
-  if (n == 0 && _ndefPickDir == _dumpPath) {
-    ShowStatusAction::show("No .ndef files");
-    _ndefPickDir = "";
-    _goNdefWrite();
-    return;
-  }
-
   setItems(_browser.items(), n);
   render();
 }
