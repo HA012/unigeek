@@ -92,14 +92,14 @@ private:
     _setCount = 0;
 
     if (_mode == INPUT_HEX) {
-      // rows 0-2: 0-9, A-E  row 3: F SPC BKSP SAVE EXIT
+      // rows 0-2: 0-9, A-E  row 3: F SPACE BKSP SAVE EXIT
       static constexpr const char* hexDigits[] = {
         "0","1","2","3","4","5","6","7","8","9","A","B","C","D","E",
       };
       for (int i = 0; i < 15; i++)
         _sets[_setCount++] = { hexDigits[i], hexDigits[i], false, SP_SAVE };
       _sets[_setCount++] = { "F",     "F",    false, SP_SAVE   };
-      _sets[_setCount++] = { nullptr, "SPC",  true,  SP_SPACE  };
+      _sets[_setCount++] = { nullptr, "SPACE",  true,  SP_SPACE  };
       _sets[_setCount++] = { nullptr, "BKSP", true,  SP_DELETE };
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
       _sets[_setCount++] = { nullptr, "EXIT", true,  SP_CANCEL };
