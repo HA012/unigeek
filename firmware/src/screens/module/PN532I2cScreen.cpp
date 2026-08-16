@@ -1907,7 +1907,7 @@ void PN532I2cScreen::_doWriteNdefEmail() {
 }
 
 void PN532I2cScreen::_doWriteNdefPhone() {
-  String phone = InputTextAction::popup("Enter phone", "");
+  String phone = InputTextAction::popup("Enter phone", "", InputTextAction::INPUT_PHONE);
   if (InputTextAction::wasCancelled() || phone.length() == 0) {
     _goNdefWrite();
     return;

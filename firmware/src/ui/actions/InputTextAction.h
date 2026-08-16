@@ -11,7 +11,7 @@
 class InputTextAction
 {
 public:
-  enum Mode : uint8_t { INPUT_TEXT = 0, INPUT_IP_ADDRESS = 1, INPUT_HEX = 2 };
+  enum Mode : uint8_t { INPUT_TEXT = 0, INPUT_IP_ADDRESS = 1, INPUT_HEX = 2, INPUT_PHONE = 3 };
 
   static String popup(const char* title, const String& defaultValue = "", Mode mode = INPUT_TEXT) {
     InputTextAction action(title, defaultValue, mode);
@@ -29,6 +29,7 @@ private:
     SP_DELETE,
     SP_CAPS,
     SP_SYMBOL,
+    SP_SPACE,
     SP_CANCEL,
     SP_COUNT
   };
@@ -91,22 +92,23 @@ private:
     _setCount = 0;
 
     if (_mode == INPUT_HEX) {
-      // rows 0-2: 0-9, A-E  row 3: CNCL F · DEL SAVE
+      // rows 0-2: 0-9, A-E  row 3: F SPC BKSP SAVE EXIT
       static constexpr const char* hexDigits[] = {
         "0","1","2","3","4","5","6","7","8","9","A","B","C","D","E",
       };
       for (int i = 0; i < 15; i++)
         _sets[_setCount++] = { hexDigits[i], hexDigits[i], false, SP_SAVE };
-      _sets[_setCount++] = { nullptr, "CNCL", true,  SP_CANCEL };
       _sets[_setCount++] = { "F",     "F",    false, SP_SAVE   };
-      _sets[_setCount++] = { " ",     " ",    false, SP_SAVE   };
-      _sets[_setCount++] = { nullptr, "DEL",  true,  SP_DELETE };
+      _sets[_setCount++] = { nullptr, "SPC",  true,  SP_SPACE  };
+      _sets[_setCount++] = { nullptr, "BKSP", true,  SP_DELETE };
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
+      _sets[_setCount++] = { nullptr, "EXIT", true,  SP_CANCEL };
     } else if (_mode == INPUT_IP_ADDRESS) {
       // rows 0-1: 0-9  row 2: CNCL · DEL SAVE
       static constexpr const char* ipDigits[] = {
         "0","1","2","3","4","5","6","7","8","9",
       };
+
       for (int i = 0; i < 10; i++)
         _sets[_setCount++] = { ipDigits[i], ipDigits[i], false, SP_SAVE };
       _sets[_setCount++] = { nullptr, "CNCL", true,  SP_CANCEL };
@@ -114,6 +116,23 @@ private:
       _sets[_setCount++] = { nullptr, "DEL",  true,  SP_DELETE };
       _sets[_setCount++] = { nullptr, "",     false, SP_SAVE   };  // spacer
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
+    } else if (_mode == INPUT_PHONE) {
+      // rows 0-1: 0-9
+      // row 2: + - . * #
+      // row 3: ( ) BKSP SAVE EXIT
+      static constexpr const char* phoneChars[] = {
+        "0","1","2","3","4",
+        "5","6","7","8","9",
+        "+","-",".","*","#",
+        "(",")",
+      };
+
+      for (int i = 0; i < 17; i++)
+        _sets[_setCount++] = { phoneChars[i], phoneChars[i], false, SP_SAVE };
+
+      _sets[_setCount++] = { nullptr, "BKSP", true,  SP_DELETE };
+      _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
+      _sets[_setCount++] = { nullptr, "EXIT", true,  SP_CANCEL };
     } else {
       static constexpr const char* charLabels[] = {
         " 0",    ",.1",   "abc2",  "def3",  "ghi4",
@@ -310,6 +329,9 @@ private:
           _tapCount    = 0;
           _pendingChar = "";
           break;
+        case SP_SPACE:
+          _input += ' ';
+          break;
         case SP_CANCEL: _cancelled = true;              break;
         default: break;
       }
@@ -393,7 +415,7 @@ private:
       sp.setTextColor(TFT_WHITE, theme);
     } else {
       sp.drawRoundRect(1, 1, cW - 2, cH - 2, 3, 0x2104);
-      sp.setTextColor(s.isSpecial ? TFT_CYAN : TFT_LIGHTGREY, TFT_BLACK);
+      sp.setTextColor(s.isSpecial ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
     }
     String lbl = String(s.label);
     if (!s.isSpecial && _capsLock && _mode == INPUT_TEXT) lbl.toUpperCase();
@@ -438,6 +460,9 @@ private:
         } else if (c != '\0') {
           bool allow = _mode == INPUT_HEX    ? (isxdigit(c) || c == ' ')
                      : _mode == INPUT_IP_ADDRESS ? (isdigit(c) || c == '.')
+                     : _mode == INPUT_PHONE      ? (isdigit(c) || c == '+' || c == '-' ||
+                                                    c == '.' || c == '*' || c == '#' ||
+                                                    c == '(' || c == ')')
                      : true;
           if (allow) {
             if (_mode == INPUT_HEX && isalpha(c)) c = toupper(c);
@@ -475,7 +500,8 @@ private:
     lcd.setCursor(x + PAD, y + KB_H - PAD - 8);
     lcd.print(_mode == INPUT_HEX    ? "0-9 A-F SPACE + ENTER"
             : _mode == INPUT_IP_ADDRESS ? "0-9 . + ENTER to confirm"
-            :                         "Type + ENTER to confirm");
+            : _mode == INPUT_PHONE      ? "0-9 + - . * # ( ) + ENTER"
+            :                             "Type + ENTER to confirm");
   }
 
   void _drawInputKeyboard(bool cursorOn) {
