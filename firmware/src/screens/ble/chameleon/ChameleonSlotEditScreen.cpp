@@ -8,6 +8,7 @@
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/views/ProgressView.h"
 
 void ChameleonSlotEditScreen::_load() {
   auto& c = ChameleonClient::get();
@@ -130,13 +131,16 @@ void ChameleonSlotEditScreen::_editType(bool lf) {
   if (!r) { render(); return; }
   uint16_t v = (uint16_t)strtoul(r, nullptr, 10);
 
-  if (ChameleonClient::get().setSlotTagType(_slot, v)) {
+  bool ok = ChameleonClient::get().setSlotTagType(_slot, v);
+  if (ok) {
     if (lf) _lfType = v; else _hfType = v;
-  } else {
-    ShowStatusAction::show("Set type failed", 1200);
   }
   _rebuildLabels();
   render();
+  if (!ok) {
+    ShowStatusAction::show("Set type failed", 1200);
+    render();
+  }
 }
 
 void ChameleonSlotEditScreen::_toggleEnable(bool lf) {
@@ -154,16 +158,19 @@ void ChameleonSlotEditScreen::_editNick(bool lf) {
   String r = InputTextAction::popup(lf ? "LF nick" : "HF nick", cur);
   if (r.length() == 0) { render(); return; }
   uint8_t freq = lf ? 1 : 2;
-  if (ChameleonClient::get().setSlotNick(_slot, freq, r.c_str())) {
+  bool ok = ChameleonClient::get().setSlotNick(_slot, freq, r.c_str());
+  if (ok) {
     strncpy(lf ? _lfNick : _hfNick, r.c_str(),
             (lf ? sizeof(_lfNick) : sizeof(_hfNick)) - 1);
     int n = Achievement.inc("chameleon_nick_set");
     if (n == 1) Achievement.unlock("chameleon_nick_set");
-  } else {
-    ShowStatusAction::show("Set nick failed", 1200);
   }
   _rebuildLabels();
   render();
+  if (!ok) {
+    ShowStatusAction::show("Set nick failed", 1200);
+    render();
+  }
 }
 
 void ChameleonSlotEditScreen::_loadDefault() {
@@ -175,8 +182,14 @@ void ChameleonSlotEditScreen::_loadDefault() {
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint16_t t = lf ? _lfType : _hfType;
-  if (t == 0) { ShowStatusAction::show("Set type first", 1200); render(); return; }
+  if (t == 0) {
+    render();
+    ShowStatusAction::show("Set type first", 1200);
+    render();
+    return;
+  }
   bool ok = ChameleonClient::get().setSlotDataDefault(_slot, t);
+  render();
   ShowStatusAction::show(ok ? "Default loaded" : "Load failed", 1200);
   render();
 }
@@ -191,17 +204,19 @@ void ChameleonSlotEditScreen::_deleteSlot(bool) {
   bool lf = (strcmp(r, "lf") == 0);
   uint8_t freq = lf ? 1 : 2;
   bool ok = ChameleonClient::get().deleteSlot(_slot, freq);
-  ShowStatusAction::show(ok ? "Deleted" : "Delete failed", 1200);
   if (ok) {
     if (lf) { _lfType = 0; _lfEnabled = false; _lfNick[0] = 0; }
     else    { _hfType = 0; _hfEnabled = false; _hfNick[0] = 0; }
   }
   _rebuildLabels();
   render();
+  ShowStatusAction::show(ok ? "Deleted" : "Delete failed", 1200);
+  render();
 }
 
 void ChameleonSlotEditScreen::_saveNicks() {
   bool ok = ChameleonClient::get().saveSlotNicks();
+  render();
   ShowStatusAction::show(ok ? "Nicks saved" : "Save failed", 1200);
   render();
 }
@@ -228,17 +243,14 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   auto& c = ChameleonClient::get();
   if (!c.setSlotTagType(_slot, tagType)) {
     f.close();
-    ShowStatusAction::show("HF fail: type");
     return false;
   }
   if (!c.setSlotDataDefault(_slot, tagType)) {
     f.close();
-    ShowStatusAction::show("HF fail: init");
     return false;
   }
   if (!c.setActiveSlot(_slot)) {
     f.close();
-    ShowStatusAction::show("HF fail: active");
     return false;
   }
 
@@ -258,24 +270,48 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
                      acoPayload, 5 + uidLen, nullptr, nullptr, &st) ||
       (st != 0 && st != 0x68)) {
     f.close();
-    ShowStatusAction::show("HF fail: anticoll");
     return false;
   }
 
   // Stream blocks to the slot 8 blocks (128 B) at a time.
+  // Match the PN532 write UI: centered status text + real progress bar.
   f.seek(0);
   uint8_t buf[128];
   uint8_t startBlock = 0;
+  uint32_t loaded = 0;
+
+  const uint16_t totalBlocks = (uint16_t)(size / 16);
+
+  ProgressView::init();
+
   while (f.available()) {
     int n = f.read(buf, sizeof(buf));
     if (n <= 0) break;
-    if (!c.mf1LoadBlockData(_slot, startBlock, buf, (uint16_t)n)) { f.close(); return false; }
+
+    uint16_t loadedBlocks = (uint16_t)(loaded / 16);
+    char msg[40];
+    snprintf(msg, sizeof(msg), "Loading HF slot %u: block %u/%u",
+             _slot + 1,
+             (unsigned)loadedBlocks,
+             (unsigned)totalBlocks);
+
+    int pct = (size > 0) ? (int)((loaded * 100UL) / size) : 0;
+    ProgressView::progress(msg, pct);
+
+    if (!c.mf1LoadBlockData(_slot, startBlock, buf, (uint16_t)n)) {
+      f.close();
+      ProgressView::finish();
+      return false;
+    }
+
+    loaded += (uint32_t)n;
     startBlock += n / 16;
   }
   f.close();
 
+  ProgressView::finish();
+
   if (!c.setSlotEnable(_slot, 2, true)) {
-    ShowStatusAction::show("HF fail: enable");
     return false;
   } // HF = freq 2
   _hfType = tagType;
@@ -335,6 +371,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     static constexpr uint8_t kMax = 10;
     uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", ".bin");
     if (n == 0) {
+      render();
       ShowStatusAction::show("No .bin in nfc/dumps", 1500);
       render();
       return;
@@ -351,14 +388,19 @@ void ChameleonSlotEditScreen::_writeContent() {
     uint8_t idx = (uint8_t)atoi(r);
     if (idx >= count) { render(); return; }
     String path = _browser.entry(idx).path;
-    Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-    Uni.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    Uni.Lcd.setTextDatum(MC_DATUM);
-    Uni.Lcd.drawString("Loading HF dump...",
-                       bodyX() + bodyW() / 2,
-                       bodyY() + bodyH() / 2);
+
+    // The file picker is an overlay and leaves its cleared region behind.
+    // Restore the Slot Edit screen before the blocking BLE load begins.
+    render();
+
     bool ok = _writeHfFromBin(path.c_str());
-    ShowStatusAction::show(ok ? "HF loaded to slot" : "HF load failed", 1500);
+
+    _rebuildLabels();
+    render();
+
+    ShowStatusAction::show(ok ? "HF load OK" : "HF load failed", 1500);
+    render();
+
     if (ok) {
       int n = Achievement.inc("chameleon_slot_loaded");
       if (n == 1) Achievement.unlock("chameleon_slot_loaded");
@@ -366,21 +408,23 @@ void ChameleonSlotEditScreen::_writeContent() {
   } else {
     String hex = InputTextAction::popup("EM410X UID (10 hex)");
     if (hex.length() == 0) { render(); return; }
-    Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-    Uni.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    Uni.Lcd.setTextDatum(MC_DATUM);
-    Uni.Lcd.drawString("Loading LF dump...",
-                       bodyX() + bodyW() / 2,
-                       bodyY() + bodyH() / 2);
+
+    // Restore the Slot Edit screen before the blocking BLE write begins.
+    render();
+
     bool ok = _writeLfFromHex(hex.c_str());
-    ShowStatusAction::show(ok ? "LF loaded to slot" : "LF load failed", 1500);
+
+    _rebuildLabels();
+    render();
+
+    ShowStatusAction::show(ok ? "LF load OK" : "LF load failed", 1500);
+    render();
+
     if (ok) {
       int n = Achievement.inc("chameleon_slot_loaded");
       if (n == 1) Achievement.unlock("chameleon_slot_loaded");
     }
   }
-  _rebuildLabels();
-  render();
 }
 
 void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {
