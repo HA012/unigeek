@@ -351,6 +351,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     uint8_t idx = (uint8_t)atoi(r);
     if (idx >= count) { render(); return; }
     String path = _browser.entry(idx).path;
+    ShowStatusAction::show("Loading HF dump...");
     bool ok = _writeHfFromBin(path.c_str());
     ShowStatusAction::show(ok ? "HF loaded to slot" : "HF load failed", 1500);
     if (ok) {
@@ -360,6 +361,7 @@ void ChameleonSlotEditScreen::_writeContent() {
   } else {
     String hex = InputTextAction::popup("EM410X UID (10 hex)");
     if (hex.length() == 0) { render(); return; }
+    ShowStatusAction::show("Loading LF dump...");
     bool ok = _writeLfFromHex(hex.c_str());
     ShowStatusAction::show(ok ? "LF loaded to slot" : "LF load failed", 1500);
     if (ok) {
