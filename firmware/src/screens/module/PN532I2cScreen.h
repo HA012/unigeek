@@ -104,9 +104,11 @@ private:
     {"URL Record"},
   };
 
-  ListItem _ndefWriteItems[3] = {
+  ListItem _ndefWriteItems[5] = {
     {"Text"},
     {"URL"},
+    {"Email"},
+    {"Phone"},
     {"From File"},
   };
 
@@ -158,6 +160,8 @@ private:
   void _goNdefParent();
   void _doWriteNdefText();
   void _doWriteNdefUrl();
+  void _doWriteNdefEmail();
+  void _doWriteNdefPhone();
   void _doWriteNdefFromFile();
   void _doWriteNdefFileSelected(uint8_t fileIndex);
   void _showNdefActions();
@@ -185,5 +189,6 @@ private:
   const char* _inferType(uint8_t sak, uint16_t atqa) const;
   bool _scanCardOrShow(uint32_t timeoutMs);
   void _pushRow(const String& label, const String& value);
+  void _pushWrappedRow(const String& label, const String& value);
   void _resetRows();
 };

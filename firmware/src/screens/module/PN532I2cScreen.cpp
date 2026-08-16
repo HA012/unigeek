@@ -221,7 +221,9 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_NDEF_WRITE_MENU:
       if (index == 0) _doWriteNdefText();
       else if (index == 1) _doWriteNdefUrl();
-      else if (index == 2) _doWriteNdefFromFile();
+      else if (index == 2) _doWriteNdefEmail();
+      else if (index == 3) _doWriteNdefPhone();
+      else if (index == 4) _doWriteNdefFromFile();
       break;
     case STATE_NDEF_FILE_SELECT:
       _doWriteNdefFileSelected(index);
@@ -391,7 +393,7 @@ void PN532I2cScreen::_goUltralight() {
 
 void PN532I2cScreen::_goNdefWrite() {
   _state = STATE_NDEF_WRITE_MENU;
-  setItems(_ndefWriteItems, 3);
+  setItems(_ndefWriteItems, 5);
   render();
 }
 
@@ -488,6 +490,71 @@ void PN532I2cScreen::_pushRow(const String& label, const String& value) {
   _rowValues[_rowCount] = value;
   _rows[_rowCount] = { _rowLabels[_rowCount].c_str(), _rowValues[_rowCount] };
   _rowCount++;
+}
+
+
+void PN532I2cScreen::_pushWrappedRow(const String& label, const String& value) {
+  if (value.length() == 0) {
+    _pushRow(label, "");
+    return;
+  }
+
+  // ScrollListView uses the built-in size-1 font. Keep enough room for the
+  // label on the first row; continuation rows can use almost the full width.
+  // Using conservative character widths avoids overlap/clipping without
+  // changing ScrollListView globally.
+  int totalChars = (bodyW() - 10) / 6;
+  if (totalChars < 12) totalChars = 12;
+
+  int firstChars = totalChars - (int)label.length() - 2;
+  if (firstChars < 8) firstChars = 8;
+
+  int pos = 0;
+  bool first = true;
+
+  while (pos < (int)value.length() && _rowCount < MAX_ROWS) {
+    while (pos < (int)value.length() &&
+           (value[pos] == ' ' || value[pos] == '\n' || value[pos] == '\r' || value[pos] == '\t')) {
+      pos++;
+    }
+    if (pos >= (int)value.length()) break;
+
+    const int maxChars = first ? firstChars : totalChars;
+    int end = pos + maxChars;
+    if (end > (int)value.length()) end = value.length();
+
+    // Respect explicit newlines.
+    int newline = value.indexOf('\n', pos);
+    if (newline >= pos && newline < end) {
+      end = newline;
+    } else if (end < (int)value.length()) {
+      // Prefer a word boundary. For URLs / very long tokens there may be no
+      // spaces, in which case the hard character boundary is used.
+      int split = -1;
+      for (int i = end; i > pos; --i) {
+        if (value[i - 1] == ' ' || value[i - 1] == '\t') {
+          split = i - 1;
+          break;
+        }
+      }
+      if (split > pos) end = split;
+    }
+
+    if (end <= pos) end = min(pos + maxChars, (int)value.length());
+
+    String part = value.substring(pos, end);
+    part.trim();
+    _pushRow(first ? label : "", part);
+
+    pos = end;
+    first = false;
+
+    // Skip whitespace/newline consumed at the wrap point.
+    while (pos < (int)value.length() &&
+           (value[pos] == ' ' || value[pos] == '\n' || value[pos] == '\r' || value[pos] == '\t')) {
+      pos++;
+    }
+  }
 }
 
 std::pair<size_t, size_t> PN532I2cScreen::_mfDims(uint8_t sak) const {
@@ -1171,7 +1238,7 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
       if (!utf16) {
         String text;
         for (size_t i = 1 + langLen; i < payloadLen; i++) text += (char)payload[i];
-        _pushRow("Text", text);
+        _pushWrappedRow("Text", text);
       } else {
         _pushRow("Text", "(UTF-16 raw)");
         uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
@@ -1185,7 +1252,7 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
     for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
 
     _pushRow("Record", "URI");
-    _pushRow("URI", uri);
+    _pushWrappedRow("URI", uri);
   }
   else {
     _pushRow("Record", "Unsupported");
@@ -1798,6 +1865,87 @@ void PN532I2cScreen::_doWriteNdefUrl() {
   delete[] ndef;
   _goNdefParent();
 }
+
+void PN532I2cScreen::_doWriteNdefEmail() {
+  String email = InputTextAction::popup("Enter email", "");
+  if (InputTextAction::wasCancelled() || email.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  String uri = email.startsWith("mailto:") ? email : ("mailto:" + email);
+
+  uint8_t prefix = 0x06;  // "mailto:"
+  const char* body = uri.c_str() + 7;
+  size_t bodyLen = strlen(body);
+  size_t payloadLen = 1 + bodyLen;
+  size_t ndefLen = 4 + payloadLen;
+
+  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
+    ShowStatusAction::show("Email too long");
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen];
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefWrite();
+    return;
+  }
+
+  ndef[0] = 0xD1;                  // MB | ME | SR | TNF=Well Known
+  ndef[1] = 0x01;                  // Type length
+  ndef[2] = (uint8_t)payloadLen;
+  ndef[3] = 'U';                   // URI record
+  ndef[4] = prefix;
+  memcpy(&ndef[5], body, bodyLen);
+
+  _writeNdefRecord(ndef, ndefLen);
+  delete[] ndef;
+  _goNdefParent();
+}
+
+void PN532I2cScreen::_doWriteNdefPhone() {
+  String phone = InputTextAction::popup("Enter phone", "");
+  if (InputTextAction::wasCancelled() || phone.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  String uri = phone.startsWith("tel:") ? phone : ("tel:" + phone);
+
+  uint8_t prefix = 0x05;  // "tel:"
+  const char* body = uri.c_str() + 4;
+  size_t bodyLen = strlen(body);
+  size_t payloadLen = 1 + bodyLen;
+  size_t ndefLen = 4 + payloadLen;
+
+  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
+    ShowStatusAction::show("Phone too long");
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen];
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefWrite();
+    return;
+  }
+
+  ndef[0] = 0xD1;                  // MB | ME | SR | TNF=Well Known
+  ndef[1] = 0x01;                  // Type length
+  ndef[2] = (uint8_t)payloadLen;
+  ndef[3] = 'U';                   // URI record
+  ndef[4] = prefix;
+  memcpy(&ndef[5], body, bodyLen);
+
+  _writeNdefRecord(ndef, ndefLen);
+  delete[] ndef;
+  _goNdefParent();
+}
+
 
 
 
