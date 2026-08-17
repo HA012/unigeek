@@ -223,9 +223,10 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_NDEF_WRITE_MENU:
       if (index == 0) _doWriteNdefText();
       else if (index == 1) _doWriteNdefUrl();
-      else if (index == 2) _doWriteNdefEmail();
-      else if (index == 3) _doWriteNdefPhone();
-      else if (index == 4) _doWriteNdefFromFile();
+      else if (index == 2) _doWriteNdefPhone();
+      else if (index == 3) _doWriteNdefEmail();
+      else if (index == 4) _doWriteNdefVcard();
+      else if (index == 5) _doWriteNdefFromFile();
       break;
     case STATE_NDEF_GENERATE_MENU:
       if (index == 0) _doGenerateNdefText();
@@ -407,7 +408,7 @@ void PN532I2cScreen::_goUltralight() {
 
 void PN532I2cScreen::_goNdefWrite() {
   _state = STATE_NDEF_WRITE_MENU;
-  setItems(_ndefWriteItems, 5);
+  setItems(_ndefWriteItems, 6);
   render();
 }
 
@@ -2113,6 +2114,77 @@ void PN532I2cScreen::_doGenerateNdefEmail() {
   _goNdefGenerate();
 }
 
+void PN532I2cScreen::_doWriteNdefVcard() {
+  String contact = InputTextAction::popup("Contact name", "");
+  if (InputTextAction::wasCancelled() || contact.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  String company = InputTextAction::popup("Company", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String address = InputTextAction::popup("Address", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String mail = InputTextAction::popup("Mail", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String website = InputTextAction::popup("Website", "https://");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  auto escapeVcard = [](String s) -> String {
+    s.replace("\\", "\\\\");
+    s.replace("\r", "");
+    s.replace("\n", "\\n");
+    s.replace(";", "\\;");
+    s.replace(",", "\\,");
+    return s;
+  };
+
+  String card = "BEGIN:VCARD\r\nVERSION:3.0\r\n";
+  card += "FN:" + escapeVcard(contact) + "\r\n";
+  if (company.length()) card += "ORG:" + escapeVcard(company) + "\r\n";
+  if (address.length()) card += "ADR:;;" + escapeVcard(address) + ";;;;\r\n";
+  if (phone.length()) card += "TEL:" + escapeVcard(phone) + "\r\n";
+  if (mail.length()) card += "EMAIL:" + escapeVcard(mail) + "\r\n";
+  if (website.length() && website != "https://") {
+    card += "URL:" + escapeVcard(website) + "\r\n";
+  }
+  card += "END:VCARD\r\n";
+
+  const char* mime = "text/vcard";
+  const size_t typeLen = strlen(mime);
+  const size_t payloadLen = card.length();
+  const size_t ndefLen = 3 + typeLen + payloadLen;
+
+  if (payloadLen > 255 || ndefLen > MAX_NDEF_BYTES) {
+    ShowStatusAction::show("vCard too large");
+    _goNdefWrite();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefWrite();
+    return;
+  }
+
+  ndef[0] = 0xD2; // MB | ME | SR | TNF=MIME Media
+  ndef[1] = (uint8_t)typeLen;
+  ndef[2] = (uint8_t)payloadLen;
+  memcpy(&ndef[3], mime, typeLen);
+  memcpy(&ndef[3 + typeLen], card.c_str(), payloadLen);
+
+  _writeNdefRecord(ndef, ndefLen);
+  delete[] ndef;
+  _goNdefParent();
+}
+
 void PN532I2cScreen::_doGenerateNdefVcard() {
   String contact = InputTextAction::popup("Contact name", "");
   if (InputTextAction::wasCancelled() || contact.length() == 0) {
@@ -2179,7 +2251,7 @@ void PN532I2cScreen::_doGenerateNdefVcard() {
   memcpy(&ndef[3], mime, typeLen);
   memcpy(&ndef[3 + typeLen], card.c_str(), payloadLen);
 
-  String name = InputTextAction::popup("File name", "contact");
+  String name = InputTextAction::popup("File name", "vcard");
   if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
   delete[] ndef;
   _goNdefGenerate();

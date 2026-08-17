@@ -106,11 +106,12 @@ private:
     {"URL Record"},
   };
 
-  ListItem _ndefWriteItems[5] = {
+  ListItem _ndefWriteItems[6] = {
     {"Text"},
     {"URL"},
-    {"Email"},
     {"Phone"},
+    {"Email"},
+    {"vCard"},
     {"From File"},
   };
 
@@ -175,6 +176,7 @@ private:
   void _doWriteNdefUrl();
   void _doWriteNdefEmail();
   void _doWriteNdefPhone();
+  void _doWriteNdefVcard();
   void _doGenerateNdefText();
   void _doGenerateNdefUrl();
   void _doGenerateNdefVcard();
