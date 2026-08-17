@@ -117,12 +117,14 @@ private:
   ListItem _ndefGenerateItems[5] = {
     {"Text"},
     {"URL"},
-    {"vCard"},
     {"Phone"},
     {"Email"},
+    {"vCard"},
   };
 
   // MIFARE dump image — filled by _doDumpMemory(), saved by _doSaveDump()
+  static constexpr const char* _nfcPath  = "/unigeek/nfc";
+  static constexpr const char* _ndefPath = "/unigeek/nfc/ndefs";
   static constexpr const char* _dumpPath = "/unigeek/nfc/dumps";
   uint8_t  _dumpImg[1024] = {};
   bool     _hasDump = false;

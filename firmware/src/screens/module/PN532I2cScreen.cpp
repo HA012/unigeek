@@ -230,9 +230,9 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_NDEF_GENERATE_MENU:
       if (index == 0) _doGenerateNdefText();
       else if (index == 1) _doGenerateNdefUrl();
-      else if (index == 2) _doGenerateNdefVcard();
-      else if (index == 3) _doGenerateNdefPhone();
-      else if (index == 4) _doGenerateNdefEmail();
+      else if (index == 2) _doGenerateNdefPhone();
+      else if (index == 3) _doGenerateNdefEmail();
+      else if (index == 4) _doGenerateNdefVcard();
       break;
     case STATE_NDEF_FILE_SELECT:
       _doWriteNdefFileSelected(index);
@@ -289,12 +289,14 @@ void PN532I2cScreen::onBack() {
       _goNdefParent();
       break;
     case STATE_NDEF_FILE_SELECT:
-      if (_ndefPickDir == "/" || _ndefPickDir.length() == 0) {
+      if (_ndefPickDir == _nfcPath || _ndefPickDir.length() == 0) {
         _ndefPickDir = "";
         _goNdefWrite();
       } else {
         int slash = _ndefPickDir.lastIndexOf('/');
-        _ndefPickDir = (slash > 0) ? _ndefPickDir.substring(0, slash) : "/";
+        String parent = (slash > 0) ? _ndefPickDir.substring(0, slash) : String(_nfcPath);
+        if (!parent.startsWith(_nfcPath)) parent = _nfcPath;
+        _ndefPickDir = parent;
         _doWriteNdefFromFile();
       }
       break;
@@ -1926,17 +1928,16 @@ bool PN532I2cScreen::_saveGeneratedNdef(const uint8_t* ndef, size_t ndefLen,
     return false;
   }
 
-  static constexpr const char* NDEF_DIR = "/unigeek/nfc/ndefs";
-  Uni.Storage->makeDir("/unigeek/nfc");
-  Uni.Storage->makeDir(NDEF_DIR);
+  Uni.Storage->makeDir(_nfcPath);
+  Uni.Storage->makeDir(_ndefPath);
 
   const String base = _sanitizeGeneratedNdefName(suggestedName);
-  String path = String(NDEF_DIR) + "/" + base + ".ndef";
+  String path = String(_ndefPath) + "/" + base + ".ndef";
 
   if (Uni.Storage->exists(path.c_str())) {
     for (int n = 2; n < 1000; n++) {
       String candidate =
-          String(NDEF_DIR) + "/" + base + "_(" + n + ").ndef";
+          String(_ndefPath) + "/" + base + "_(" + n + ").ndef";
       if (!Uni.Storage->exists(candidate.c_str())) {
         path = candidate;
         break;
@@ -2466,12 +2467,13 @@ void PN532I2cScreen::_doWriteNdefFromFile() {
     return;
   }
 
-  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir(_nfcPath);
+  Uni.Storage->makeDir(_ndefPath);
   Uni.Storage->makeDir(_dumpPath);
 
   _state = STATE_NDEF_FILE_SELECT;
-  if (_ndefPickDir.length() == 0) _ndefPickDir = _dumpPath;
-  _browser.root = "/";
+  if (_ndefPickDir.length() == 0) _ndefPickDir = _nfcPath;
+  _browser.root = _nfcPath;
 
   uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
   setItems(_browser.items(), n);
