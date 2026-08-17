@@ -90,6 +90,7 @@ const char* PN532I2cScreen::title() {
     case STATE_NDEF_WRITE_MENU: return "Write NDEF";
     case STATE_NDEF_RESULT:     return "NDEF Result";
     case STATE_NDEF_FILE_SELECT:return "NDEF Files";
+    case STATE_NDEF_GENERATE_MENU:return "Generate NDEF Record";
   }
   return "PN532 I2C";
 }
@@ -178,6 +179,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
         case 2: _goUltralight();      break;
         case 3: _goMagic();           break;
         case 4: _showFirmwareInfo();  break;
+        case 5: _goNdefGenerate();    break;
       }
       break;
     case STATE_MIFARE_MENU:
@@ -224,6 +226,13 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       else if (index == 2) _doWriteNdefEmail();
       else if (index == 3) _doWriteNdefPhone();
       else if (index == 4) _doWriteNdefFromFile();
+      break;
+    case STATE_NDEF_GENERATE_MENU:
+      if (index == 0) _doGenerateNdefText();
+      else if (index == 1) _doGenerateNdefUrl();
+      else if (index == 2) _doGenerateNdefVcard();
+      else if (index == 3) _doGenerateNdefPhone();
+      else if (index == 4) _doGenerateNdefEmail();
       break;
     case STATE_NDEF_FILE_SELECT:
       _doWriteNdefFileSelected(index);
@@ -272,6 +281,9 @@ void PN532I2cScreen::onBack() {
       break;
     case STATE_NDEF_WRITE_MENU:
       _goNdefParent();
+      break;
+    case STATE_NDEF_GENERATE_MENU:
+      _goMain();
       break;
     case STATE_NDEF_RESULT:
       _goNdefParent();
@@ -375,7 +387,7 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5);
+  setItems(_mainItems, 6);
   render();
 }
 
@@ -394,6 +406,12 @@ void PN532I2cScreen::_goUltralight() {
 void PN532I2cScreen::_goNdefWrite() {
   _state = STATE_NDEF_WRITE_MENU;
   setItems(_ndefWriteItems, 5);
+  render();
+}
+
+void PN532I2cScreen::_goNdefGenerate() {
+  _state = STATE_NDEF_GENERATE_MENU;
+  setItems(_ndefGenerateItems, 5);
   render();
 }
 
@@ -1251,8 +1269,99 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
     String uri = _ndefUriPrefix(payload[0]);
     for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
 
-    _pushRow("Record", "URI");
-    _pushWrappedRow("URI", uri);
+    if (uri.startsWith("mailto:")) {
+      _pushRow("Record", "Email");
+      _pushWrappedRow("Mail", uri.substring(7));
+    }
+    else if (uri.startsWith("tel:")) {
+      _pushRow("Record", "Phone");
+      _pushWrappedRow("Phone", uri.substring(4));
+    }
+    else {
+      _pushRow("Record", "URI");
+      _pushWrappedRow("URI", uri);
+    }
+  }
+  // MIME vCard record. Common NFC writers use either text/vcard or
+  // text/x-vcard. Keep this read-only for now: parse useful contact fields
+  // from the payload and display them using the existing wrapped-row UI.
+  else if (tnf == 0x02 &&
+           (typeStr.equalsIgnoreCase("text/vcard") ||
+            typeStr.equalsIgnoreCase("text/x-vcard"))) {
+    String vcard;
+    vcard.reserve(payloadLen);
+    for (size_t i = 0; i < payloadLen; i++) vcard += (char)payload[i];
+    vcard.replace("\r\n", "\n");
+    vcard.replace("\r", "\n");
+
+    _pushRow("Record", "vCard");
+
+    auto vcardValue = [&](const char* key) -> String {
+      const String prefix = String(key) + ":";
+      int start = 0;
+      while (start < (int)vcard.length()) {
+        int end = vcard.indexOf('\n', start);
+        if (end < 0) end = vcard.length();
+
+        String line = vcard.substring(start, end);
+        line.trim();
+
+        // Accept parameters such as TEL;TYPE=CELL:... and
+        // EMAIL;TYPE=INTERNET:...
+        int colon = line.indexOf(':');
+        if (colon > 0) {
+          String lhs = line.substring(0, colon);
+          int semi = lhs.indexOf(';');
+          if (semi >= 0) lhs = lhs.substring(0, semi);
+
+          if (lhs.equalsIgnoreCase(key)) {
+            String value = line.substring(colon + 1);
+            value.replace("\\n", "\n");
+            value.replace("\\,", ",");
+            value.replace("\\;", ";");
+            value.replace("\\\\", "\\");
+            value.trim();
+            return value;
+          }
+        }
+        start = end + 1;
+      }
+      return "";
+    };
+
+    String name = vcardValue("FN");
+    if (name.length() == 0) name = vcardValue("N");
+    String company = vcardValue("ORG");
+    String address = vcardValue("ADR");
+    String phone = vcardValue("TEL");
+    String mail = vcardValue("EMAIL");
+    String website = vcardValue("URL");
+
+    // vCard structured fields use semicolons. For display, collapse empty
+    // components and show them as a readable comma-separated value.
+    auto cleanStructured = [](String value) -> String {
+      while (value.indexOf(";;") >= 0) value.replace(";;", ";");
+      while (value.startsWith(";")) value.remove(0, 1);
+      while (value.endsWith(";")) value.remove(value.length() - 1);
+      value.replace(";", ", ");
+      return value;
+    };
+
+    name = cleanStructured(name);
+    company = cleanStructured(company);
+    address = cleanStructured(address);
+
+    if (name.length())    _pushWrappedRow("Contact name", name);
+    if (company.length()) _pushWrappedRow("Company", company);
+    if (address.length()) _pushWrappedRow("Address", address);
+    if (phone.length())   _pushWrappedRow("Phone", phone);
+    if (mail.length())    _pushWrappedRow("Mail", mail);
+    if (website.length()) _pushWrappedRow("Website", website);
+
+    if (!name.length() && !company.length() && !address.length() &&
+        !phone.length() && !mail.length() && !website.length()) {
+      _pushWrappedRow("vCard", vcard);
+    }
   }
   else {
     _pushRow("Record", "Unsupported");
@@ -1781,6 +1890,298 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
 
   ShowStatusAction::show(success ? "NDEF write OK" : "NDEF write failed");
   return success;
+}
+
+
+static String _sanitizeGeneratedNdefName(String name) {
+  name.trim();
+  if (name.length() == 0) name = "record";
+
+  for (int i = 0; i < (int)name.length(); i++) {
+    const char c = name[i];
+    const bool ok =
+        (c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '-' || c == '_';
+    if (!ok) name.setCharAt(i, '_');
+  }
+
+  while (name.indexOf("__") >= 0) name.replace("__", "_");
+  while (name.startsWith("_")) name.remove(0, 1);
+  while (name.endsWith("_")) name.remove(name.length() - 1);
+  if (name.length() == 0) name = "record";
+  return name;
+}
+
+bool PN532I2cScreen::_saveGeneratedNdef(const uint8_t* ndef, size_t ndefLen,
+                                        const String& suggestedName) {
+  if (!ndef || ndefLen == 0 || ndefLen > MAX_NDEF_BYTES) {
+    ShowStatusAction::show("Invalid NDEF record");
+    return false;
+  }
+
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable");
+    return false;
+  }
+
+  static constexpr const char* NDEF_DIR = "/unigeek/nfc/ndefs";
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir(NDEF_DIR);
+
+  const String base = _sanitizeGeneratedNdefName(suggestedName);
+  String path = String(NDEF_DIR) + "/" + base + ".ndef";
+
+  if (Uni.Storage->exists(path.c_str())) {
+    for (int n = 2; n < 1000; n++) {
+      String candidate =
+          String(NDEF_DIR) + "/" + base + "_(" + n + ").ndef";
+      if (!Uni.Storage->exists(candidate.c_str())) {
+        path = candidate;
+        break;
+      }
+    }
+  }
+
+  fs::File f = Uni.Storage->open(path.c_str(), "w");
+  if (!f) {
+    ShowStatusAction::show("Save failed");
+    return false;
+  }
+
+  const size_t written = f.write(ndef, ndefLen);
+  f.close();
+
+  if (written != ndefLen) {
+    ShowStatusAction::show("Save failed");
+    return false;
+  }
+
+  const int slash = path.lastIndexOf('/');
+  const String name = (slash >= 0) ? path.substring(slash + 1) : path;
+  ShowStatusAction::show(("Saved: " + name).c_str(), 1500);
+  return true;
+}
+
+static bool _buildGeneratedUriNdef(const String& input, uint8_t prefix,
+                                   const char* stripPrefix,
+                                   uint8_t* out, size_t& outLen,
+                                   size_t maxNdefBytes) {
+  String body = input;
+  if (stripPrefix && body.startsWith(stripPrefix)) {
+    body = body.substring(strlen(stripPrefix));
+  }
+
+  const size_t payloadLen = 1 + body.length();
+  const size_t ndefLen = 4 + payloadLen;
+  if (ndefLen > maxNdefBytes || payloadLen > 255) return false;
+
+  out[0] = 0xD1;
+  out[1] = 0x01;
+  out[2] = (uint8_t)payloadLen;
+  out[3] = 'U';
+  out[4] = prefix;
+  memcpy(&out[5], body.c_str(), body.length());
+  outLen = ndefLen;
+  return true;
+}
+
+void PN532I2cScreen::_doGenerateNdefText() {
+  String value = InputTextAction::popup("Text", "");
+  if (InputTextAction::wasCancelled() || value.length() == 0) {
+    _goNdefGenerate();
+    return;
+  }
+
+  const size_t payloadLen = 3 + value.length();
+  const size_t ndefLen = 4 + payloadLen;
+  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
+    ShowStatusAction::show("Text too long");
+    _goNdefGenerate();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefGenerate();
+    return;
+  }
+
+  ndef[0] = 0xD1;
+  ndef[1] = 0x01;
+  ndef[2] = (uint8_t)payloadLen;
+  ndef[3] = 'T';
+  ndef[4] = 0x02;
+  ndef[5] = 'e';
+  ndef[6] = 'n';
+  memcpy(&ndef[7], value.c_str(), value.length());
+
+  String name = InputTextAction::popup("File name", "text");
+  if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
+  delete[] ndef;
+  _goNdefGenerate();
+}
+
+void PN532I2cScreen::_doGenerateNdefUrl() {
+  String url = InputTextAction::popup("URL", "https://");
+  if (InputTextAction::wasCancelled() || url.length() == 0) {
+    _goNdefGenerate();
+    return;
+  }
+
+  uint8_t prefix = 0x00;
+  const char* strip = nullptr;
+  if      (url.startsWith("https://www.")) { prefix = 0x02; strip = "https://www."; }
+  else if (url.startsWith("http://www."))  { prefix = 0x01; strip = "http://www."; }
+  else if (url.startsWith("https://"))      { prefix = 0x04; strip = "https://"; }
+  else if (url.startsWith("http://"))       { prefix = 0x03; strip = "http://"; }
+
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefGenerate();
+    return;
+  }
+  size_t ndefLen = 0;
+  if (!_buildGeneratedUriNdef(url, prefix, strip, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("URL too long");
+    _goNdefGenerate();
+    return;
+  }
+
+  String name = InputTextAction::popup("File name", "url");
+  if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
+  delete[] ndef;
+  _goNdefGenerate();
+}
+
+void PN532I2cScreen::_doGenerateNdefPhone() {
+  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+  if (InputTextAction::wasCancelled() || phone.length() == 0) {
+    _goNdefGenerate();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefGenerate();
+    return;
+  }
+  size_t ndefLen = 0;
+  if (!_buildGeneratedUriNdef(phone, 0x05, "tel:", ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Phone too long");
+    _goNdefGenerate();
+    return;
+  }
+
+  String name = InputTextAction::popup("File name", "phone");
+  if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
+  delete[] ndef;
+  _goNdefGenerate();
+}
+
+void PN532I2cScreen::_doGenerateNdefEmail() {
+  String email = InputTextAction::popup("Email", "");
+  if (InputTextAction::wasCancelled() || email.length() == 0) {
+    _goNdefGenerate();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefGenerate();
+    return;
+  }
+  size_t ndefLen = 0;
+  if (!_buildGeneratedUriNdef(email, 0x06, "mailto:", ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Email too long");
+    _goNdefGenerate();
+    return;
+  }
+
+  String name = InputTextAction::popup("File name", "email");
+  if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
+  delete[] ndef;
+  _goNdefGenerate();
+}
+
+void PN532I2cScreen::_doGenerateNdefVcard() {
+  String contact = InputTextAction::popup("Contact name", "");
+  if (InputTextAction::wasCancelled() || contact.length() == 0) {
+    _goNdefGenerate();
+    return;
+  }
+
+  String company = InputTextAction::popup("Company", "");
+  if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
+
+  String address = InputTextAction::popup("Address", "");
+  if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
+
+  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+  if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
+
+  String mail = InputTextAction::popup("Mail", "");
+  if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
+
+  String website = InputTextAction::popup("Website", "https://");
+  if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
+
+  auto escapeVcard = [](String s) -> String {
+    s.replace("\\", "\\\\");
+    s.replace("\r", "");
+    s.replace("\n", "\\n");
+    s.replace(";", "\\;");
+    s.replace(",", "\\,");
+    return s;
+  };
+
+  String card = "BEGIN:VCARD\r\nVERSION:3.0\r\n";
+  card += "FN:" + escapeVcard(contact) + "\r\n";
+  if (company.length()) card += "ORG:" + escapeVcard(company) + "\r\n";
+  if (address.length()) card += "ADR:;;" + escapeVcard(address) + ";;;;\r\n";
+  if (phone.length()) card += "TEL:" + escapeVcard(phone) + "\r\n";
+  if (mail.length()) card += "EMAIL:" + escapeVcard(mail) + "\r\n";
+  if (website.length() && website != "https://") {
+    card += "URL:" + escapeVcard(website) + "\r\n";
+  }
+  card += "END:VCARD\r\n";
+
+  const char* mime = "text/vcard";
+  const size_t typeLen = strlen(mime);
+  const size_t payloadLen = card.length();
+  const size_t ndefLen = 3 + typeLen + payloadLen;
+
+  if (payloadLen > 255 || ndefLen > MAX_NDEF_BYTES) {
+    ShowStatusAction::show("vCard too large");
+    _goNdefGenerate();
+    return;
+  }
+
+  uint8_t* ndef = new uint8_t[ndefLen]();
+  if (!ndef) {
+    ShowStatusAction::show("Out of memory");
+    _goNdefGenerate();
+    return;
+  }
+
+  ndef[0] = 0xD2; // MB | ME | SR | TNF=MIME Media
+  ndef[1] = (uint8_t)typeLen;
+  ndef[2] = (uint8_t)payloadLen;
+  memcpy(&ndef[3], mime, typeLen);
+  memcpy(&ndef[3 + typeLen], card.c_str(), payloadLen);
+
+  String name = InputTextAction::popup("File name", "contact");
+  if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
+  delete[] ndef;
+  _goNdefGenerate();
 }
 
 void PN532I2cScreen::_doWriteNdefText() {
