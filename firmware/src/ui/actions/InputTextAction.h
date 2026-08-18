@@ -437,13 +437,9 @@ private:
           _symbolMode = (_page == PAGE_SYM);
           _buildSets();
 
-          // Keep the current cell when it exists on both pages.
-          // If it points to a blank SYM cell, move focus to ABC/123.
-          if (_scrollPos < 30 && _sets[_scrollPos].chars == nullptr) {
-            _scrollPos = 30;
-          } else if (_scrollPos >= _setCount) {
-            _scrollPos = 30;
-          }
+          // Back always opens the new page at its first character:
+          // ABC -> 'a', 123 -> '1'.
+          _scrollPos = 0;
 
           _drawFullGrid();
           _cursorVisible = true;
