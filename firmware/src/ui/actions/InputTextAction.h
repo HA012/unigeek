@@ -48,6 +48,7 @@ private:
   static constexpr int      MAX_SETS   = 60;
   static constexpr uint32_t COMMIT_MS  = 1000;
   static constexpr uint32_t BLINK_MS   = 500;
+  static constexpr uint32_t LONG_PRESS_MS = 600;
   static constexpr int      PAD        = 4;
 
   // keyboard mode overlay
@@ -69,8 +70,8 @@ private:
   String      _pendingChar;
 
   CharSet     _sets[MAX_SETS];
-  char        _keyChars[36][3]  = {};
-  char        _keyLabels[36][2] = {};
+  char        _keyChars[30][3]  = {};
+  char        _keyLabels[30][2] = {};
   int         _setCount    = 0;
   int         _scrollPos   = 0;
 
@@ -83,6 +84,7 @@ private:
   TextPage    _page        = PAGE_ABC;
   bool        _done        = false;
   bool        _cancelled   = false;
+  bool        _longPressHandled = false;
 
   bool        _cursorVisible  = true;
   uint32_t    _lastBlinkTime  = 0;
@@ -123,35 +125,32 @@ private:
       _sets[_setCount++] = { nullptr, "",     false, SP_SAVE   };  // spacer
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
     } else {
-      // Compact 6x6 grid optimized for small displays.
+      // Compact 6x5 grid optimized for small displays.
       // Two ASCII pages: ABC <-> SYM.
       struct KeyPair {
         char normal;
         char shifted;
       };
 
-      static constexpr KeyPair alphaKeys[36] = {
+      static constexpr KeyPair alphaKeys[30] = {
         {'a','A'}, {'b','B'}, {'c','C'}, {'d','D'}, {'e','E'}, {'f','F'},
         {'g','G'}, {'h','H'}, {'i','I'}, {'j','J'}, {'k','K'}, {'l','L'},
         {'m','M'}, {'n','N'}, {'o','O'}, {'p','P'}, {'q','Q'}, {'r','R'},
         {'s','S'}, {'t','T'}, {'u','U'}, {'v','V'}, {'w','W'}, {'x','X'},
-        {'y','Y'}, {'z','Z'}, {'.','.'}, {',',','}, {':',':'}, {';',';'},
-        {'?','?'}, {'!','!'}, {'-','-'}, {'_','_'}, {'/','/'}, {'\\','\\'},
+        {'y','Y'}, {'z','Z'}, {'.',':'}, {'/','\\'}, {'-','_'}, {'?','@'},
       };
 
-      static constexpr KeyPair symbolKeys[32] = {
-        {'1','1'}, {'2','2'}, {'3','3'}, {'4','4'}, {'5','5'}, {'6','6'},
-        {'7','7'}, {'8','8'}, {'9','9'}, {'0','0'}, {'@','@'}, {'#','#'},
-        {'$','$'}, {'%','%'}, {'^','^'}, {'&','&'}, {'*','*'}, {'|','|'},
-        {'+','+'}, {'=','='}, {'\'','\''}, {'"','"'}, {'`','`'}, {'~','~'},
+      static constexpr KeyPair symbolKeys[21] = {
+        {'1','!'}, {'2','|'}, {'3','#'}, {'4','$'}, {'5','%'}, {'6','^'},
+        {'7','&'}, {'8','*'}, {'9','+'}, {'0','='}, {',',';'}, {'\'','"'},
         {'(', '('}, {')', ')'}, {'[', '['}, {']', ']'}, {'{', '{'}, {'}', '}'},
-        {'<', '<'}, {'>', '>'},
+        {'<', '<'}, {'>', '>'}, {'`','~'},
       };
 
       const KeyPair* keys = (_page == PAGE_SYM) ? symbolKeys : alphaKeys;
-      const int keyCount = (_page == PAGE_SYM) ? 32 : 36;
+      const int keyCount = (_page == PAGE_SYM) ? 21 : 30;
 
-      for (int i = 0; i < 36; i++) {
+      for (int i = 0; i < 30; i++) {
         if (i < keyCount) {
           _keyChars[i][0] = keys[i].normal;
           _keyChars[i][1] = keys[i].shifted;
@@ -211,7 +210,7 @@ private:
   int _gridCols() const { return _mode == INPUT_TEXT ? 6 : 5; }
 
   int _charCount() const {
-    return _mode == INPUT_TEXT ? 36 : _setCount;
+    return _mode == INPUT_TEXT ? 30 : _setCount;
   }
 
   int _charRows() const {
@@ -248,6 +247,39 @@ private:
       UartFM.poll(); // read remote input so nav works in this dialog
       if (Mirror.dirty()) Mirror.pump(); // flush only when this overlay redrew
 
+      // Fire character Shift as soon as Select crosses the long-press threshold.
+      // Do not wait for release. Special/action keys keep their normal release
+      // behaviour so holding CAPS/SAVE/etc. cannot trigger them accidentally.
+      if (Uni.Nav->isPressed() &&
+          Uni.Nav->currentDirection() == INavigation::DIR_PRESS) {
+        if (!_longPressHandled &&
+            Uni.Nav->heldDuration() >= LONG_PRESS_MS &&
+            _scrollPos < _setCount &&
+            !_sets[_scrollPos].isSpecial &&
+            _sets[_scrollPos].chars != nullptr) {
+          bool pc = _capsLock, ps = _symbolMode;
+          TextPage pp = _page;
+
+          _handleSelect(true);
+          _longPressHandled = true;
+
+          // The shifted character has already been emitted. Drop the future
+          // release event so it cannot also insert the normal character.
+          Uni.Nav->suppressCurrentPress();
+
+          if (!_done && !_cancelled) {
+            if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
+            else _drawGridCell(_scrollPos);
+            _cursorVisible = true;
+            _lastBlinkTime = millis();
+            _drawGridInput();
+          }
+        }
+      } else {
+        // Ready for the next physical Select press.
+        _longPressHandled = false;
+      }
+
       if (_tapCount > 0 && millis() - _lastTapTime >= COMMIT_MS) {
         _commitTap();
         _cursorVisible = true; _lastBlinkTime = millis();
@@ -274,7 +306,7 @@ private:
           if (_mode == INPUT_TEXT && row >= _charRows()) {
             int action = tx / _actionCellW();
             if (action >= 6) action = 5;
-            idx = 36 + action;
+            idx = 30 + action;
           } else {
             idx = row * _gridCols() + tx / _gridCellW();
           }
@@ -289,7 +321,7 @@ private:
             }
             bool pc = _capsLock, ps = _symbolMode;
             TextPage pp = _page;
-            _handleSelect();
+            _handleSelect(false);
             if (!_done && !_cancelled) {
               if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
               else { _drawGridCell(prev); _drawGridCell(_scrollPos); }
@@ -308,7 +340,7 @@ private:
           (dir == INavigation::DIR_UP || dir == INavigation::DIR_DOWN)) {
         _commitTap();
 
-        if (_scrollPos < 36) {
+        if (_scrollPos < 30) {
           int col = _scrollPos % _gridCols();
           int row = _scrollPos / _gridCols();
 
@@ -317,7 +349,7 @@ private:
               // Jump to the closest action button in the bottom row.
               int a = (col * 6) / _gridCols();
               if (a >= 6) a = 5;
-              _scrollPos = 36 + a;
+              _scrollPos = 30 + a;
             } else {
               _scrollPos -= _gridCols();
             }
@@ -325,23 +357,23 @@ private:
             if (row == _charRows() - 1) {
               int a = (col * 6) / _gridCols();
               if (a >= 6) a = 5;
-              _scrollPos = 36 + a;
+              _scrollPos = 30 + a;
             } else {
               _scrollPos += _gridCols();
             }
           }
         } else {
           // From the action row, UP/DOWN returns to the bottom character row.
-          int a = _scrollPos - 36;
+          int a = _scrollPos - 30;
           int col = (a * _gridCols()) / 6;
           if (col >= _gridCols()) col = _gridCols() - 1;
           _scrollPos = (_charRows() - 1) * _gridCols() + col;
         }
 
-        // SYM has four intentionally blank tail cells.
-        if (_scrollPos < 36 && _sets[_scrollPos].chars == nullptr) {
+        // SYM has intentionally blank tail cells.
+        if (_scrollPos < 30 && _sets[_scrollPos].chars == nullptr) {
           int col = _scrollPos % _gridCols();
-          _scrollPos = 36 + min(col, 5);
+          _scrollPos = 30 + min(col, 5);
         }
 
       } else if (nav4 && dir == INavigation::DIR_UP) {
@@ -369,7 +401,7 @@ private:
       } else if (dir == INavigation::DIR_PRESS) {
         bool pc = _capsLock, ps = _symbolMode;
         TextPage pp = _page;
-        _handleSelect();
+        _handleSelect(false);
         if (!_done && !_cancelled) {
           if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
           else _drawGridCell(prev);
@@ -406,7 +438,7 @@ private:
     return _cancelled ? "" : _input;
   }
 
-  void _handleSelect() {
+  void _handleSelect(bool shifted = false) {
     const CharSet& s = _sets[_scrollPos];
 
     if (s.isSpecial) {
@@ -426,11 +458,11 @@ private:
           _capsLock = !_capsLock;
           break;
         case SP_SYMBOL:
-          if (_mode == INPUT_TEXT && _scrollPos == 36) {
+          if (_mode == INPUT_TEXT && _scrollPos == 30) {
             _page = (_page == PAGE_ABC) ? PAGE_SYM : PAGE_ABC;
             _symbolMode = (_page == PAGE_SYM);
             _buildSets();
-            _scrollPos = 36;
+            _scrollPos = 30;
           } else {
             _input += ' ';
           }
@@ -443,9 +475,16 @@ private:
       if (!chars || chars[0] == '\0') return;
 
       if (_mode == INPUT_TEXT) {
-        // QWERTY keys insert immediately. chars[0] is normal, chars[1] shifted.
-        char c = (_page == PAGE_ABC && _capsLock && chars[1] != '\0')
-                   ? chars[1] : chars[0];
+        // Short press inserts chars[0]; long press inserts chars[1].
+        // CAPS remains persistent for alphabetic keys. Holding Select
+        // temporarily inverts CAPS for letters, like a momentary Shift.
+        char c = chars[0];
+        if (isalpha(chars[0])) {
+          bool upper = _capsLock ^ shifted;
+          c = upper ? toupper(chars[0]) : tolower(chars[0]);
+        } else if (shifted && chars[1] != '\0') {
+          c = chars[1];
+        }
         _input += c;
         _pendingChar = "";
         _tapCount = 0;
@@ -483,15 +522,20 @@ private:
     lcd.setTextColor(theme, TFT_BLACK);
     lcd.drawString(_title, PAD, PAD);
 
-    int ix = PAD + lcd.textWidth(_title) + PAD;
+    // Active keyboard-mode indicators live in the upper-right corner.
+    // Keep the title area uncluttered; when both are active, show "CAPS 123".
     lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    if (_capsLock) {
-      lcd.drawString("CAPS", ix, PAD);
-      ix += lcd.textWidth("CAPS") + PAD;
-    }
+    lcd.setTextDatum(TR_DATUM);
+    String modeLabel;
+    if (_capsLock) modeLabel = "CAPS";
     if (_page == PAGE_SYM) {
-      lcd.drawString("123", ix, PAD);
+      if (modeLabel.length() > 0) modeLabel += " ";
+      modeLabel += "123";
     }
+    if (modeLabel.length() > 0) {
+      lcd.drawString(modeLabel.c_str(), lcd.width() - PAD, PAD);
+    }
+    lcd.setTextDatum(TL_DATUM);
 
     // Thin theme separator, echoing the normal UniGeek screen chrome.
     lcd.drawFastHLine(PAD, PAD + 10, lcd.width() - PAD * 2, theme);
@@ -532,9 +576,9 @@ private:
     int col;
     int row;
 
-    if (_mode == INPUT_TEXT && idx >= 36) {
+    if (_mode == INPUT_TEXT && idx >= 30) {
       cW = _actionCellW();
-      col = idx - 36;
+      col = idx - 30;
       row = _charRows();
     } else {
       cW = _gridCellW();
@@ -576,17 +620,37 @@ private:
     }
 
     String lbl;
+    bool drawShiftHint = false;
+    char shiftHint = '\0';
     if (!s.isSpecial && _mode == INPUT_TEXT && s.chars) {
-      char shown = (_page == PAGE_ABC && _capsLock && s.chars[1] != '\0')
-                     ? s.chars[1] : s.chars[0];
+      char shown = s.chars[0];
+
+      if (isalpha(s.chars[0])) {
+        // CAPS changes the primary character; long Select temporarily inverts it.
+        shown = _capsLock ? toupper(s.chars[0]) : tolower(s.chars[0]);
+        shiftHint = _capsLock ? tolower(s.chars[0]) : toupper(s.chars[0]);
+        drawShiftHint = true;
+      } else if (s.chars[1] != '\0' && s.chars[1] != s.chars[0]) {
+        shiftHint = s.chars[1];
+        drawShiftHint = true;
+      }
+
       lbl = String(shown);
-    } else if (_mode == INPUT_TEXT && idx == 36) {
+    } else if (_mode == INPUT_TEXT && idx == 30) {
       lbl = (_page == PAGE_ABC) ? "123" : "ABC";
     } else {
       lbl = String(s.label);
     }
 
     sp.drawString(lbl.c_str(), cW / 2, cH / 2);
+
+    if (drawShiftHint) {
+      sp.setTextDatum(TR_DATUM);
+      sp.setTextSize(1);
+      sp.setTextColor(sel ? TFT_WHITE : TFT_DARKGREY, sel ? theme : TFT_BLACK);
+      char hint[2] = { shiftHint, '\0' };
+      sp.drawString(hint, cW - 5, 3);
+    }
     sp.pushSprite(col * cW, HDR_H + row * cH);
     sp.deleteSprite();
   }
