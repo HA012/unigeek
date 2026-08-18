@@ -155,12 +155,12 @@ private:
         {'g','G'}, {'h','H'}, {'i','I'}, {'j','J'}, {'k','K'}, {'l','L'},
         {'m','M'}, {'n','N'}, {'o','O'}, {'p','P'}, {'q','Q'}, {'r','R'},
         {'s','S'}, {'t','T'}, {'u','U'}, {'v','V'}, {'w','W'}, {'x','X'},
-        {'y','Y'}, {'z','Z'}, {'.',':'}, {'/','\\'}, {'-','_'}, {'?','@'},
+        {'y','Y'}, {'z','Z'}, {'.',':'}, {',',';'}, {'-','_'}, {'/','?'},
       };
 
       static constexpr KeyPair symbolKeys[21] = {
-        {'1','!'}, {'2','|'}, {'3','#'}, {'4','$'}, {'5','%'}, {'6','^'},
-        {'7','&'}, {'8','*'}, {'9','+'}, {'0','='}, {',',';'}, {'\'','"'},
+        {'1','!'}, {'2','@'}, {'3','#'}, {'4','$'}, {'5','%'}, {'6','^'},
+        {'7','&'}, {'8','*'}, {'9','+'}, {'0','='}, {'\'','"'}, {'\\','|'},
         {'(', '('}, {')', ')'}, {'[', '['}, {']', ']'}, {'{', '{'}, {'}', '}'},
         {'<', '<'}, {'>', '>'}, {'`','~'},
       };
@@ -428,20 +428,27 @@ private:
         }
         delay(10); continue;
       } else if (dir == INavigation::DIR_BACK) {
-        // Mirror DEL: drop a pending multi-tap first, then chip away at the
-        // committed input, and only cancel once everything is empty.
-        if (_pendingChar.length() > 0) {
-          _pendingChar = "";
-          _tapCount    = 0;
-          _lastTapTime = 0;
-          _cursorVisible = true; _lastBlinkTime = millis();
+        if (_mode == INPUT_TEXT) {
+          // Physical Back toggles ABC <-> 123 on the standard keyboard.
+          // Other keyboard modes intentionally ignore Back.
+          _commitTap();
+
+          _page = (_page == PAGE_ABC) ? PAGE_SYM : PAGE_ABC;
+          _symbolMode = (_page == PAGE_SYM);
+          _buildSets();
+
+          // Keep the current cell when it exists on both pages.
+          // If it points to a blank SYM cell, move focus to ABC/123.
+          if (_scrollPos < 30 && _sets[_scrollPos].chars == nullptr) {
+            _scrollPos = 30;
+          } else if (_scrollPos >= _setCount) {
+            _scrollPos = 30;
+          }
+
+          _drawFullGrid();
+          _cursorVisible = true;
+          _lastBlinkTime = millis();
           _drawGridInput();
-        } else if (_input.length() > 0) {
-          _input.remove(_input.length() - 1);
-          _cursorVisible = true; _lastBlinkTime = millis();
-          _drawGridInput();
-        } else {
-          _cancelled = true;
         }
       }
 
