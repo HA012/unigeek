@@ -328,23 +328,35 @@ uint16_t ChameleonClient::inferHFTagType(uint8_t sak, const uint8_t atqa[2]) {
 bool ChameleonClient::cloneHF(uint8_t slot, uint16_t tagType,
                                const uint8_t* uid, uint8_t uidLen,
                                const uint8_t atqa[2], uint8_t sak) {
-  uint16_t st = 0;
+  // Match the slot-loader sequence that is known to work:
+  // configure type -> initialise slot memory -> select slot ->
+  // configure anti-collision -> enable HF -> emulator mode.
+  if (!setSlotTagType(slot, tagType)) return false;
+  if (!setSlotDataDefault(slot, tagType)) return false;
+  if (!setActiveSlot(slot)) return false;
 
-  uint8_t typePayload[3] = { slot, (uint8_t)(tagType >> 8), (uint8_t)(tagType & 0xFF) };
-  if (!sendCommand(CMD_SET_SLOT_TAG_TYPE, typePayload, 3, nullptr, nullptr, &st)) return false;
-
-  // ATQA bytes are reversed in the anti-collision payload
-  uint8_t acoPayload[11] = {};
+  // Anti-collision payload:
+  //   uidLen | UID | ATQA[0] | ATQA[1] | SAK | ATS length
+  //
+  // scan14A() already returns ATQA in the order expected by the firmware.
+  // The old clone path reversed these bytes and omitted the ATS-length byte.
+  uint8_t acoPayload[12] = {};
   acoPayload[0] = uidLen;
   memcpy(acoPayload + 1, uid, uidLen);
-  acoPayload[1 + uidLen] = atqa[1];
-  acoPayload[2 + uidLen] = atqa[0];
+  acoPayload[1 + uidLen] = atqa[0];
+  acoPayload[2 + uidLen] = atqa[1];
   acoPayload[3 + uidLen] = sak;
-  if (!sendCommand(CMD_MF1_SET_ANTI_COLL, acoPayload, 4 + uidLen, nullptr, nullptr, &st)) return false;
+  acoPayload[4 + uidLen] = 0; // no ATS for MIFARE Classic
 
-  uint8_t enPayload[3] = { slot, 2, 1 }; // freq=HF(2), enabled
-  if (!sendCommand(CMD_SET_SLOT_ENABLE, enPayload, 3, nullptr, nullptr, &st)) return false;
+  uint16_t st = 0;
+  if (!sendCommand(CMD_MF1_SET_ANTI_COLL,
+                   acoPayload, 5 + uidLen,
+                   nullptr, nullptr, &st) ||
+      (st != 0 && st != 0x68)) {
+    return false;
+  }
 
+  if (!setSlotEnable(slot, 2, true)) return false; // HF
   return setMode(0); // emulator mode
 }
 

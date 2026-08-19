@@ -5,6 +5,7 @@
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "ui/actions/ShowStatusAction.h"
 
 const char* ChameleonHFScreen::_inferType(uint8_t sak, const uint8_t atqa[2]) {
   if (sak == 0x01) return "MF Classic Mini";
@@ -32,27 +33,13 @@ void ChameleonHFScreen::_draw() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
 
-  if (_state == STATE_IDLE) {
-    sp.setTextColor(TFT_CYAN, TFT_BLACK);
-    sp.drawString("HF Card Reader", bw / 2, bh / 2 - 28);
-    sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    sp.drawString("Place ISO14443 card near", bw / 2, bh / 2 - 10);
-    sp.drawString("Chameleon reader face", bw / 2, bh / 2 + 6);
-    sp.setTextColor(TFT_WHITE, TFT_BLACK);
-    sp.drawString("[Press] Scan", bw / 2, bh / 2 + 24);
-  } else if (_state == STATE_CLONED) {
-    sp.setTextColor(TFT_GREEN, TFT_BLACK);
-    sp.drawString("Clone success!", bw / 2, bh / 2 - 18);
-    sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    sp.drawString("Card cloned to active slot", bw / 2, bh / 2);
-    sp.setTextColor(TFT_WHITE, TFT_BLACK);
-    sp.drawString("[Press] Rescan", bw / 2, bh / 2 + 18);
-  } else { // STATE_ERROR
-    sp.setTextColor(TFT_RED, TFT_BLACK);
-    sp.drawString("No card found", bw / 2, bh / 2 - 10);
-    sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    sp.drawString("[Press] Retry", bw / 2, bh / 2 + 8);
-  }
+  sp.setTextColor(TFT_CYAN, TFT_BLACK);
+  sp.drawString("HF Card Reader", bw / 2, bh / 2 - 28);
+  sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  sp.drawString("Place ISO14443 card near", bw / 2, bh / 2 - 10);
+  sp.drawString("Chameleon reader face", bw / 2, bh / 2 + 6);
+  sp.setTextColor(TFT_WHITE, TFT_BLACK);
+  sp.drawString("[Press] Scan", bw / 2, bh / 2 + 24);
 
   sp.pushSprite(bx, by);
   sp.deleteSprite();
@@ -137,7 +124,12 @@ void ChameleonHFScreen::_doScan() {
     if (n == 5)  Achievement.unlock("chameleon_hf_read_5");
     if (n == 10) Achievement.unlock("chameleon_hf_read_10");
   } else {
-    _state = STATE_ERROR;
+    _state = STATE_IDLE;
+    _needsDraw = true;
+    render();
+    ShowStatusAction::show("No card found", 1200);
+    render();
+    return;
   }
 
   _needsDraw = true;
@@ -160,16 +152,19 @@ void ChameleonHFScreen::_doClone() {
   uint16_t tagType = ChameleonClient::inferHFTagType(_sak, _atqa);
   bool ok = c.cloneHF(_activeSlot, tagType, _uid, _uidLen, _atqa, _sak);
 
+  _state = STATE_RESULT;
+  _needsDraw = true;
+  render();
+
   if (ok) {
-    _state = STATE_CLONED;
     int n = Achievement.inc("chameleon_clone");
     if (n == 1)  Achievement.unlock("chameleon_clone");
     if (n == 3)  Achievement.unlock("chameleon_clone_3");
     if (n == 10) Achievement.unlock("chameleon_clone_10");
+    ShowStatusAction::show("Clone OK", 1200);
   } else {
-    _state = STATE_ERROR;
+    ShowStatusAction::show("Clone failed", 1200);
   }
-  _needsDraw = true;
   render();
 }
 

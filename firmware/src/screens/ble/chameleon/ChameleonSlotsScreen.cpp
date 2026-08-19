@@ -38,6 +38,13 @@ void ChameleonSlotsScreen::onInit() {
   if (n == 1) Achievement.unlock("chameleon_slots_viewed");
 }
 
+void ChameleonSlotsScreen::onRestore() {
+  // The screen instance is restored from the navigation stack, so onInit()
+  // is not called again. Refresh slot state in-place before ScreenManager
+  // renders the restored screen, preserving the current selection/scroll.
+  _load();
+}
+
 void ChameleonSlotsScreen::onItemSelected(uint8_t index) {
   Screen.push(new ChameleonSlotEditScreen(index));
 }
