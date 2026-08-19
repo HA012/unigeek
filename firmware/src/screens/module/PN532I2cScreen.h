@@ -37,7 +37,6 @@ private:
     STATE_NDEF_WRITE_MENU,
     STATE_NDEF_RESULT,
     STATE_NDEF_FILE_SELECT,
-    STATE_NDEF_GENERATE_MENU,
   };
 
   State_e      _state    = STATE_MAIN_MENU;
@@ -68,13 +67,12 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[6] = {
+  ListItem _mainItems[5] = {
     {"Scan ISO14443A"},
     {"MIFARE Classic"},
     {"MIFARE Ultralight"},
     {"Magic Card"},
     {"Firmware Info"},
-    {"Generate NDEF Record"},
   };
 
   ListItem _mfItems[7] = {
@@ -115,13 +113,6 @@ private:
     {"From File"},
   };
 
-  ListItem _ndefGenerateItems[5] = {
-    {"Text"},
-    {"URL"},
-    {"Phone"},
-    {"Email"},
-    {"vCard"},
-  };
 
   // MIFARE dump image — filled by _doDumpMemory(), saved by _doSaveDump()
   static constexpr const char* _nfcPath  = "/unigeek/nfc";
@@ -170,19 +161,12 @@ private:
   void _showNdefResult(const uint8_t* uid, uint8_t uidLen,
                        const uint8_t* ndef, size_t ndefLen);
   void _goNdefWrite();
-  void _goNdefGenerate();
   void _goNdefParent();
   void _doWriteNdefText();
   void _doWriteNdefUrl();
   void _doWriteNdefEmail();
   void _doWriteNdefPhone();
   void _doWriteNdefVcard();
-  void _doGenerateNdefText();
-  void _doGenerateNdefUrl();
-  void _doGenerateNdefVcard();
-  void _doGenerateNdefPhone();
-  void _doGenerateNdefEmail();
-  bool _saveGeneratedNdef(const uint8_t* ndef, size_t ndefLen, const String& suggestedName);
   void _doWriteNdefFromFile();
   void _doWriteNdefFileSelected(uint8_t fileIndex);
   void _showNdefActions();
