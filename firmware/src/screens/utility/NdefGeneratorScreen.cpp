@@ -30,13 +30,102 @@ void NdefGeneratorScreen::onInit() {
 }
 
 void NdefGeneratorScreen::onItemSelected(uint8_t index) {
-  switch (index) {
-    case 0: _generateText();  break;
-    case 1: _generateUrl();   break;
-    case 2: _generatePhone(); break;
-    case 3: _generateEmail(); break;
-    case 4: _generateVcard(); break;
+  uint8_t ndef[MAX_NDEF_BYTES] = {};
+  size_t ndefLen = 0;
+  String suggestedName;
+
+  if (!buildRecordInteractive(index, ndef, ndefLen, sizeof(ndef), suggestedName)) {
+    render();
+    return;
   }
+
+  String name = InputTextAction::popup("File name", suggestedName.c_str());
+  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
+  render();
+}
+
+bool NdefGeneratorScreen::buildRecordInteractive(uint8_t index,
+                                                 uint8_t* out, size_t& outLen,
+                                                 size_t maxLen,
+                                                 String& suggestedName) {
+  if (!out || maxLen == 0) return false;
+  outLen = 0;
+
+  switch (index) {
+    case 0: {
+      String value = InputTextAction::popup("Text", "");
+      if (InputTextAction::wasCancelled() || value.length() == 0) return false;
+      if (!NdefBuilder::buildText(value, out, outLen, maxLen)) {
+        ShowStatusAction::show("Text too long");
+        return false;
+      }
+      suggestedName = "text";
+      return true;
+    }
+
+    case 1: {
+      String url = InputTextAction::popup("URL", "https://");
+      if (InputTextAction::wasCancelled() || url.length() == 0) return false;
+      if (!NdefBuilder::buildUrl(url, out, outLen, maxLen)) {
+        ShowStatusAction::show("URL too long");
+        return false;
+      }
+      suggestedName = "url";
+      return true;
+    }
+
+    case 2: {
+      String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+      if (InputTextAction::wasCancelled() || phone.length() == 0) return false;
+      if (!NdefBuilder::buildPhone(phone, out, outLen, maxLen)) {
+        ShowStatusAction::show("Phone too long");
+        return false;
+      }
+      suggestedName = "phone";
+      return true;
+    }
+
+    case 3: {
+      String email = InputTextAction::popup("Email", "");
+      if (InputTextAction::wasCancelled() || email.length() == 0) return false;
+      if (!NdefBuilder::buildEmail(email, out, outLen, maxLen)) {
+        ShowStatusAction::show("Email too long");
+        return false;
+      }
+      suggestedName = "email";
+      return true;
+    }
+
+    case 4: {
+      String contact = InputTextAction::popup("Contact name", "");
+      if (InputTextAction::wasCancelled() || contact.length() == 0) return false;
+
+      String company = InputTextAction::popup("Company", "");
+      if (InputTextAction::wasCancelled()) return false;
+
+      String address = InputTextAction::popup("Address", "");
+      if (InputTextAction::wasCancelled()) return false;
+
+      String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+      if (InputTextAction::wasCancelled()) return false;
+
+      String mail = InputTextAction::popup("Mail", "");
+      if (InputTextAction::wasCancelled()) return false;
+
+      String website = InputTextAction::popup("Website", "https://");
+      if (InputTextAction::wasCancelled()) return false;
+
+      if (!NdefBuilder::buildVcard(contact, company, address, phone, mail, website,
+                                   out, outLen, maxLen)) {
+        ShowStatusAction::show("vCard too large");
+        return false;
+      }
+      suggestedName = "vcard";
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool NdefGeneratorScreen::_saveNdef(const uint8_t* ndef, size_t ndefLen,
@@ -85,105 +174,4 @@ bool NdefGeneratorScreen::_saveNdef(const uint8_t* ndef, size_t ndefLen,
   const String name = (slash >= 0) ? path.substring(slash + 1) : path;
   ShowStatusAction::show(("Saved: " + name).c_str(), 1500);
   return true;
-}
-
-void NdefGeneratorScreen::_generateText() {
-  String value = InputTextAction::popup("Text", "");
-  if (InputTextAction::wasCancelled() || value.length() == 0) { render(); return; }
-
-  uint8_t ndef[MAX_NDEF_BYTES] = {};
-  size_t ndefLen = 0;
-  if (!NdefBuilder::buildText(value, ndef, ndefLen, MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("Text too long");
-    render();
-    return;
-  }
-
-  String name = InputTextAction::popup("File name", "text");
-  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
-  render();
-}
-
-void NdefGeneratorScreen::_generateUrl() {
-  String url = InputTextAction::popup("URL", "https://");
-  if (InputTextAction::wasCancelled() || url.length() == 0) { render(); return; }
-
-  uint8_t ndef[MAX_NDEF_BYTES] = {};
-  size_t ndefLen = 0;
-  if (!NdefBuilder::buildUrl(url, ndef, ndefLen, MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("URL too long");
-    render();
-    return;
-  }
-
-  String name = InputTextAction::popup("File name", "url");
-  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
-  render();
-}
-
-void NdefGeneratorScreen::_generatePhone() {
-  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
-  if (InputTextAction::wasCancelled() || phone.length() == 0) { render(); return; }
-
-  uint8_t ndef[MAX_NDEF_BYTES] = {};
-  size_t ndefLen = 0;
-  if (!NdefBuilder::buildPhone(phone, ndef, ndefLen, MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("Phone too long");
-    render();
-    return;
-  }
-
-  String name = InputTextAction::popup("File name", "phone");
-  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
-  render();
-}
-
-void NdefGeneratorScreen::_generateEmail() {
-  String email = InputTextAction::popup("Email", "");
-  if (InputTextAction::wasCancelled() || email.length() == 0) { render(); return; }
-
-  uint8_t ndef[MAX_NDEF_BYTES] = {};
-  size_t ndefLen = 0;
-  if (!NdefBuilder::buildEmail(email, ndef, ndefLen, MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("Email too long");
-    render();
-    return;
-  }
-
-  String name = InputTextAction::popup("File name", "email");
-  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
-  render();
-}
-
-void NdefGeneratorScreen::_generateVcard() {
-  String contact = InputTextAction::popup("Contact name", "");
-  if (InputTextAction::wasCancelled() || contact.length() == 0) { render(); return; }
-
-  String company = InputTextAction::popup("Company", "");
-  if (InputTextAction::wasCancelled()) { render(); return; }
-
-  String address = InputTextAction::popup("Address", "");
-  if (InputTextAction::wasCancelled()) { render(); return; }
-
-  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
-  if (InputTextAction::wasCancelled()) { render(); return; }
-
-  String mail = InputTextAction::popup("Mail", "");
-  if (InputTextAction::wasCancelled()) { render(); return; }
-
-  String website = InputTextAction::popup("Website", "https://");
-  if (InputTextAction::wasCancelled()) { render(); return; }
-
-  uint8_t ndef[MAX_NDEF_BYTES] = {};
-  size_t ndefLen = 0;
-  if (!NdefBuilder::buildVcard(contact, company, address, phone, mail, website,
-                               ndef, ndefLen, MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("vCard too large");
-    render();
-    return;
-  }
-
-  String name = InputTextAction::popup("File name", "vcard");
-  if (!InputTextAction::wasCancelled()) _saveNdef(ndef, ndefLen, name);
-  render();
 }

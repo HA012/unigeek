@@ -8,6 +8,7 @@
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/views/ProgressView.h"
+#include "../../utils/nfc/NdefBuilder.h"
 
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
 // Adafruit_PN532 exposes sendCommandCheckAck() publicly but readdata() is
@@ -2057,6 +2058,49 @@ void PN532I2cScreen::_doSaveNdef() {
     ShowStatusAction::show("Save failed");
   }
   render();
+}
+
+void PN532I2cScreen::_doWriteNdefVcard() {
+  String contact = InputTextAction::popup("Contact name", "");
+  if (InputTextAction::wasCancelled() || contact.length() == 0) {
+    _goNdefWrite();
+    return;
+  }
+
+  String company = InputTextAction::popup("Company", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String address = InputTextAction::popup("Address", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE);
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String email = InputTextAction::popup("Mail", "");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  String website = InputTextAction::popup("Website", "https://");
+  if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
+
+  uint8_t ndef[MAX_NDEF_BYTES] = {};
+  size_t ndefLen = 0;
+
+  if (!NdefBuilder::buildVcard(contact,
+                               company,
+                               address,
+                               phone,
+                               email,
+                               website,
+                               ndef,
+                               ndefLen,
+                               MAX_NDEF_BYTES)) {
+    ShowStatusAction::show("vCard too large");
+    _goNdefWrite();
+    return;
+  }
+
+  _writeNdefRecord(ndef, ndefLen);
+  _goNdefParent();
 }
 
 void PN532I2cScreen::_doWriteNdefFromFile() {
