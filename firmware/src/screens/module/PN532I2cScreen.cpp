@@ -8,6 +8,7 @@
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/nfc/NdefBuilder.h"
 
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
 // Adafruit_PN532 exposes sendCommandCheckAck() publicly but readdata() is
@@ -1966,29 +1967,6 @@ bool PN532I2cScreen::_saveGeneratedNdef(const uint8_t* ndef, size_t ndefLen,
   return true;
 }
 
-static bool _buildGeneratedUriNdef(const String& input, uint8_t prefix,
-                                   const char* stripPrefix,
-                                   uint8_t* out, size_t& outLen,
-                                   size_t maxNdefBytes) {
-  String body = input;
-  if (stripPrefix && body.startsWith(stripPrefix)) {
-    body = body.substring(strlen(stripPrefix));
-  }
-
-  const size_t payloadLen = 1 + body.length();
-  const size_t ndefLen = 4 + payloadLen;
-  if (ndefLen > maxNdefBytes || payloadLen > 255) return false;
-
-  out[0] = 0xD1;
-  out[1] = 0x01;
-  out[2] = (uint8_t)payloadLen;
-  out[3] = 'U';
-  out[4] = prefix;
-  memcpy(&out[5], body.c_str(), body.length());
-  outLen = ndefLen;
-  return true;
-}
-
 void PN532I2cScreen::_doGenerateNdefText() {
   String value = InputTextAction::popup("Text", "");
   if (InputTextAction::wasCancelled() || value.length() == 0) {
@@ -1996,29 +1974,20 @@ void PN532I2cScreen::_doGenerateNdefText() {
     return;
   }
 
-  const size_t payloadLen = 3 + value.length();
-  const size_t ndefLen = 4 + payloadLen;
-  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
-    ShowStatusAction::show("Text too long");
-    _goNdefGenerate();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen]();
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefGenerate();
     return;
   }
 
-  ndef[0] = 0xD1;
-  ndef[1] = 0x01;
-  ndef[2] = (uint8_t)payloadLen;
-  ndef[3] = 'T';
-  ndef[4] = 0x02;
-  ndef[5] = 'e';
-  ndef[6] = 'n';
-  memcpy(&ndef[7], value.c_str(), value.length());
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildText(value, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Text too long");
+    _goNdefGenerate();
+    return;
+  }
 
   String name = InputTextAction::popup("File name", "text");
   if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
@@ -2033,21 +2002,15 @@ void PN532I2cScreen::_doGenerateNdefUrl() {
     return;
   }
 
-  uint8_t prefix = 0x00;
-  const char* strip = nullptr;
-  if      (url.startsWith("https://www.")) { prefix = 0x02; strip = "https://www."; }
-  else if (url.startsWith("http://www."))  { prefix = 0x01; strip = "http://www."; }
-  else if (url.startsWith("https://"))      { prefix = 0x04; strip = "https://"; }
-  else if (url.startsWith("http://"))       { prefix = 0x03; strip = "http://"; }
-
   uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefGenerate();
     return;
   }
+
   size_t ndefLen = 0;
-  if (!_buildGeneratedUriNdef(url, prefix, strip, ndef, ndefLen, MAX_NDEF_BYTES)) {
+  if (!NdefBuilder::buildUrl(url, ndef, ndefLen, MAX_NDEF_BYTES)) {
     delete[] ndef;
     ShowStatusAction::show("URL too long");
     _goNdefGenerate();
@@ -2073,8 +2036,9 @@ void PN532I2cScreen::_doGenerateNdefPhone() {
     _goNdefGenerate();
     return;
   }
+
   size_t ndefLen = 0;
-  if (!_buildGeneratedUriNdef(phone, 0x05, "tel:", ndef, ndefLen, MAX_NDEF_BYTES)) {
+  if (!NdefBuilder::buildPhone(phone, ndef, ndefLen, MAX_NDEF_BYTES)) {
     delete[] ndef;
     ShowStatusAction::show("Phone too long");
     _goNdefGenerate();
@@ -2100,8 +2064,9 @@ void PN532I2cScreen::_doGenerateNdefEmail() {
     _goNdefGenerate();
     return;
   }
+
   size_t ndefLen = 0;
-  if (!_buildGeneratedUriNdef(email, 0x06, "mailto:", ndef, ndefLen, MAX_NDEF_BYTES)) {
+  if (!NdefBuilder::buildEmail(email, ndef, ndefLen, MAX_NDEF_BYTES)) {
     delete[] ndef;
     ShowStatusAction::show("Email too long");
     _goNdefGenerate();
@@ -2136,49 +2101,21 @@ void PN532I2cScreen::_doWriteNdefVcard() {
   String website = InputTextAction::popup("Website", "https://");
   if (InputTextAction::wasCancelled()) { _goNdefWrite(); return; }
 
-  auto escapeVcard = [](String s) -> String {
-    s.replace("\\", "\\\\");
-    s.replace("\r", "");
-    s.replace("\n", "\\n");
-    s.replace(";", "\\;");
-    s.replace(",", "\\,");
-    return s;
-  };
-
-  String card = "BEGIN:VCARD\r\nVERSION:3.0\r\n";
-  card += "FN:" + escapeVcard(contact) + "\r\n";
-  if (company.length()) card += "ORG:" + escapeVcard(company) + "\r\n";
-  if (address.length()) card += "ADR:;;" + escapeVcard(address) + ";;;;\r\n";
-  if (phone.length()) card += "TEL:" + escapeVcard(phone) + "\r\n";
-  if (mail.length()) card += "EMAIL:" + escapeVcard(mail) + "\r\n";
-  if (website.length() && website != "https://") {
-    card += "URL:" + escapeVcard(website) + "\r\n";
-  }
-  card += "END:VCARD\r\n";
-
-  const char* mime = "text/vcard";
-  const size_t typeLen = strlen(mime);
-  const size_t payloadLen = card.length();
-  const size_t ndefLen = 3 + typeLen + payloadLen;
-
-  if (payloadLen > 255 || ndefLen > MAX_NDEF_BYTES) {
-    ShowStatusAction::show("vCard too large");
-    _goNdefWrite();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen]();
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefWrite();
     return;
   }
 
-  ndef[0] = 0xD2; // MB | ME | SR | TNF=MIME Media
-  ndef[1] = (uint8_t)typeLen;
-  ndef[2] = (uint8_t)payloadLen;
-  memcpy(&ndef[3], mime, typeLen);
-  memcpy(&ndef[3 + typeLen], card.c_str(), payloadLen);
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildVcard(contact, company, address, phone, mail, website,
+                               ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("vCard too large");
+    _goNdefWrite();
+    return;
+  }
 
   _writeNdefRecord(ndef, ndefLen);
   delete[] ndef;
@@ -2207,49 +2144,21 @@ void PN532I2cScreen::_doGenerateNdefVcard() {
   String website = InputTextAction::popup("Website", "https://");
   if (InputTextAction::wasCancelled()) { _goNdefGenerate(); return; }
 
-  auto escapeVcard = [](String s) -> String {
-    s.replace("\\", "\\\\");
-    s.replace("\r", "");
-    s.replace("\n", "\\n");
-    s.replace(";", "\\;");
-    s.replace(",", "\\,");
-    return s;
-  };
-
-  String card = "BEGIN:VCARD\r\nVERSION:3.0\r\n";
-  card += "FN:" + escapeVcard(contact) + "\r\n";
-  if (company.length()) card += "ORG:" + escapeVcard(company) + "\r\n";
-  if (address.length()) card += "ADR:;;" + escapeVcard(address) + ";;;;\r\n";
-  if (phone.length()) card += "TEL:" + escapeVcard(phone) + "\r\n";
-  if (mail.length()) card += "EMAIL:" + escapeVcard(mail) + "\r\n";
-  if (website.length() && website != "https://") {
-    card += "URL:" + escapeVcard(website) + "\r\n";
-  }
-  card += "END:VCARD\r\n";
-
-  const char* mime = "text/vcard";
-  const size_t typeLen = strlen(mime);
-  const size_t payloadLen = card.length();
-  const size_t ndefLen = 3 + typeLen + payloadLen;
-
-  if (payloadLen > 255 || ndefLen > MAX_NDEF_BYTES) {
-    ShowStatusAction::show("vCard too large");
-    _goNdefGenerate();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen]();
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefGenerate();
     return;
   }
 
-  ndef[0] = 0xD2; // MB | ME | SR | TNF=MIME Media
-  ndef[1] = (uint8_t)typeLen;
-  ndef[2] = (uint8_t)payloadLen;
-  memcpy(&ndef[3], mime, typeLen);
-  memcpy(&ndef[3 + typeLen], card.c_str(), payloadLen);
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildVcard(contact, company, address, phone, mail, website,
+                               ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("vCard too large");
+    _goNdefGenerate();
+    return;
+  }
 
   String name = InputTextAction::popup("File name", "vcard");
   if (!InputTextAction::wasCancelled()) _saveGeneratedNdef(ndef, ndefLen, name);
@@ -2264,32 +2173,20 @@ void PN532I2cScreen::_doWriteNdefText() {
     return;
   }
 
-  // Short-record NDEF Text:
-  // D1 01 <payloadLen> 54 02 'e' 'n' <text>
-  size_t payloadLen = 1 + 2 + text.length();
-  size_t ndefLen = 4 + payloadLen;
-
-  if (ndefLen > 254 || payloadLen > 255) {
-    ShowStatusAction::show("Text too long");
-    _goNdefWrite();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen];
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefWrite();
     return;
   }
 
-  ndef[0] = 0xD1;                    // MB | ME | SR | TNF=Well Known
-  ndef[1] = 0x01;                    // Type length
-  ndef[2] = (uint8_t)payloadLen;
-  ndef[3] = 'T';
-  ndef[4] = 0x02;                    // UTF-8, language code length 2
-  ndef[5] = 'e';
-  ndef[6] = 'n';
-  memcpy(&ndef[7], text.c_str(), text.length());
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildText(text, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Text too long");
+    _goNdefWrite();
+    return;
+  }
 
   _writeNdefRecord(ndef, ndefLen);
   delete[] ndef;
@@ -2303,37 +2200,20 @@ void PN532I2cScreen::_doWriteNdefUrl() {
     return;
   }
 
-  uint8_t prefix = 0x00;
-  const char* body = url.c_str();
-
-  if      (url.startsWith("https://www.")) { prefix = 0x02; body += 12; }
-  else if (url.startsWith("http://www."))  { prefix = 0x01; body += 11; }
-  else if (url.startsWith("https://"))     { prefix = 0x04; body += 8; }
-  else if (url.startsWith("http://"))      { prefix = 0x03; body += 7; }
-
-  size_t bodyLen = strlen(body);
-  size_t payloadLen = 1 + bodyLen;
-  size_t ndefLen = 4 + payloadLen;
-
-  if (ndefLen > 254 || payloadLen > 255) {
-    ShowStatusAction::show("URL too long");
-    _goNdefWrite();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen];
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefWrite();
     return;
   }
 
-  ndef[0] = 0xD1;                    // MB | ME | SR | TNF=Well Known
-  ndef[1] = 0x01;                    // Type length
-  ndef[2] = (uint8_t)payloadLen;
-  ndef[3] = 'U';
-  ndef[4] = prefix;
-  memcpy(&ndef[5], body, bodyLen);
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildUrl(url, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("URL too long");
+    _goNdefWrite();
+    return;
+  }
 
   _writeNdefRecord(ndef, ndefLen);
   delete[] ndef;
@@ -2347,33 +2227,20 @@ void PN532I2cScreen::_doWriteNdefEmail() {
     return;
   }
 
-  String uri = email.startsWith("mailto:") ? email : ("mailto:" + email);
-
-  uint8_t prefix = 0x06;  // "mailto:"
-  const char* body = uri.c_str() + 7;
-  size_t bodyLen = strlen(body);
-  size_t payloadLen = 1 + bodyLen;
-  size_t ndefLen = 4 + payloadLen;
-
-  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
-    ShowStatusAction::show("Email too long");
-    _goNdefWrite();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen];
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefWrite();
     return;
   }
 
-  ndef[0] = 0xD1;                  // MB | ME | SR | TNF=Well Known
-  ndef[1] = 0x01;                  // Type length
-  ndef[2] = (uint8_t)payloadLen;
-  ndef[3] = 'U';                   // URI record
-  ndef[4] = prefix;
-  memcpy(&ndef[5], body, bodyLen);
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildEmail(email, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Email too long");
+    _goNdefWrite();
+    return;
+  }
 
   _writeNdefRecord(ndef, ndefLen);
   delete[] ndef;
@@ -2387,41 +2254,25 @@ void PN532I2cScreen::_doWriteNdefPhone() {
     return;
   }
 
-  String uri = phone.startsWith("tel:") ? phone : ("tel:" + phone);
-
-  uint8_t prefix = 0x05;  // "tel:"
-  const char* body = uri.c_str() + 4;
-  size_t bodyLen = strlen(body);
-  size_t payloadLen = 1 + bodyLen;
-  size_t ndefLen = 4 + payloadLen;
-
-  if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
-    ShowStatusAction::show("Phone too long");
-    _goNdefWrite();
-    return;
-  }
-
-  uint8_t* ndef = new uint8_t[ndefLen];
+  uint8_t* ndef = new uint8_t[MAX_NDEF_BYTES]();
   if (!ndef) {
     ShowStatusAction::show("Out of memory");
     _goNdefWrite();
     return;
   }
 
-  ndef[0] = 0xD1;                  // MB | ME | SR | TNF=Well Known
-  ndef[1] = 0x01;                  // Type length
-  ndef[2] = (uint8_t)payloadLen;
-  ndef[3] = 'U';                   // URI record
-  ndef[4] = prefix;
-  memcpy(&ndef[5], body, bodyLen);
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildPhone(phone, ndef, ndefLen, MAX_NDEF_BYTES)) {
+    delete[] ndef;
+    ShowStatusAction::show("Phone too long");
+    _goNdefWrite();
+    return;
+  }
 
   _writeNdefRecord(ndef, ndefLen);
   delete[] ndef;
   _goNdefParent();
 }
-
-
-
 
 void PN532I2cScreen::_showNdefActions() {
   if (!_hasNdef) return;
