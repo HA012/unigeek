@@ -18,7 +18,7 @@ public:
                                    const uint8_t* ndef, size_t ndefLen,
                                    uint8_t* out, size_t& outLen, size_t maxLen);
 
-  // Build a raw 135-page NTAG215 memory image suitable for .bin export.
+  // Build a 540-byte Chameleon Ultra NTAG215 .bin image.
   // `ndef == nullptr && ndefLen == 0` builds an empty NDEF-formatted tag.
   static bool buildNtag215(const uint8_t uid[7],
                            const uint8_t* ndef, size_t ndefLen,

@@ -108,38 +108,55 @@ bool NfcTagBuilder::buildNtag215(const uint8_t uid[7],
   if (!uid || !out || maxLen < NTAG215_SIZE) return false;
   if (ndefLen > 0 && !ndef) return false;
 
-  // Type 2 Tag data-area capacity advertised by the NTAG215 CC is 496 bytes.
-  const size_t tlvOverhead = (ndefLen < 0xFF) ? 3 : 5; // type + len + terminator
+  // The Chameleon Ultra app exports NTAG215 as a 540-byte .bin with a
+  // 4-byte zero prefix followed by tag pages 0..133. Page 134 (PACK/RFUI)
+  // is not present in this file representation.
+  //
+  // The CC still advertises the standard 496-byte NFC Forum Type 2 data area.
+  const size_t tlvOverhead = (ndefLen < 0xFF) ? 3 : 5;
   if (ndefLen + tlvOverhead > NTAG215_NDEF_CAPACITY) return false;
 
   memset(out, 0x00, NTAG215_SIZE);
 
-  // Pages 0..2 — manufacturer data / UID / static lock bytes.
-  // NXP manufacturer ID is 0x04. The caller supplies the remaining UID bytes.
-  out[0] = uid[0];
-  out[1] = uid[1];
-  out[2] = uid[2];
-  out[3] = (uint8_t)(0x88 ^ uid[0] ^ uid[1] ^ uid[2]); // BCC0
+  static constexpr size_t CU_PREFIX = 4;
 
-  out[4] = uid[3];
-  out[5] = uid[4];
-  out[6] = uid[5];
-  out[7] = uid[6];
+  // Prefix used by Chameleon Ultra NTAG215 .bin exports.
+  out[0] = 0x00;
+  out[1] = 0x00;
+  out[2] = 0x00;
+  out[3] = 0x00;
 
-  out[8]  = (uint8_t)(uid[3] ^ uid[4] ^ uid[5] ^ uid[6]); // BCC1
-  out[9]  = 0x48; // common NTAG21x internal byte observed on genuine tags
-  out[10] = 0x00; // static lock byte 0: unlocked
-  out[11] = 0x00; // static lock byte 1: unlocked
+  // Tag page 0.
+  size_t off = CU_PREFIX;
+  out[off + 0] = uid[0];
+  out[off + 1] = uid[1];
+  out[off + 2] = uid[2];
+  out[off + 3] = (uint8_t)(0x88 ^ uid[0] ^ uid[1] ^ uid[2]); // BCC0
 
-  // Page 3 — NFC Forum Type 2 Capability Container for NTAG215.
-  out[12] = 0xE1;
-  out[13] = 0x10;
-  out[14] = 0x3E; // 496 bytes NDEF data area
-  out[15] = 0x00; // read/write access
+  // Tag page 1.
+  off = CU_PREFIX + 4;
+  out[off + 0] = uid[3];
+  out[off + 1] = uid[4];
+  out[off + 2] = uid[5];
+  out[off + 3] = uid[6];
 
-  // Pages 4.. — NDEF Message TLV.
-  size_t p = 16;
-  out[p++] = 0x03; // NDEF Message TLV
+  // Tag page 2.
+  off = CU_PREFIX + 8;
+  out[off + 0] = (uint8_t)(uid[3] ^ uid[4] ^ uid[5] ^ uid[6]); // BCC1
+  out[off + 1] = 0x48;
+  out[off + 2] = 0x00;
+  out[off + 3] = 0x00;
+
+  // Tag page 3 — Capability Container.
+  off = CU_PREFIX + 12;
+  out[off + 0] = 0xE1;
+  out[off + 1] = 0x10;
+  out[off + 2] = 0x3E;
+  out[off + 3] = 0x00;
+
+  // Tag page 4 onward — NDEF Message TLV.
+  size_t p = CU_PREFIX + 16;
+  out[p++] = 0x03;
   if (ndefLen < 0xFF) {
     out[p++] = (uint8_t)ndefLen;
   } else {
@@ -147,46 +164,41 @@ bool NfcTagBuilder::buildNtag215(const uint8_t uid[7],
     out[p++] = (uint8_t)((ndefLen >> 8) & 0xFF);
     out[p++] = (uint8_t)(ndefLen & 0xFF);
   }
+
   if (ndefLen > 0) {
     memcpy(&out[p], ndef, ndefLen);
     p += ndefLen;
   }
-  out[p++] = 0xFE; // Terminator TLV
+  out[p++] = 0xFE;
 
-  // Page 0x82 — dynamic locks unlocked; byte 3 reads as BD on NTAG21x.
-  const size_t page82 = 0x82 * 4;
-  out[page82 + 0] = 0x00;
-  out[page82 + 1] = 0x00;
-  out[page82 + 2] = 0x00;
-  out[page82 + 3] = 0xBD;
+  // Chameleon Ultra app NTAG215 export tail:
+  // page 130 dynamic locks
+  off = CU_PREFIX + 130 * 4;
+  out[off + 0] = 0x00;
+  out[off + 1] = 0x00;
+  out[off + 2] = 0x00;
+  out[off + 3] = 0xBD;
 
-  // Pages 0x83..0x86 — factory-like open configuration.
-  // CFG0: no mirror, strong modulation enabled, mirror page 0, AUTH0=FF.
-  const size_t page83 = 0x83 * 4;
-  out[page83 + 0] = 0x04;
-  out[page83 + 1] = 0x00;
-  out[page83 + 2] = 0x00;
-  out[page83 + 3] = 0xFF;
+  // page 131 CFG0
+  off = CU_PREFIX + 131 * 4;
+  out[off + 0] = 0x04;
+  out[off + 1] = 0x00;
+  out[off + 2] = 0x00;
+  out[off + 3] = 0xFF;
 
-  // CFG1 / ACCESS: protection and NFC counter disabled.
-  const size_t page84 = 0x84 * 4;
-  out[page84 + 0] = 0x00;
-  out[page84 + 1] = 0x00;
-  out[page84 + 2] = 0x00;
-  out[page84 + 3] = 0x00;
+  // page 132 CFG1 / ACCESS, matching the CU app export.
+  off = CU_PREFIX + 132 * 4;
+  out[off + 0] = 0x00;
+  out[off + 1] = 0x05;
+  out[off + 2] = 0x00;
+  out[off + 3] = 0x00;
 
-  // Default password and PACK.
-  const size_t page85 = 0x85 * 4;
-  out[page85 + 0] = 0xFF;
-  out[page85 + 1] = 0xFF;
-  out[page85 + 2] = 0xFF;
-  out[page85 + 3] = 0xFF;
-
-  const size_t page86 = 0x86 * 4;
-  out[page86 + 0] = 0x00;
-  out[page86 + 1] = 0x00;
-  out[page86 + 2] = 0x00;
-  out[page86 + 3] = 0x00;
+  // page 133 PWD in the CU app export.
+  off = CU_PREFIX + 133 * 4;
+  out[off + 0] = 0x00;
+  out[off + 1] = 0x00;
+  out[off + 2] = 0x00;
+  out[off + 3] = 0x00;
 
   outLen = NTAG215_SIZE;
   return true;
