@@ -1019,6 +1019,9 @@ void PN532I2cScreen::_doUltralightWrite() {
     data[i] = (uint8_t)v;
   }
 
+  // Restore the Ultralight screen after the input overlays before I/O.
+  render();
+
   if (_nfc->mifareultralight_WritePage((uint8_t)page, data)) {
     ShowStatusAction::show("Write OK");
   } else {
@@ -2075,6 +2078,10 @@ void PN532I2cScreen::_showNdefActions() {
     return;
   }
 
+  // InputSelectAction is an overlay. Restore the NDEF result screen before
+  // starting either action, otherwise the cleared popup area remains visible.
+  render();
+
   if (strcmp(choice, "write") == 0) {
     _doWriteCurrentNdef();
   } else if (strcmp(choice, "save") == 0) {
@@ -2102,6 +2109,10 @@ void PN532I2cScreen::_doWriteCurrentNdef() {
     return;
   }
 
+  // InputSelectAction is an overlay. Restore the NDEF result screen before
+  // starting the blocking tag write.
+  render();
+
   if (strcmp(choice, "ul") == 0) {
     _writeUltralightNdefRecord(_ndefBuf, _ndefLen);
   } else if (strcmp(choice, "mfc") == 0) {
@@ -2127,7 +2138,7 @@ void PN532I2cScreen::_doSaveNdef() {
   }
 
   Uni.Storage->makeDir("/unigeek/nfc");
-  Uni.Storage->makeDir(_dumpPath);
+  Uni.Storage->makeDir(_ndefPath);
 
   String uid = _hexUid(_uid, _uidLen);
   uid.replace(":", "");
@@ -2137,18 +2148,54 @@ void PN532I2cScreen::_doSaveNdef() {
       (_ndefTarget == NDEF_TARGET_MIFARE_CLASSIC) ? "_mifare" : "_ntag";
   String baseName = uid + tagSuffix;
 
-  // <UID>_<type>.ndef, <UID>_<type>_(2).ndef, ...
-  String path = String(_dumpPath) + "/" + baseName + ".ndef";
+  // Same UX used by the other save flows: pre-fill a useful default name,
+  // but let the user edit it before confirming.
+  String name = InputTextAction::popup("File name", baseName.c_str());
+  if (InputTextAction::wasCancelled()) {
+    render();
+    return;
+  }
+
+  name.trim();
+  if (name.endsWith(".ndef")) name.remove(name.length() - 5);
+  if (name.length() == 0) {
+    render();
+    return;
+  }
+
+  // Keep filenames SD-safe and consistent with the NDEF generator.
+  for (int i = 0; i < (int)name.length(); i++) {
+    const char c = name[i];
+    const bool ok =
+        (c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '-' || c == '_';
+    if (!ok) name.setCharAt(i, '_');
+  }
+  while (name.indexOf("__") >= 0) name.replace("__", "_");
+  while (name.startsWith("_")) name.remove(0, 1);
+  while (name.endsWith("_")) name.remove(name.length() - 1);
+  if (name.length() == 0) {
+    render();
+    return;
+  }
+
+  // <name>.ndef, <name>_(2).ndef, ...
+  String path = String(_ndefPath) + "/" + name + ".ndef";
   if (Uni.Storage->exists(path.c_str())) {
     for (int n = 2; n < 1000; n++) {
       String candidate =
-          String(_dumpPath) + "/" + baseName + "_(" + n + ").ndef";
+          String(_ndefPath) + "/" + name + "_(" + n + ").ndef";
       if (!Uni.Storage->exists(candidate.c_str())) {
         path = candidate;
         break;
       }
     }
   }
+
+  // The filename keyboard is an overlay; restore the NDEF result before SD I/O.
+  render();
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
@@ -2162,8 +2209,8 @@ void PN532I2cScreen::_doSaveNdef() {
 
   if (written == _ndefLen) {
     int slash = path.lastIndexOf('/');
-    String name = (slash >= 0) ? path.substring(slash + 1) : path;
-    ShowStatusAction::show(("Saved: " + name).c_str(), 1500);
+    String saved = (slash >= 0) ? path.substring(slash + 1) : path;
+    ShowStatusAction::show(("Saved: " + saved).c_str(), 1500);
   } else {
     ShowStatusAction::show("Save failed");
   }
@@ -2411,6 +2458,11 @@ void PN532I2cScreen::_doGen3SetUid() {
   memcpy(&cmd[5], newUid, newUidLen);
   cmd[5 + newUidLen] = 0x00;
   uint8_t resp[8]; uint8_t rlen = sizeof(resp);
+
+  // Restore the Magic Card screen after the UID keyboard before the
+  // blocking PN532 exchange.
+  render();
+
   bool ok2 = _nfcDataExch(_nfc, _wire, cmd, 6 + newUidLen, resp, rlen);
 
   if (ok2) {

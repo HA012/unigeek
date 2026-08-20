@@ -122,25 +122,31 @@ void NdefEditorScreen::onUpdate() {
         }
 
         if (_state == STATE_PREVIEW_INITIAL) {
-          if (_editRecord()) {
-            uint8_t edited[MAX_NDEF_BYTES] = {};
-            size_t editedLen = 0;
-            if (_rebuildRecord(edited, editedLen)) {
-              memcpy(_ndef, edited, editedLen);
-              _ndefLen = editedLen;
-              _parseNdef(_ndef, _ndefLen);
-              _state = STATE_PREVIEW_FINAL;
-            }
+          // Initial preview: PRESS enters the editor.
+          // EXIT from the keyboard cancels the whole Edit NDEF operation.
+          if (!_editRecord()) {
+            _openFiles();
+            return;
+          }
+
+          uint8_t edited[MAX_NDEF_BYTES] = {};
+          size_t editedLen = 0;
+          if (_rebuildRecord(edited, editedLen)) {
+            memcpy(_ndef, edited, editedLen);
+            _ndefLen = editedLen;
+            _parseNdef(_ndef, _ndefLen);
+            _state = STATE_PREVIEW_FINAL;
           }
           _showPreview();
           return;
         }
 
-        // Final preview: PRESS confirms the edited data and saves it.
+        // Final preview: PRESS saves; successful save returns to file list.
         if (_saveEdited(_ndef, _ndefLen)) {
           _openFiles();
           return;
         }
+
         _showPreview();
         return;
       }
