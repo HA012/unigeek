@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
+#include "ui/views/ScrollListView.h"
 
 class NfcTagGeneratorScreen : public ListScreen
 {
@@ -9,6 +10,8 @@ public:
   const char* title() override;
 
   void onInit() override;
+  void onUpdate() override;
+  void onRender() override;
   void onBack() override;
   void onItemSelected(uint8_t index) override;
 
@@ -18,6 +21,7 @@ private:
     STATE_NDEF_CONTENT,
     STATE_NDEF_TYPE,
     STATE_NDEF_FILE_SELECT,
+    STATE_NDEF_PREVIEW,
   };
 
   enum TagType {
@@ -39,8 +43,8 @@ private:
   };
 
   ListItem _contentItems[3] = {
-    {"Generate New"},
-    {"From File"},
+    {"New Record"},
+    {"Load From File"},
     {"Empty"},
   };
 
@@ -55,11 +59,27 @@ private:
   BrowseFileView _browser;
   String _ndefPickDir;
 
+  // NDEF file preview: same ScrollListView/parser layout used by PN532 Read NDEF.
+  ScrollListView _scrollView;
+  static constexpr size_t MAX_ROWS = 64;
+  ScrollListView::Row _rows[MAX_ROWS];
+  String _rowLabels[MAX_ROWS];
+  String _rowValues[MAX_ROWS];
+  uint16_t _rowCount = 0;
+  uint8_t _previewNdef[MAX_INPUT_NDEF] = {};
+  size_t _previewNdefLen = 0;
+  String _previewSuggestedName;
+
   void _goTagType();
   void _goNdefContent();
   void _goNdefType();
   void _openNdefFiles();
   void _selectNdefFile(uint8_t index);
+  void _showNdefPreview(const uint8_t* ndef, size_t ndefLen, const String& suggestedName);
+  void _resetRows();
+  void _pushRow(const String& label, const String& value);
+  void _pushWrappedRow(const String& label, const String& value);
+  String _hexBlock(const uint8_t* data, uint8_t len) const;
 
   bool _saveTag(const uint8_t* ndef, size_t ndefLen,
                 const String& suggestedName);

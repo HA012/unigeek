@@ -67,12 +67,13 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[5] = {
+  ListItem _mainItems[6] = {
     {"Scan ISO14443A"},
     {"MIFARE Classic"},
     {"MIFARE Ultralight"},
     {"Magic Card"},
     {"Firmware Info"},
+    {"NFC Tools"},
   };
 
   ListItem _mfItems[7] = {
@@ -110,7 +111,7 @@ private:
     {"Phone"},
     {"Email"},
     {"vCard"},
-    {"From File"},
+    {"Load From File"},
   };
 
 

@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "core/PinConfigManager.h"
 #include "core/AchievementManager.h"
+#include "screens/utility/NfcScreen.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputNumberAction.h"
@@ -195,6 +196,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
         case 2: _goUltralight();      break;
         case 3: _goMagic();           break;
         case 4: _showFirmwareInfo();  break;
+        case 5: Screen.push(new NfcScreen()); break;
       }
       break;
     case STATE_MIFARE_MENU:
@@ -398,7 +400,7 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5);
+  setItems(_mainItems, 6);
   render();
 }
 

@@ -12,6 +12,6 @@ public:
   void onBack()                      override;
 
 private:
-  ListItem _items[6];
+  ListItem _items[7];
   bool     _toScan = false;
 };

@@ -5,14 +5,14 @@
 class NfcScreen : public ListScreen
 {
 public:
-  const char* title() override { return "NFC"; }
+  const char* title() override { return "NFC Tools"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;
 
 private:
   ListItem _items[2] = {
-    {"Generate NDEF Record"},
+    {"New NDEF Record"},
     {"Generate NFC Tag"},
   };
 };

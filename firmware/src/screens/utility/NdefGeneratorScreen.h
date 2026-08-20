@@ -7,7 +7,7 @@ class NdefGeneratorScreen : public ListScreen
 public:
   static constexpr size_t MAX_NDEF_BYTES = 254;
 
-  const char* title() override { return "Generate NDEF Record"; }
+  const char* title() override { return "New NDEF Record"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;

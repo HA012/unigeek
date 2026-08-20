@@ -38,14 +38,48 @@ const char* NfcTagGeneratorScreen::title() {
   switch (_state) {
     case STATE_TAG_TYPE:         return "Generate NFC Tag";
     case STATE_NDEF_CONTENT:     return "NDEF Content";
-    case STATE_NDEF_TYPE:        return "Generate New";
+    case STATE_NDEF_TYPE:        return "New NDEF Record";
     case STATE_NDEF_FILE_SELECT: return "NDEF Files";
+    case STATE_NDEF_PREVIEW:     return "NDEF Result";
   }
   return "Generate NFC Tag";
 }
 
 void NfcTagGeneratorScreen::onInit() {
   _goTagType();
+}
+
+void NfcTagGeneratorScreen::onUpdate() {
+  if (_state == STATE_NDEF_PREVIEW) {
+    if (Uni.Nav->wasPressed()) {
+      auto dir = Uni.Nav->readDirection();
+      if (dir == INavigation::DIR_BACK) {
+        _openNdefFiles();
+      } else if (dir == INavigation::DIR_PRESS && _previewNdefLen > 0) {
+        if (_saveTag(_previewNdef, _previewNdefLen, _previewSuggestedName)) {
+          _previewNdefLen = 0;
+          _previewSuggestedName = "";
+          _ndefPickDir = "";
+          _goNdefContent();
+        } else {
+          render();
+        }
+      } else {
+        _scrollView.onNav(dir);
+      }
+    }
+    return;
+  }
+
+  ListScreen::onUpdate();
+}
+
+void NfcTagGeneratorScreen::onRender() {
+  if (_state == STATE_NDEF_PREVIEW) {
+    _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
+    return;
+  }
+  ListScreen::onRender();
 }
 
 void NfcTagGeneratorScreen::onBack() {
@@ -60,6 +94,10 @@ void NfcTagGeneratorScreen::onBack() {
 
     case STATE_NDEF_TYPE:
       _goNdefContent();
+      break;
+
+    case STATE_NDEF_PREVIEW:
+      _openNdefFiles();
       break;
 
     case STATE_NDEF_FILE_SELECT:
@@ -194,9 +232,323 @@ void NfcTagGeneratorScreen::_selectNdefFile(uint8_t index) {
 
   String base = e.name;
   if (base.endsWith(".ndef")) base.remove(base.length() - 5);
-  _saveTag(ndef, len, base);
-  _ndefPickDir = "";
-  _goNdefContent();
+  _showNdefPreview(ndef, len, base);
+}
+
+
+static String _tagPreviewNdefUriPrefix(uint8_t code) {
+  switch (code) {
+    case 0x00: return "";
+    case 0x01: return "http://www.";
+    case 0x02: return "https://www.";
+    case 0x03: return "http://";
+    case 0x04: return "https://";
+    case 0x05: return "tel:";
+    case 0x06: return "mailto:";
+    case 0x07: return "ftp://anonymous:anonymous@";
+    case 0x08: return "ftp://ftp.";
+    case 0x09: return "ftps://";
+    case 0x0A: return "sftp://";
+    case 0x0B: return "smb://";
+    case 0x0C: return "nfs://";
+    case 0x0D: return "ftp://";
+    case 0x0E: return "dav://";
+    case 0x0F: return "news:";
+    case 0x10: return "telnet://";
+    case 0x11: return "imap:";
+    case 0x12: return "rtsp://";
+    case 0x13: return "urn:";
+    case 0x14: return "pop:";
+    case 0x15: return "sip:";
+    case 0x16: return "sips:";
+    case 0x17: return "tftp:";
+    case 0x18: return "btspp://";
+    case 0x19: return "btl2cap://";
+    case 0x1A: return "btgoep://";
+    case 0x1B: return "tcpobex://";
+    case 0x1C: return "irdaobex://";
+    case 0x1D: return "file://";
+    case 0x1E: return "urn:epc:id:";
+    case 0x1F: return "urn:epc:tag:";
+    case 0x20: return "urn:epc:pat:";
+    case 0x21: return "urn:epc:raw:";
+    case 0x22: return "urn:epc:";
+    case 0x23: return "urn:nfc:";
+    default:   return "";
+  }
+}
+
+static String _tagPreviewBytesToPrintable(const uint8_t* data, size_t len) {
+  String s;
+  for (size_t i = 0; i < len; i++) {
+    char c = (char)data[i];
+    s += (c >= 32 && c <= 126) ? c : '.';
+  }
+  return s;
+}
+
+void NfcTagGeneratorScreen::_resetRows() { _rowCount = 0; }
+
+void NfcTagGeneratorScreen::_pushRow(const String& label, const String& value) {
+  if (_rowCount >= MAX_ROWS) return;
+  _rowLabels[_rowCount] = label;
+  _rowValues[_rowCount] = value;
+  _rows[_rowCount] = { _rowLabels[_rowCount].c_str(), _rowValues[_rowCount] };
+  _rowCount++;
+}
+
+String NfcTagGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
+  String s;
+  for (uint8_t i = 0; i < len; i++) {
+    char buf[4];
+    sprintf(buf, "%s%02X", i == 0 ? "" : " ", data[i]);
+    s += buf;
+  }
+  return s;
+}
+
+void NfcTagGeneratorScreen::_pushWrappedRow(const String& label, const String& value) {
+  if (value.length() == 0) {
+    _pushRow(label, "");
+    return;
+  }
+
+  int totalChars = (bodyW() - 10) / 6;
+  if (totalChars < 12) totalChars = 12;
+  int firstChars = totalChars - (int)label.length() - 2;
+  if (firstChars < 8) firstChars = 8;
+
+  int pos = 0;
+  bool first = true;
+  while (pos < (int)value.length() && _rowCount < MAX_ROWS) {
+    while (pos < (int)value.length() &&
+           (value[pos] == ' ' || value[pos] == '\n' || value[pos] == '\r' || value[pos] == '\t')) pos++;
+    if (pos >= (int)value.length()) break;
+
+    const int maxChars = first ? firstChars : totalChars;
+    int end = pos + maxChars;
+    if (end > (int)value.length()) end = value.length();
+    int newline = value.indexOf('\n', pos);
+    if (newline >= pos && newline < end) {
+      end = newline;
+    } else if (end < (int)value.length()) {
+      int split = -1;
+      for (int i = end; i > pos; --i) {
+        if (value[i - 1] == ' ' || value[i - 1] == '\t') { split = i - 1; break; }
+      }
+      if (split > pos) end = split;
+    }
+    if (end <= pos) end = min(pos + maxChars, (int)value.length());
+
+    String part = value.substring(pos, end);
+    part.trim();
+    _pushRow(first ? label : "", part);
+    pos = end;
+    first = false;
+    while (pos < (int)value.length() &&
+           (value[pos] == ' ' || value[pos] == '\n' || value[pos] == '\r' || value[pos] == '\t')) pos++;
+  }
+}
+
+void NfcTagGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen,
+                                             const String& suggestedName) {
+  _state = STATE_NDEF_PREVIEW;
+  _resetRows();
+  _previewNdefLen = 0;
+  _previewSuggestedName = suggestedName;
+
+  if (!ndef || ndefLen == 0 || ndefLen > MAX_INPUT_NDEF) {
+    _pushRow("NDEF", "Invalid record");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  memcpy(_previewNdef, ndef, ndefLen);
+  _previewNdefLen = ndefLen;
+
+  char lenBuf[24];
+  snprintf(lenBuf, sizeof(lenBuf), "%u bytes", (unsigned)ndefLen);
+  _pushRow("NDEF Size", lenBuf);
+
+  if (ndefLen < 3) {
+    _pushRow("NDEF", "Invalid record");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  size_t p = 0;
+  uint8_t flagsTnf = ndef[p++];
+  bool sr = (flagsTnf & 0x10) != 0;
+  bool il = (flagsTnf & 0x08) != 0;
+  uint8_t tnf = flagsTnf & 0x07;
+
+  auto finishPreview = [&]() {
+    if (_previewNdefLen > 0) _pushRow("[Press]", "Generate Tag");
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+  };
+
+  if (p >= ndefLen) {
+    _pushRow("NDEF", "Invalid record");
+    finishPreview();
+    return;
+  }
+  uint8_t typeLen = ndef[p++];
+  uint32_t payloadLen = 0;
+  if (sr) {
+    if (p >= ndefLen) {
+    _pushRow("NDEF", "Invalid record");
+    finishPreview();
+    return;
+  }
+    payloadLen = ndef[p++];
+  } else {
+    if (p + 3 >= ndefLen) {
+      _pushRow("NDEF", "Invalid record");
+      finishPreview();
+      return;
+    }
+    payloadLen = ((uint32_t)ndef[p] << 24) | ((uint32_t)ndef[p + 1] << 16) |
+                 ((uint32_t)ndef[p + 2] << 8) | (uint32_t)ndef[p + 3];
+    p += 4;
+  }
+
+  uint8_t idLen = 0;
+  if (il) {
+    if (p >= ndefLen) {
+    _pushRow("NDEF", "Invalid record");
+    finishPreview();
+    return;
+  }
+    idLen = ndef[p++];
+  }
+  if (p + typeLen + idLen + payloadLen > ndefLen) {
+    _pushRow("NDEF", "Truncated record");
+    finishPreview();
+    return;
+  }
+
+  {
+    const uint8_t* type = &ndef[p];
+    p += typeLen;
+    p += idLen;
+    const uint8_t* payload = &ndef[p];
+
+    char tnfBuf[8];
+    snprintf(tnfBuf, sizeof(tnfBuf), "%u", tnf);
+    _pushRow("TNF", tnfBuf);
+    String typeStr = _tagPreviewBytesToPrintable(type, typeLen);
+    _pushRow("Type", typeStr.length() ? typeStr : "(empty)");
+
+    if (tnf == 0x01 && typeLen == 1 && type[0] == 'T' && payloadLen >= 1) {
+      uint8_t status = payload[0];
+      bool utf16 = (status & 0x80) != 0;
+      uint8_t langLen = status & 0x3F;
+      if ((size_t)1 + langLen <= payloadLen) {
+        String lang;
+        for (uint8_t i = 0; i < langLen; i++) lang += (char)payload[1 + i];
+        _pushRow("Record", "Text");
+        _pushRow("Encoding", utf16 ? "UTF-16" : "UTF-8");
+        if (lang.length()) _pushRow("Language", lang);
+        if (!utf16) {
+          String text;
+          for (size_t i = 1 + langLen; i < payloadLen; i++) text += (char)payload[i];
+          _pushWrappedRow("Text", text);
+        } else {
+          _pushRow("Text", "(UTF-16 raw)");
+          uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
+          _pushRow("Raw", _hexBlock(payload, rawLen));
+        }
+      }
+    } else if (tnf == 0x01 && typeLen == 1 && type[0] == 'U' && payloadLen >= 1) {
+      String uri = _tagPreviewNdefUriPrefix(payload[0]);
+      for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
+      if (uri.startsWith("mailto:")) {
+        _pushRow("Record", "Email");
+        _pushWrappedRow("Mail", uri.substring(7));
+      } else if (uri.startsWith("tel:")) {
+        _pushRow("Record", "Phone");
+        _pushWrappedRow("Phone", uri.substring(4));
+      } else {
+        _pushRow("Record", "URI");
+        _pushWrappedRow("URI", uri);
+      }
+    } else if (tnf == 0x02 &&
+               (typeStr.equalsIgnoreCase("text/vcard") ||
+                typeStr.equalsIgnoreCase("text/x-vcard"))) {
+      String vcard;
+      vcard.reserve(payloadLen);
+      for (size_t i = 0; i < payloadLen; i++) vcard += (char)payload[i];
+      vcard.replace("\r\n", "\n");
+      vcard.replace("\r", "\n");
+      _pushRow("Record", "vCard");
+
+      auto vcardValue = [&](const char* key) -> String {
+        int start = 0;
+        while (start < (int)vcard.length()) {
+          int end = vcard.indexOf('\n', start);
+          if (end < 0) end = vcard.length();
+          String line = vcard.substring(start, end);
+          line.trim();
+          int colon = line.indexOf(':');
+          if (colon > 0) {
+            String lhs = line.substring(0, colon);
+            int semi = lhs.indexOf(';');
+            if (semi >= 0) lhs = lhs.substring(0, semi);
+            if (lhs.equalsIgnoreCase(key)) {
+              String value = line.substring(colon + 1);
+              value.replace("\\n", "\n");
+              value.replace("\\,", ",");
+              value.replace("\\;", ";");
+              value.replace("\\\\", "\\");
+              value.trim();
+              return value;
+            }
+          }
+          start = end + 1;
+        }
+        return "";
+      };
+
+      auto cleanStructured = [](String value) -> String {
+        while (value.indexOf(";;") >= 0) value.replace(";;", ";");
+        while (value.startsWith(";")) value.remove(0, 1);
+        while (value.endsWith(";")) value.remove(value.length() - 1);
+        value.replace(";", ", ");
+        return value;
+      };
+
+      String name = vcardValue("FN");
+      if (name.length() == 0) name = vcardValue("N");
+      String company = vcardValue("ORG");
+      String address = vcardValue("ADR");
+      String phone = vcardValue("TEL");
+      String mail = vcardValue("EMAIL");
+      String website = vcardValue("URL");
+      name = cleanStructured(name);
+      company = cleanStructured(company);
+      address = cleanStructured(address);
+
+      if (name.length())    _pushWrappedRow("Contact name", name);
+      if (company.length()) _pushWrappedRow("Company", company);
+      if (address.length()) _pushWrappedRow("Address", address);
+      if (phone.length())   _pushWrappedRow("Phone", phone);
+      if (mail.length())    _pushWrappedRow("Mail", mail);
+      if (website.length()) _pushWrappedRow("Website", website);
+      if (!name.length() && !company.length() && !address.length() &&
+          !phone.length() && !mail.length() && !website.length()) {
+        _pushWrappedRow("vCard", vcard);
+      }
+    } else {
+      _pushRow("Record", "Unsupported");
+      uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
+      _pushRow("Payload", _hexBlock(payload, rawLen));
+    }
+  }
+
+  finishPreview();
 }
 
 
