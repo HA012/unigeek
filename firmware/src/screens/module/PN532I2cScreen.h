@@ -133,6 +133,7 @@ private:
   size_t   _ndefLen = 0;
   size_t   _ndefCapacity = 0;
   bool     _hasNdef = false;
+  bool     _ndefFilePreview = false;
   String   _ndefPickDir;
 
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
