@@ -70,7 +70,7 @@ private:
   ListItem _mainItems[5] = {
     {"Scan ISO14443A"},
     {"MIFARE Classic"},
-    {"MIFARE Ultralight"},
+    {"MIFARE Ultralight / NTAG"},
     {"Magic Card"},
     {"Firmware Info"},
   };
@@ -110,7 +110,7 @@ private:
     {"Phone"},
     {"Email"},
     {"vCard"},
-    {"Load From File"},
+    {"Load from File"},
   };
 
 

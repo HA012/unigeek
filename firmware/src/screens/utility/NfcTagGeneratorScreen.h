@@ -44,7 +44,7 @@ private:
 
   ListItem _contentItems[3] = {
     {"New Record"},
-    {"Load From File"},
+    {"Load NDEF Record from File"},
     {"Empty"},
   };
 

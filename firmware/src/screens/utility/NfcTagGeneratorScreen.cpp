@@ -54,8 +54,15 @@ void NfcTagGeneratorScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        if (_previewFromFile) _openNdefFiles();
-        else _goNdefType();
+        if (_previewFromFile) {
+          _openNdefFiles();
+        } else {
+          _previewNdefLen = 0;
+          _previewSuggestedName = "";
+          _previewFromFile = false;
+          _ndefPickDir = "";
+          _goTagType();
+        }
       } else if (dir == INavigation::DIR_PRESS && _previewNdefLen > 0) {
         if (_saveTag(_previewNdef, _previewNdefLen, _previewSuggestedName)) {
           _previewNdefLen = 0;
@@ -99,8 +106,15 @@ void NfcTagGeneratorScreen::onBack() {
       break;
 
     case STATE_NDEF_PREVIEW:
-      if (_previewFromFile) _openNdefFiles();
-      else _goNdefType();
+      if (_previewFromFile) {
+        _openNdefFiles();
+      } else {
+        _previewNdefLen = 0;
+        _previewSuggestedName = "";
+        _previewFromFile = false;
+        _ndefPickDir = "";
+        _goTagType();
+      }
       break;
 
     case STATE_NDEF_FILE_SELECT:

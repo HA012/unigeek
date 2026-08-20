@@ -139,7 +139,7 @@ void PN532I2cScreen::onUpdate() {
           _ndefWritePreview = false;
           _ndefWritePreviewFromFile = false;
           if (fromFile) _doWriteNdefFromFile();
-          else _goNdefWrite();
+          else _goNdefParent();
         } else {
           _goNdefParent();
         }
@@ -301,7 +301,7 @@ void PN532I2cScreen::onBack() {
         _ndefWritePreview = false;
         _ndefWritePreviewFromFile = false;
         if (fromFile) _doWriteNdefFromFile();
-        else _goNdefWrite();
+        else _goNdefParent();
       } else {
         _goNdefParent();
       }
@@ -1740,7 +1740,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
   ProgressView::finish();
   delete[] payload;
 
-  ShowStatusAction::show(success ? "NDEF write OK" : "NDEF write failed");
+  ShowStatusAction::show(success ? "NDEF written" : "NDEF write failed");
   return success;
 }
 
@@ -1898,7 +1898,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
   ProgressView::finish();
   delete[] payload;
 
-  ShowStatusAction::show(success ? "NDEF write OK" : "NDEF write failed");
+  ShowStatusAction::show(success ? "NDEF written" : "NDEF write failed");
   return success;
 }
 
@@ -2078,8 +2078,6 @@ void PN532I2cScreen::_showNdefActions() {
     return;
   }
 
-  // InputSelectAction is an overlay. Restore the NDEF result screen before
-  // starting either action, otherwise the cleared popup area remains visible.
   render();
 
   if (strcmp(choice, "write") == 0) {
@@ -2109,18 +2107,25 @@ void PN532I2cScreen::_doWriteCurrentNdef() {
     return;
   }
 
-  // InputSelectAction is an overlay. Restore the NDEF result screen before
-  // starting the blocking tag write.
   render();
 
+  bool ok = false;
   if (strcmp(choice, "ul") == 0) {
-    _writeUltralightNdefRecord(_ndefBuf, _ndefLen);
+    ok = _writeUltralightNdefRecord(_ndefBuf, _ndefLen);
   } else if (strcmp(choice, "mfc") == 0) {
-    _writeClassicNdefRecord(_ndefBuf, _ndefLen);
+    ok = _writeClassicNdefRecord(_ndefBuf, _ndefLen);
   }
 
-  // Keep the NDEF result/action context tied to the source tag.
-  // The selected write target is deliberately independent of _ndefTarget.
+  if (ok) {
+    // Close the Read NDEF result after a successful action. Return to the
+    // menu associated with the tag that was originally read.
+    if (_ndefTarget == NDEF_TARGET_MIFARE_CLASSIC) _goMifare();
+    else _goUltralight();
+    return;
+  }
+
+  // Failure keeps the preview/result available for another attempt.
+  _state = STATE_NDEF_RESULT;
   render();
 }
 
@@ -2130,90 +2135,69 @@ void PN532I2cScreen::_doSaveNdef() {
     render();
     return;
   }
-
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable");
     render();
     return;
   }
 
-  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir(_nfcPath);
   Uni.Storage->makeDir(_ndefPath);
 
   String uid = _hexUid(_uid, _uidLen);
   uid.replace(":", "");
   if (uid.length() == 0) uid = "unknown";
-
-  const char* tagSuffix =
+  const char* suffix =
       (_ndefTarget == NDEF_TARGET_MIFARE_CLASSIC) ? "_mifare" : "_ntag";
-  String baseName = uid + tagSuffix;
+  String baseName = uid + suffix;
 
-  // Same UX used by the other save flows: pre-fill a useful default name,
-  // but let the user edit it before confirming.
   String name = InputTextAction::popup("File name", baseName.c_str());
-  if (InputTextAction::wasCancelled()) {
-    render();
-    return;
-  }
+  if (InputTextAction::wasCancelled()) { render(); return; }
 
   name.trim();
   if (name.endsWith(".ndef")) name.remove(name.length() - 5);
-  if (name.length() == 0) {
-    render();
-    return;
-  }
+  if (name.length() == 0) { render(); return; }
 
-  // Keep filenames SD-safe and consistent with the NDEF generator.
   for (int i = 0; i < (int)name.length(); i++) {
     const char c = name[i];
     const bool ok =
-        (c >= 'a' && c <= 'z') ||
-        (c >= 'A' && c <= 'Z') ||
-        (c >= '0' && c <= '9') ||
-        c == '-' || c == '_';
+        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_';
     if (!ok) name.setCharAt(i, '_');
   }
   while (name.indexOf("__") >= 0) name.replace("__", "_");
   while (name.startsWith("_")) name.remove(0, 1);
   while (name.endsWith("_")) name.remove(name.length() - 1);
-  if (name.length() == 0) {
-    render();
-    return;
-  }
+  if (name.length() == 0) { render(); return; }
 
-  // <name>.ndef, <name>_(2).ndef, ...
   String path = String(_ndefPath) + "/" + name + ".ndef";
   if (Uni.Storage->exists(path.c_str())) {
     for (int n = 2; n < 1000; n++) {
-      String candidate =
-          String(_ndefPath) + "/" + name + "_(" + n + ").ndef";
-      if (!Uni.Storage->exists(candidate.c_str())) {
-        path = candidate;
-        break;
-      }
+      String candidate = String(_ndefPath) + "/" + name + "_(" + n + ").ndef";
+      if (!Uni.Storage->exists(candidate.c_str())) { path = candidate; break; }
     }
   }
 
-  // The filename keyboard is an overlay; restore the NDEF result before SD I/O.
   render();
-
   fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) {
-    ShowStatusAction::show("Save failed");
-    render();
+  if (!f) { ShowStatusAction::show("Save failed"); render(); return; }
+
+  const size_t written = f.write(_ndefBuf, _ndefLen);
+  f.close();
+  if (written == _ndefLen) {
+    const int slash = path.lastIndexOf('/');
+    const String saved = (slash >= 0) ? path.substring(slash + 1) : path;
+    ShowStatusAction::show(("Saved: " + saved).c_str(), 1500);
+
+    // Successful action closes the NDEF result screen, matching Write to Tag.
+    if (_ndefTarget == NDEF_TARGET_MIFARE_CLASSIC) _goMifare();
+    else _goUltralight();
     return;
   }
 
-  size_t written = f.write(_ndefBuf, _ndefLen);
-  f.close();
-
-  if (written == _ndefLen) {
-    int slash = path.lastIndexOf('/');
-    String saved = (slash >= 0) ? path.substring(slash + 1) : path;
-    ShowStatusAction::show(("Saved: " + saved).c_str(), 1500);
-  } else {
-    ShowStatusAction::show("Save failed");
-  }
+  // Failure keeps the preview/result available for another attempt.
+  ShowStatusAction::show("Save failed");
+  _state = STATE_NDEF_RESULT;
   render();
 }
 

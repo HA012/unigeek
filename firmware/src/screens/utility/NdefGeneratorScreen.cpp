@@ -53,18 +53,16 @@ void NdefGeneratorScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        _state = STATE_TYPE_SELECT;
-        setItems(_items);
-        render();
+        _previewNdefLen = 0;
+        _previewSuggestedName = "";
+        Screen.goBack();
       } else if (dir == INavigation::DIR_PRESS) {
         String name = InputTextAction::popup("File name", _previewSuggestedName.c_str());
         if (InputTextAction::wasCancelled()) {
-          // EXIT cancels the New NDEF operation instead of returning to preview.
+          // EXIT from the filename editor cancels the whole New NDEF operation.
           _previewNdefLen = 0;
           _previewSuggestedName = "";
-          _state = STATE_TYPE_SELECT;
-          setItems(_items);
-          render();
+          Screen.goBack();
           return;
         }
         if (_saveNdef(_previewNdef, _previewNdefLen, name)) {
@@ -93,12 +91,10 @@ void NdefGeneratorScreen::onRender() {
 
 void NdefGeneratorScreen::onBack() {
   if (_state == STATE_PREVIEW) {
-    _state = STATE_TYPE_SELECT;
-    setItems(_items);
-    render();
-  } else {
-    Screen.goBack();
+    _previewNdefLen = 0;
+    _previewSuggestedName = "";
   }
+  Screen.goBack();
 }
 
 void NdefGeneratorScreen::onItemSelected(uint8_t index) {
