@@ -134,9 +134,25 @@ void PN532I2cScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        _goNdefParent();
+        if (_ndefFilePreview) {
+          _ndefFilePreview = false;
+          _doWriteNdefFromFile();
+        } else {
+          _goNdefParent();
+        }
       } else if (dir == INavigation::DIR_PRESS && _hasNdef) {
-        _showNdefActions();
+        if (_ndefFilePreview) {
+          bool ok = _writeNdefRecord(_ndefBuf, _ndefLen);
+          if (ok) {
+            _ndefFilePreview = false;
+            _ndefPickDir = "";
+            _goNdefParent();
+          } else {
+            render();
+          }
+        } else {
+          _showNdefActions();
+        }
       } else {
         _scrollView.onNav(dir);
       }
@@ -287,7 +303,12 @@ void PN532I2cScreen::onBack() {
       _goMain();
       break;
     case STATE_NDEF_RESULT:
-      _goNdefParent();
+      if (_ndefFilePreview) {
+        _ndefFilePreview = false;
+        _doWriteNdefFromFile();
+      } else {
+        _goNdefParent();
+      }
       break;
     case STATE_NDEF_FILE_SELECT:
       if (_ndefPickDir == _nfcPath || _ndefPickDir.length() == 0) {
@@ -407,6 +428,7 @@ void PN532I2cScreen::_goUltralight() {
 }
 
 void PN532I2cScreen::_goNdefWrite() {
+  _ndefFilePreview = false;
   _state = STATE_NDEF_WRITE_MENU;
   setItems(_ndefWriteItems, 6);
   render();
@@ -1118,12 +1140,16 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
   _state = STATE_NDEF_RESULT;
   _resetRows();
 
-  memcpy(_uid, uid, uidLen);
-  _uidLen = uidLen;
+  if (!_ndefFilePreview && uid && uidLen > 0) {
+    memcpy(_uid, uid, uidLen);
+    _uidLen = uidLen;
+  }
   _hasNdef = false;
   _ndefLen = 0;
 
-  _pushRow("UID", _hexUid(uid, uidLen));
+  if (uid && uidLen > 0) {
+    _pushRow("UID", _hexUid(uid, uidLen));
+  }
 
   if (!ndef) {
     _pushRow("NDEF", "Not found");
@@ -1372,7 +1398,9 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
     _pushRow("Payload", _hexBlock(payload, rawLen));
   }
 
-  if (_hasNdef) _pushRow("[Press]", "Actions");
+  if (_hasNdef) {
+    _pushRow("[Press]", _ndefFilePreview ? "Write to Tag" : "Actions");
+  }
 
   _scrollView.setRows(_rows, _rowCount);
   render();
@@ -2587,11 +2615,12 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
     return;
   }
 
-  bool ok = _writeNdefRecord(buf, len);
-  _ndefPickDir = "";
-
-  if (ok) _goNdefParent();
-  else _goNdefWrite();
+  // Preview the selected NDEF using the exact same parser/layout as Read NDEF.
+  // _ndefTarget remains unchanged, so confirmation writes to the correct
+  // destination: MIFARE Classic or Ultralight / NTAG.
+  _ndefFilePreview = true;
+  _ndefCapacity = 0;
+  _showNdefResult(nullptr, 0, buf, len);
 }
 
 void PN532I2cScreen::_doEraseNdef() {
