@@ -67,13 +67,12 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[6] = {
+  ListItem _mainItems[5] = {
     {"Scan ISO14443A"},
     {"MIFARE Classic"},
     {"MIFARE Ultralight"},
     {"Magic Card"},
     {"Firmware Info"},
-    {"NFC Tools"},
   };
 
   ListItem _mfItems[7] = {
@@ -134,7 +133,8 @@ private:
   size_t   _ndefLen = 0;
   size_t   _ndefCapacity = 0;
   bool     _hasNdef = false;
-  bool     _ndefFilePreview = false;
+  bool     _ndefWritePreview = false;
+  bool     _ndefWritePreviewFromFile = false;
   String   _ndefPickDir;
 
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
@@ -171,6 +171,7 @@ private:
   void _doWriteNdefVcard();
   void _doWriteNdefFromFile();
   void _doWriteNdefFileSelected(uint8_t fileIndex);
+  void _showNdefWritePreview(const uint8_t* ndef, size_t ndefLen, bool fromFile);
   void _showNdefActions();
   void _doSaveNdef();
   void _doWriteCurrentNdef();

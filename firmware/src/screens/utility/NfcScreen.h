@@ -11,8 +11,9 @@ public:
   void onItemSelected(uint8_t index) override;
 
 private:
-  ListItem _items[2] = {
+  ListItem _items[3] = {
     {"New NDEF Record"},
+    {"Edit NDEF Record"},
     {"Generate NFC Tag"},
   };
 };

@@ -69,6 +69,7 @@ private:
   uint8_t _previewNdef[MAX_INPUT_NDEF] = {};
   size_t _previewNdefLen = 0;
   String _previewSuggestedName;
+  bool _previewFromFile = false;
 
   void _goTagType();
   void _goNdefContent();

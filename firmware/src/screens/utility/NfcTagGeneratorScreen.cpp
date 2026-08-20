@@ -40,7 +40,7 @@ const char* NfcTagGeneratorScreen::title() {
     case STATE_NDEF_CONTENT:     return "NDEF Content";
     case STATE_NDEF_TYPE:        return "New NDEF Record";
     case STATE_NDEF_FILE_SELECT: return "NDEF Files";
-    case STATE_NDEF_PREVIEW:     return "NDEF Result";
+    case STATE_NDEF_PREVIEW:     return "NDEF Preview";
   }
   return "Generate NFC Tag";
 }
@@ -54,11 +54,13 @@ void NfcTagGeneratorScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        _openNdefFiles();
+        if (_previewFromFile) _openNdefFiles();
+        else _goNdefType();
       } else if (dir == INavigation::DIR_PRESS && _previewNdefLen > 0) {
         if (_saveTag(_previewNdef, _previewNdefLen, _previewSuggestedName)) {
           _previewNdefLen = 0;
           _previewSuggestedName = "";
+          _previewFromFile = false;
           _ndefPickDir = "";
           _goNdefContent();
         } else {
@@ -97,17 +99,18 @@ void NfcTagGeneratorScreen::onBack() {
       break;
 
     case STATE_NDEF_PREVIEW:
-      _openNdefFiles();
+      if (_previewFromFile) _openNdefFiles();
+      else _goNdefType();
       break;
 
     case STATE_NDEF_FILE_SELECT:
-      if (_ndefPickDir == _nfcPath || _ndefPickDir.length() == 0) {
+      if (_ndefPickDir == _ndefPath || _ndefPickDir.length() == 0) {
         _ndefPickDir = "";
         _goNdefContent();
       } else {
         int slash = _ndefPickDir.lastIndexOf('/');
-        String parent = (slash > 0) ? _ndefPickDir.substring(0, slash) : String(_nfcPath);
-        if (!parent.startsWith(_nfcPath)) parent = _nfcPath;
+        String parent = (slash > 0) ? _ndefPickDir.substring(0, slash) : String(_ndefPath);
+        if (!parent.startsWith(_ndefPath)) parent = _ndefPath;
         _ndefPickDir = parent;
         _openNdefFiles();
       }
@@ -145,9 +148,11 @@ void NfcTagGeneratorScreen::onItemSelected(uint8_t index) {
       String suggestedName;
       if (NdefGeneratorScreen::buildRecordInteractive(
               index, ndef, ndefLen, sizeof(ndef), suggestedName)) {
-        _saveTag(ndef, ndefLen, suggestedName);
+        _previewFromFile = false;
+        _showNdefPreview(ndef, ndefLen, suggestedName);
+      } else {
+        render();
       }
-      render();
       break;
     }
 
@@ -183,7 +188,7 @@ void NfcTagGeneratorScreen::_openNdefFiles() {
   Uni.Storage->makeDir(_ndefPath);
 
   if (_ndefPickDir.length() == 0) _ndefPickDir = _ndefPath;
-  _browser.root = _nfcPath;
+  _browser.root = _ndefPath;
   _state = STATE_NDEF_FILE_SELECT;
 
   uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
@@ -232,6 +237,7 @@ void NfcTagGeneratorScreen::_selectNdefFile(uint8_t index) {
 
   String base = e.name;
   if (base.endsWith(".ndef")) base.remove(base.length() - 5);
+  _previewFromFile = true;
   _showNdefPreview(ndef, len, base);
 }
 

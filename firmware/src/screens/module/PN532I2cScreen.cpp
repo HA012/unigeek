@@ -3,7 +3,6 @@
 #include "core/ScreenManager.h"
 #include "core/PinConfigManager.h"
 #include "core/AchievementManager.h"
-#include "screens/utility/NfcScreen.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputNumberAction.h"
@@ -135,17 +134,21 @@ void PN532I2cScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        if (_ndefFilePreview) {
-          _ndefFilePreview = false;
-          _doWriteNdefFromFile();
+        if (_ndefWritePreview) {
+          bool fromFile = _ndefWritePreviewFromFile;
+          _ndefWritePreview = false;
+          _ndefWritePreviewFromFile = false;
+          if (fromFile) _doWriteNdefFromFile();
+          else _goNdefWrite();
         } else {
           _goNdefParent();
         }
       } else if (dir == INavigation::DIR_PRESS && _hasNdef) {
-        if (_ndefFilePreview) {
+        if (_ndefWritePreview) {
           bool ok = _writeNdefRecord(_ndefBuf, _ndefLen);
           if (ok) {
-            _ndefFilePreview = false;
+            _ndefWritePreview = false;
+            _ndefWritePreviewFromFile = false;
             _ndefPickDir = "";
             _goNdefParent();
           } else {
@@ -196,7 +199,6 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
         case 2: _goUltralight();      break;
         case 3: _goMagic();           break;
         case 4: _showFirmwareInfo();  break;
-        case 5: Screen.push(new NfcScreen()); break;
       }
       break;
     case STATE_MIFARE_MENU:
@@ -240,8 +242,8 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_NDEF_WRITE_MENU:
       if (index == 0) _doWriteNdefText();
       else if (index == 1) _doWriteNdefUrl();
-      else if (index == 2) _doWriteNdefEmail();
-      else if (index == 3) _doWriteNdefPhone();
+      else if (index == 2) _doWriteNdefPhone();
+      else if (index == 3) _doWriteNdefEmail();
       else if (index == 4) _doWriteNdefVcard();
       else if (index == 5) _doWriteNdefFromFile();
       break;
@@ -294,20 +296,25 @@ void PN532I2cScreen::onBack() {
       _goNdefParent();
       break;
     case STATE_NDEF_RESULT:
-      if (_ndefFilePreview) {
-        _ndefFilePreview = false;
-        _doWriteNdefFromFile();
+      if (_ndefWritePreview) {
+        bool fromFile = _ndefWritePreviewFromFile;
+        _ndefWritePreview = false;
+        _ndefWritePreviewFromFile = false;
+        if (fromFile) _doWriteNdefFromFile();
+        else _goNdefWrite();
       } else {
         _goNdefParent();
       }
       break;
     case STATE_NDEF_FILE_SELECT:
-      if (_ndefPickDir == "/" || _ndefPickDir.length() == 0) {
+      if (_ndefPickDir == _ndefPath || _ndefPickDir.length() == 0) {
         _ndefPickDir = "";
         _goNdefWrite();
       } else {
         int slash = _ndefPickDir.lastIndexOf('/');
-        _ndefPickDir = (slash > 0) ? _ndefPickDir.substring(0, slash) : "/";
+        String parent = (slash > 0) ? _ndefPickDir.substring(0, slash) : String(_ndefPath);
+        if (!parent.startsWith(_ndefPath)) parent = _ndefPath;
+        _ndefPickDir = parent;
         _doWriteNdefFromFile();
       }
       break;
@@ -400,7 +407,7 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 6);
+  setItems(_mainItems, 5);
   render();
 }
 
@@ -417,7 +424,8 @@ void PN532I2cScreen::_goUltralight() {
 }
 
 void PN532I2cScreen::_goNdefWrite() {
-  _ndefFilePreview = false;
+  _ndefWritePreview = false;
+  _ndefWritePreviewFromFile = false;
   _state = STATE_NDEF_WRITE_MENU;
   setItems(_ndefWriteItems, 6);
   render();
@@ -1123,7 +1131,7 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
   _state = STATE_NDEF_RESULT;
   _resetRows();
 
-  if (!_ndefFilePreview && uid && uidLen > 0) {
+  if (!_ndefWritePreview && uid && uidLen > 0) {
     memcpy(_uid, uid, uidLen);
     _uidLen = uidLen;
   }
@@ -1281,8 +1289,84 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
     String uri = _ndefUriPrefix(payload[0]);
     for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
 
-    _pushRow("Record", "URI");
-    _pushWrappedRow("URI", uri);
+    if (uri.startsWith("mailto:")) {
+      _pushRow("Record", "Email");
+      _pushWrappedRow("Mail", uri.substring(7));
+    } else if (uri.startsWith("tel:")) {
+      _pushRow("Record", "Phone");
+      _pushWrappedRow("Phone", uri.substring(4));
+    } else {
+      _pushRow("Record", "URI");
+      _pushWrappedRow("URI", uri);
+    }
+  }
+  // MIME vCard.
+  else if (tnf == 0x02 &&
+           (typeStr.equalsIgnoreCase("text/vcard") ||
+            typeStr.equalsIgnoreCase("text/x-vcard"))) {
+    String vcard;
+    vcard.reserve(payloadLen);
+    for (size_t i = 0; i < payloadLen; i++) vcard += (char)payload[i];
+    vcard.replace("\r\n", "\n");
+    vcard.replace("\r", "\n");
+    _pushRow("Record", "vCard");
+
+    auto vcardValue = [&](const char* key) -> String {
+      int start = 0;
+      while (start < (int)vcard.length()) {
+        int end = vcard.indexOf('\n', start);
+        if (end < 0) end = vcard.length();
+        String line = vcard.substring(start, end);
+        line.trim();
+        int colon = line.indexOf(':');
+        if (colon > 0) {
+          String lhs = line.substring(0, colon);
+          int semi = lhs.indexOf(';');
+          if (semi >= 0) lhs = lhs.substring(0, semi);
+          if (lhs.equalsIgnoreCase(key)) {
+            String value = line.substring(colon + 1);
+            value.replace("\\n", "\n");
+            value.replace("\\,", ",");
+            value.replace("\\;", ";");
+            value.replace("\\\\", "\\");
+            value.trim();
+            return value;
+          }
+        }
+        start = end + 1;
+      }
+      return "";
+    };
+
+    auto cleanStructured = [](String value) -> String {
+      while (value.indexOf(";;") >= 0) value.replace(";;", ";");
+      while (value.startsWith(";")) value.remove(0, 1);
+      while (value.endsWith(";")) value.remove(value.length() - 1);
+      value.replace(";", ", ");
+      return value;
+    };
+
+    String name = vcardValue("FN");
+    if (name.length() == 0) name = vcardValue("N");
+    String company = vcardValue("ORG");
+    String address = vcardValue("ADR");
+    String phone = vcardValue("TEL");
+    String mail = vcardValue("EMAIL");
+    String website = vcardValue("URL");
+    name = cleanStructured(name);
+    company = cleanStructured(company);
+    address = cleanStructured(address);
+
+    if (name.length())    _pushWrappedRow("Contact name", name);
+    if (company.length()) _pushWrappedRow("Company", company);
+    if (address.length()) _pushWrappedRow("Address", address);
+    if (phone.length())   _pushWrappedRow("Phone", phone);
+    if (mail.length())    _pushWrappedRow("Mail", mail);
+    if (website.length()) _pushWrappedRow("Website", website);
+    if (!name.length() && !company.length() && !address.length() &&
+        !phone.length() && !mail.length() && !website.length()) {
+      _pushWrappedRow("vCard", vcard);
+    }
   }
   else {
     _pushRow("Record", "Unsupported");
@@ -1291,7 +1375,7 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
   }
 
   if (_hasNdef) {
-    _pushRow("[Press]", _ndefFilePreview ? "Write to Tag" : "Actions");
+    _pushRow("[Press]", _ndefWritePreview ? "Write to Tag" : "Actions");
   }
 
   _scrollView.setRows(_rows, _rowCount);
@@ -1849,9 +1933,8 @@ void PN532I2cScreen::_doWriteNdefText() {
   ndef[6] = 'n';
   memcpy(&ndef[7], text.c_str(), text.length());
 
-  _writeNdefRecord(ndef, ndefLen);
+  _showNdefWritePreview(ndef, ndefLen, false);
   delete[] ndef;
-  _goNdefParent();
 }
 
 void PN532I2cScreen::_doWriteNdefUrl() {
@@ -1893,9 +1976,8 @@ void PN532I2cScreen::_doWriteNdefUrl() {
   ndef[4] = prefix;
   memcpy(&ndef[5], body, bodyLen);
 
-  _writeNdefRecord(ndef, ndefLen);
+  _showNdefWritePreview(ndef, ndefLen, false);
   delete[] ndef;
-  _goNdefParent();
 }
 
 void PN532I2cScreen::_doWriteNdefEmail() {
@@ -1933,13 +2015,12 @@ void PN532I2cScreen::_doWriteNdefEmail() {
   ndef[4] = prefix;
   memcpy(&ndef[5], body, bodyLen);
 
-  _writeNdefRecord(ndef, ndefLen);
+  _showNdefWritePreview(ndef, ndefLen, false);
   delete[] ndef;
-  _goNdefParent();
 }
 
 void PN532I2cScreen::_doWriteNdefPhone() {
-  String phone = InputTextAction::popup("Enter phone", "");
+  String phone = InputTextAction::popup("Enter phone", "", InputTextAction::INPUT_PHONE);
   if (InputTextAction::wasCancelled() || phone.length() == 0) {
     _goNdefWrite();
     return;
@@ -1973,9 +2054,8 @@ void PN532I2cScreen::_doWriteNdefPhone() {
   ndef[4] = prefix;
   memcpy(&ndef[5], body, bodyLen);
 
-  _writeNdefRecord(ndef, ndefLen);
+  _showNdefWritePreview(ndef, ndefLen, false);
   delete[] ndef;
-  _goNdefParent();
 }
 
 
@@ -2129,8 +2209,16 @@ void PN532I2cScreen::_doWriteNdefVcard() {
     return;
   }
 
-  _writeNdefRecord(ndef, ndefLen);
-  _goNdefParent();
+  _showNdefWritePreview(ndef, ndefLen, false);
+}
+
+void PN532I2cScreen::_showNdefWritePreview(const uint8_t* ndef,
+                                               size_t ndefLen,
+                                               bool fromFile) {
+  _ndefWritePreview = true;
+  _ndefWritePreviewFromFile = fromFile;
+  _ndefCapacity = 0;
+  _showNdefResult(nullptr, 0, ndef, ndefLen);
 }
 
 void PN532I2cScreen::_doWriteNdefFromFile() {
@@ -2140,12 +2228,13 @@ void PN532I2cScreen::_doWriteNdefFromFile() {
     return;
   }
 
-  Uni.Storage->makeDir("/unigeek/nfc");
-  Uni.Storage->makeDir(_dumpPath);
+  Uni.Storage->makeDir(_nfcPath);
+  Uni.Storage->makeDir(_ndefPath);
 
   _state = STATE_NDEF_FILE_SELECT;
-  if (_ndefPickDir.length() == 0) _ndefPickDir = _dumpPath;
-  _browser.root = "/";
+  if (_ndefPickDir.length() == 0 || !_ndefPickDir.startsWith(_ndefPath))
+    _ndefPickDir = _ndefPath;
+  _browser.root = _ndefPath;
 
   uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
   setItems(_browser.items(), n);
@@ -2190,9 +2279,7 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
   // Preview the selected NDEF using the exact same parser/layout as Read NDEF.
   // _ndefTarget remains unchanged, so confirmation writes to the correct
   // destination: MIFARE Classic or Ultralight / NTAG.
-  _ndefFilePreview = true;
-  _ndefCapacity = 0;
-  _showNdefResult(nullptr, 0, buf, len);
+  _showNdefWritePreview(buf, len, true);
 }
 
 void PN532I2cScreen::_doEraseNdef() {

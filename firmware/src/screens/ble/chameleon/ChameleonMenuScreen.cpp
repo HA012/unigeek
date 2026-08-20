@@ -11,7 +11,6 @@
 #include "core/AchievementManager.h"
 #include "ui/components/StatusBar.h"
 #include "screens/ble/BLEMenuScreen.h"
-#include "screens/utility/NfcScreen.h"
 #include <NimBLEDevice.h>
 
 void ChameleonMenuScreen::onInit()
@@ -29,7 +28,6 @@ void ChameleonMenuScreen::onInit()
   _items[3] = {"HF Tools"};
   _items[4] = {"LF Tools"};
   _items[5] = {"Settings"};
-  _items[6] = {"NFC Tools"};
   setItems(_items);
 }
 
@@ -66,7 +64,6 @@ void ChameleonMenuScreen::onItemSelected(uint8_t index)
     case 3: Screen.push(new ChameleonHFMenuScreen());   break;
     case 4: Screen.push(new ChameleonLFMenuScreen());   break;
     case 5: Screen.push(new ChameleonSettingsScreen()); break;
-    case 6: Screen.push(new NfcScreen());                break;
   }
 }
 
