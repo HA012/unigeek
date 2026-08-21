@@ -469,7 +469,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "HF load OK" : "HF load failed", 1500);
+    ShowStatusAction::show(ok ? "HF loaded" : "HF load failed", 1500);
     render();
 
     if (ok) {
@@ -488,7 +488,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "LF load OK" : "LF load failed", 1500);
+    ShowStatusAction::show(ok ? "LF loaded" : "LF load failed", 1500);
     render();
 
     if (ok) {
