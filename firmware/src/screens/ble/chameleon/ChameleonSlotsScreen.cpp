@@ -5,6 +5,7 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
+#include "ui/actions/ShowStatusAction.h"
 #include <string.h>
 
 void ChameleonSlotsScreen::_load() {
@@ -31,6 +32,7 @@ void ChameleonSlotsScreen::_load() {
 }
 
 void ChameleonSlotsScreen::onInit() {
+  ShowStatusAction::show("Loading...", 0);
   _load();
   setItems(_items);
 

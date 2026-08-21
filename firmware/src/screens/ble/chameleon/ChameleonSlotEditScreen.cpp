@@ -78,6 +78,7 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
 }
 
 void ChameleonSlotEditScreen::onInit() {
+  ShowStatusAction::show("Loading...", 0);
   _load();
   setItems(_items);
 
