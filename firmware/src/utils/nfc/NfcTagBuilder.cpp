@@ -108,54 +108,43 @@ bool NfcTagBuilder::buildNtag215(const uint8_t uid[7],
   if (!uid || !out || maxLen < NTAG215_SIZE) return false;
   if (ndefLen > 0 && !ndef) return false;
 
-  // The Chameleon Ultra app exports NTAG215 as a 540-byte .bin with a
-  // 4-byte zero prefix followed by tag pages 0..133. Page 134 (PACK/RFUI)
-  // is not present in this file representation.
-  //
-  // The CC still advertises the standard 496-byte NFC Forum Type 2 data area.
+  // NTAG215 dump: 135 pages x 4 bytes = 540 bytes (pages 0..134).
+  // The CC advertises the standard 496-byte NFC Forum Type 2 data area.
   const size_t tlvOverhead = (ndefLen < 0xFF) ? 3 : 5;
   if (ndefLen + tlvOverhead > NTAG215_NDEF_CAPACITY) return false;
 
   memset(out, 0x00, NTAG215_SIZE);
 
-  static constexpr size_t CU_PREFIX = 4;
-
-  // Prefix used by Chameleon Ultra NTAG215 .bin exports.
-  out[0] = 0x00;
-  out[1] = 0x00;
-  out[2] = 0x00;
-  out[3] = 0x00;
-
   // Tag page 0.
-  size_t off = CU_PREFIX;
+  size_t off = 0;
   out[off + 0] = uid[0];
   out[off + 1] = uid[1];
   out[off + 2] = uid[2];
   out[off + 3] = (uint8_t)(0x88 ^ uid[0] ^ uid[1] ^ uid[2]); // BCC0
 
   // Tag page 1.
-  off = CU_PREFIX + 4;
+  off = 4;
   out[off + 0] = uid[3];
   out[off + 1] = uid[4];
   out[off + 2] = uid[5];
   out[off + 3] = uid[6];
 
   // Tag page 2.
-  off = CU_PREFIX + 8;
+  off = 8;
   out[off + 0] = (uint8_t)(uid[3] ^ uid[4] ^ uid[5] ^ uid[6]); // BCC1
   out[off + 1] = 0x48;
   out[off + 2] = 0x00;
   out[off + 3] = 0x00;
 
   // Tag page 3 — Capability Container.
-  off = CU_PREFIX + 12;
+  off = 12;
   out[off + 0] = 0xE1;
   out[off + 1] = 0x10;
   out[off + 2] = 0x3E;
   out[off + 3] = 0x00;
 
   // Tag page 4 onward — NDEF Message TLV.
-  size_t p = CU_PREFIX + 16;
+  size_t p = 16;
   out[p++] = 0x03;
   if (ndefLen < 0xFF) {
     out[p++] = (uint8_t)ndefLen;
@@ -171,30 +160,30 @@ bool NfcTagBuilder::buildNtag215(const uint8_t uid[7],
   }
   out[p++] = 0xFE;
 
-  // Chameleon Ultra app NTAG215 export tail:
+  // NTAG215 configuration tail:
   // page 130 dynamic locks
-  off = CU_PREFIX + 130 * 4;
+  off = 130 * 4;
   out[off + 0] = 0x00;
   out[off + 1] = 0x00;
   out[off + 2] = 0x00;
   out[off + 3] = 0xBD;
 
   // page 131 CFG0
-  off = CU_PREFIX + 131 * 4;
+  off = 131 * 4;
   out[off + 0] = 0x04;
   out[off + 1] = 0x00;
   out[off + 2] = 0x00;
   out[off + 3] = 0xFF;
 
-  // page 132 CFG1 / ACCESS, matching the CU app export.
-  off = CU_PREFIX + 132 * 4;
+  // page 132 CFG1 / ACCESS.
+  off = 132 * 4;
   out[off + 0] = 0x00;
   out[off + 1] = 0x05;
   out[off + 2] = 0x00;
   out[off + 3] = 0x00;
 
-  // page 133 PWD in the CU app export.
-  off = CU_PREFIX + 133 * 4;
+  // page 133 PWD.
+  off = 133 * 4;
   out[off + 0] = 0x00;
   out[off + 1] = 0x00;
   out[off + 2] = 0x00;
