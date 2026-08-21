@@ -385,6 +385,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   }
 
   if (!c.setSlotEnable(_slot, 2, true)) return false; // HF = freq 2
+  if (!c.setMode(0)) return false;
   _hfType = tagType;
   _hfEnabled = true;
   return true;
@@ -413,6 +414,7 @@ bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
   if (!c.setActiveSlot(_slot))       return false;
   if (!c.setEM410XSlot(uid))         return false;
   if (!c.setSlotEnable(_slot, 1, true)) return false; // LF = freq 1
+  if (!c.setMode(0)) return false;
   _lfType    = 100;
   _lfEnabled = true;
   return true;
