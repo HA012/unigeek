@@ -224,6 +224,11 @@ void ChameleonSlotEditScreen::_saveNicks() {
 // ── Load content from SD / manual input ─────────────────────────────────────
 
 static uint16_t _hfTypeForSize(uint32_t size) {
+  // Type-2 dumps must be matched exactly before the Classic size ranges:
+  // an NTAG215 dump is 135 pages * 4 bytes = 540 bytes and would otherwise
+  // be mistaken for a MIFARE Classic Mini dump by the legacy >= 320 test.
+  if (size == 540) return 1101; // NTAG215
+
   if (size >= 4096) return 1003; // MF Classic 4K
   if (size >= 2048) return 1002; // MF Classic 2K
   if (size >= 1024) return 1001; // MF Classic 1K
@@ -231,89 +236,155 @@ static uint16_t _hfTypeForSize(uint32_t size) {
   return 0;
 }
 
+static bool _isMfClassicType(uint16_t type) {
+  return type >= 1000 && type <= 1003;
+}
+
+static bool _isNtag215Type(uint16_t type) {
+  return type == 1101;
+}
+
 bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   if (!Uni.Storage) return false;
   fs::File f = Uni.Storage->open(path, "r");
   if (!f) return false;
 
-  uint32_t size = f.size();
-  uint16_t tagType = _hfTypeForSize(size);
+  const uint32_t size = f.size();
+  const uint16_t tagType = _hfTypeForSize(size);
   if (tagType == 0) { f.close(); return false; }
 
   auto& c = ChameleonClient::get();
-  if (!c.setSlotTagType(_slot, tagType)) {
-    f.close();
-    return false;
-  }
-  if (!c.setSlotDataDefault(_slot, tagType)) {
-    f.close();
-    return false;
-  }
-  if (!c.setActiveSlot(_slot)) {
+  if (!c.setSlotTagType(_slot, tagType) ||
+      !c.setSlotDataDefault(_slot, tagType) ||
+      !c.setActiveSlot(_slot)) {
     f.close();
     return false;
   }
 
-  // Block 0 holds UID / BCC / SAK / ATQA for anti-collision.
-  uint8_t block0[16] = {};
-  if (f.read(block0, 16) != 16) { f.close(); return false; }
-  uint8_t uidLen = 4;
-  uint8_t acoPayload[11] = {};
-  acoPayload[0] = uidLen;
-  memcpy(acoPayload + 1, block0, uidLen);
-  acoPayload[1 + uidLen] = block0[6];  // ATQA in dump order
-  acoPayload[2 + uidLen] = block0[7];
-  acoPayload[3 + uidLen] = block0[5];  // SAK
-  acoPayload[4 + uidLen] = 0;          // ATS length (MIFARE Classic: no ATS)
-  uint16_t st = 0;
-  if (!c.sendCommand(ChameleonClient::CMD_MF1_SET_ANTI_COLL,
-                     acoPayload, 5 + uidLen, nullptr, nullptr, &st) ||
-      (st != 0 && st != 0x68)) {
-    f.close();
-    return false;
-  }
-
-  // Stream blocks to the slot 8 blocks (128 B) at a time.
-  // Match the PN532 write UI: centered status text + real progress bar.
-  f.seek(0);
-  uint8_t buf[128];
-  uint8_t startBlock = 0;
-  uint32_t loaded = 0;
-
-  const uint16_t totalBlocks = (uint16_t)(size / 16);
-
-  ProgressView::init();
-
-  while (f.available()) {
-    int n = f.read(buf, sizeof(buf));
-    if (n <= 0) break;
-
-    uint16_t loadedBlocks = (uint16_t)(loaded / 16);
-    char msg[40];
-    snprintf(msg, sizeof(msg), "Loading HF slot %u: block %u/%u",
-             _slot + 1,
-             (unsigned)loadedBlocks,
-             (unsigned)totalBlocks);
-
-    int pct = (size > 0) ? (int)((loaded * 100UL) / size) : 0;
-    ProgressView::progress(msg, pct);
-
-    if (!c.mf1LoadBlockData(_slot, startBlock, buf, (uint16_t)n)) {
+  if (_isMfClassicType(tagType)) {
+    // Existing Classic path: block 0 carries the anti-collision fields used by
+    // UniGeek's Classic .bin format.
+    uint8_t block0[16] = {};
+    if (f.read(block0, 16) != 16) { f.close(); return false; }
+    const uint8_t uidLen = 4;
+    uint8_t acoPayload[11] = {};
+    acoPayload[0] = uidLen;
+    memcpy(acoPayload + 1, block0, uidLen);
+    acoPayload[1 + uidLen] = block0[6];
+    acoPayload[2 + uidLen] = block0[7];
+    acoPayload[3 + uidLen] = block0[5];
+    acoPayload[4 + uidLen] = 0;
+    uint16_t st = 0;
+    if (!c.sendCommand(ChameleonClient::CMD_MF1_SET_ANTI_COLL,
+                       acoPayload, 5 + uidLen, nullptr, nullptr, &st) ||
+        (st != 0 && st != 0x68)) {
       f.close();
-      ProgressView::finish();
       return false;
     }
 
-    loaded += (uint32_t)n;
-    startBlock += n / 16;
-  }
-  f.close();
+    f.seek(0);
+    uint8_t buf[128];
+    uint8_t startBlock = 0;
+    uint32_t loaded = 0;
+    const uint16_t totalBlocks = (uint16_t)(size / 16);
 
-  ProgressView::finish();
+    ProgressView::init();
+    while (f.available()) {
+      int n = f.read(buf, sizeof(buf));
+      if (n <= 0) break;
 
-  if (!c.setSlotEnable(_slot, 2, true)) {
+      const uint16_t loadedBlocks = (uint16_t)(loaded / 16);
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Loading HF slot %u: block %u/%u",
+               _slot + 1, (unsigned)loadedBlocks, (unsigned)totalBlocks);
+      const int pct = (size > 0) ? (int)((loaded * 100UL) / size) : 0;
+      ProgressView::progress(msg, pct);
+
+      if (!c.mf1LoadBlockData(_slot, startBlock, buf, (uint16_t)n)) {
+        f.close();
+        ProgressView::finish();
+        return false;
+      }
+      loaded += (uint32_t)n;
+      startBlock += n / 16;
+    }
+    f.close();
+    ProgressView::finish();
+  } else if (_isNtag215Type(tagType)) {
+    // Standard raw NTAG215 dump: 135 pages (0..134), 4 bytes per page.
+    // UID is encoded across pages 0 and 1:
+    //   page 0: UID0 UID1 UID2 BCC0
+    //   page 1: UID3 UID4 UID5 UID6
+    uint8_t firstPages[12] = {};
+    if (f.read(firstPages, sizeof(firstPages)) != (int)sizeof(firstPages)) {
+      f.close();
+      return false;
+    }
+
+    const uint8_t uid[7] = {
+      firstPages[0], firstPages[1], firstPages[2],
+      firstPages[4], firstPages[5], firstPages[6], firstPages[7]
+    };
+
+    // Type-2 / NTAG21x anti-collision values: 7-byte UID, ATQA 0x0044,
+    // SAK 0x00, no ATS. The protocol expects ATQA as the two wire bytes.
+    uint8_t acoPayload[12] = {};
+    acoPayload[0] = 7;
+    memcpy(acoPayload + 1, uid, 7);
+    acoPayload[8]  = 0x44;
+    acoPayload[9]  = 0x00;
+    acoPayload[10] = 0x00;
+    acoPayload[11] = 0x00;
+    uint16_t st = 0;
+    if (!c.sendCommand(ChameleonClient::CMD_MF1_SET_ANTI_COLL,
+                       acoPayload, sizeof(acoPayload), nullptr, nullptr, &st) ||
+        (st != 0 && st != 0x68)) {
+      f.close();
+      return false;
+    }
+
+    f.seek(0);
+    static constexpr uint8_t kPagesPerChunk = 32; // 128 data bytes / BLE command
+    uint8_t buf[kPagesPerChunk * 4];
+    uint8_t firstPage = 0;
+    uint16_t loadedPages = 0;
+    static constexpr uint16_t kTotalPages = 135;
+
+    ProgressView::init();
+    while (loadedPages < kTotalPages) {
+      const uint8_t pageCount = (uint8_t)min((uint16_t)kPagesPerChunk,
+                                             (uint16_t)(kTotalPages - loadedPages));
+      const uint16_t want = (uint16_t)pageCount * 4;
+      const int n = f.read(buf, want);
+      if (n != want) {
+        f.close();
+        ProgressView::finish();
+        return false;
+      }
+
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Loading HF slot %u: page %u/%u",
+               _slot + 1, (unsigned)loadedPages, (unsigned)kTotalPages);
+      const int pct = (int)((loadedPages * 100UL) / kTotalPages);
+      ProgressView::progress(msg, pct);
+
+      if (!c.mfuLoadPageData(_slot, firstPage, buf, pageCount)) {
+        f.close();
+        ProgressView::finish();
+        return false;
+      }
+      loadedPages += pageCount;
+      firstPage += pageCount;
+    }
+    f.close();
+    ProgressView::progress("NTAG215 loaded", 100);
+    ProgressView::finish();
+  } else {
+    f.close();
     return false;
-  } // HF = freq 2
+  }
+
+  if (!c.setSlotEnable(_slot, 2, true)) return false; // HF = freq 2
   _hfType = tagType;
   _hfEnabled = true;
   return true;

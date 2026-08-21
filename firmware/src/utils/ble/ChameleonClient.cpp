@@ -590,6 +590,25 @@ bool ChameleonClient::mf1GetBlockData(uint8_t startBlock, uint8_t count, uint8_t
   return st == 0 || st == 0x68;
 }
 
+bool ChameleonClient::mfuLoadPageData(uint8_t slot, uint8_t firstPage,
+                                          const uint8_t* data, uint8_t pageCount) {
+  if (!data || pageCount == 0) return false;
+  if (!setActiveSlot(slot)) return false;
+
+  const uint16_t dataLen = (uint16_t)pageCount * 4;
+  uint8_t* p = (uint8_t*)malloc(2 + dataLen);
+  if (!p) return false;
+  p[0] = firstPage;
+  p[1] = pageCount;
+  memcpy(p + 2, data, dataLen);
+
+  uint16_t st = 0;
+  bool ok = sendCommand(CMD_MF0_NTAG_WRITE_EMU_PAGE_DATA, p, 2 + dataLen,
+                        nullptr, nullptr, &st, 3000);
+  free(p);
+  return ok && (st == 0 || st == 0x68);
+}
+
 bool ChameleonClient::hf14ARaw(uint8_t options, uint16_t timeoutMs, uint16_t bitLen,
                                 const uint8_t* data, uint16_t dataBytes,
                                 uint8_t* respOut, uint16_t* respLen,
