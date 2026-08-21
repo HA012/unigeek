@@ -631,6 +631,198 @@ bool ChameleonClient::hf14ARaw(uint8_t options, uint16_t timeoutMs, uint16_t bit
   return ok;
 }
 
+
+// ── Ultralight / NTAG reader ─────────────────────────────────────────────────
+
+namespace {
+
+// HF14A_RAW option bits, MSB first:
+// activate_rf_field | wait_response | append_crc | auto_select | keep_rf_field.
+// auto_select performs the ISO14443A selection before each command.
+static constexpr uint8_t kMfuRawOptions = 0xF8;
+
+static bool _mfuRaw(ChameleonClient& c, const uint8_t* cmd, uint8_t cmdLen,
+                    uint8_t* out, uint16_t* outLen, uint16_t outSize,
+                    uint16_t timeoutMs = 500) {
+  uint16_t st = 0;
+  if (!c.hf14ARaw(kMfuRawOptions, timeoutMs, (uint16_t)cmdLen * 8,
+                  cmd, cmdLen, out, outLen, outSize, &st)) {
+    return false;
+  }
+  // HF commands normally report 0x68 (HF_TAG_OK); some firmware revisions
+  // use generic success (0). Keep both, as elsewhere in ChameleonClient.
+  return st == 0 || st == 0x68;
+}
+
+static bool _mfuRead4(ChameleonClient& c, uint8_t page, uint8_t out16[16]) {
+  const uint8_t cmd[2] = {0x30, page}; // READ: four pages / 16 data bytes
+  uint8_t rsp[24] = {};
+  uint16_t len = 0;
+  if (!_mfuRaw(c, cmd, sizeof(cmd), rsp, &len, sizeof(rsp))) return false;
+  // A successful READ contains 16 data bytes (+ CRC on firmware paths that
+  // return it). A one-byte response is a Type-2 NAK.
+  if (len < 16) return false;
+  memcpy(out16, rsp, 16);
+  return true;
+}
+
+static bool _mfuGetVersion(ChameleonClient& c, uint8_t out8[8]) {
+  const uint8_t cmd = 0x60; // GET_VERSION
+  uint8_t rsp[16] = {};
+  uint16_t len = 0;
+  if (!_mfuRaw(c, &cmd, 1, rsp, &len, sizeof(rsp))) return false;
+  if (len < 8) return false;
+  memcpy(out8, rsp, 8);
+  return true;
+}
+
+static bool _mfuUlCAuthProbe(ChameleonClient& c) {
+  // Ultralight C AUTHENTICATE part 1. UL-C answers AF + 8-byte encrypted RndB.
+  const uint8_t cmd[2] = {0x1A, 0x00};
+  uint8_t rsp[16] = {};
+  uint16_t len = 0;
+  if (!_mfuRaw(c, cmd, sizeof(cmd), rsp, &len, sizeof(rsp))) return false;
+  return len >= 9 && rsp[0] == 0xAF;
+}
+
+static bool _mfuVersionToInfo(const uint8_t v[8], uint16_t* type, uint16_t* pages) {
+  // NXP GET_VERSION layout:
+  // vendor | product type | subtype | major | minor | storage size | protocol
+  // v[6] is the storage-size code used to distinguish members of a family.
+  if (v[1] != 0x04) return false; // NXP
+
+  // NTAG21x: product type 0x04.
+  if (v[2] == 0x04) {
+    switch (v[6]) {
+      case 0x0B: *type = ChameleonClient::MFU_NTAG210; *pages = 20;  return true;
+      case 0x0E: *type = ChameleonClient::MFU_NTAG212; *pages = 41;  return true;
+      case 0x0F: *type = ChameleonClient::MFU_NTAG213; *pages = 45;  return true;
+      case 0x11: *type = ChameleonClient::MFU_NTAG215; *pages = 135; return true;
+      case 0x13: *type = ChameleonClient::MFU_NTAG216; *pages = 231; return true;
+      default: break;
+    }
+  }
+
+  // MIFARE Ultralight EV1: product type 0x03.
+  if (v[2] == 0x03) {
+    switch (v[6]) {
+      case 0x0B:
+        *type = ChameleonClient::MFU_ULTRALIGHT_EV1_11; *pages = 20; return true;
+      case 0x0E:
+        *type = ChameleonClient::MFU_ULTRALIGHT_EV1_21; *pages = 41; return true;
+      default: break;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+const char* ChameleonClient::mfuTagTypeName(uint16_t type) {
+  switch (type) {
+    case MFU_NTAG210:          return "NTAG210";
+    case MFU_NTAG212:          return "NTAG212";
+    case MFU_NTAG213:          return "NTAG213";
+    case MFU_NTAG215:          return "NTAG215";
+    case MFU_NTAG216:          return "NTAG216";
+    case MFU_ULTRALIGHT:       return "Ultralight";
+    case MFU_ULTRALIGHT_C:     return "Ultralight C";
+    case MFU_ULTRALIGHT_EV1_11:return "Ultralight EV1 11";
+    case MFU_ULTRALIGHT_EV1_21:return "Ultralight EV1 21";
+    default:                   return "Unknown";
+  }
+}
+
+bool ChameleonClient::mfuDetect(MfuTagInfo* out) {
+  if (!out) return false;
+  memset(out, 0, sizeof(*out));
+
+  // First establish that an ISO14443A Type-2 candidate is present and retain
+  // its anti-collision data for the result screen / dump metadata.
+  if (!scan14A(out->uid, &out->uidLen, out->atqa, &out->sak)) return false;
+  if (out->sak != 0x00) return false;
+
+  uint8_t version[8] = {};
+  for (uint8_t attempt = 0; attempt < 3; ++attempt) {
+    if (_mfuGetVersion(*this, version)) {
+      if (_mfuVersionToInfo(version, &out->type, &out->pages)) return true;
+      // We received a real GET_VERSION response, but not one we know.
+      // Do not misclassify it with legacy memory-size probes.
+      return false;
+    }
+    delay(30);
+  }
+
+  // Legacy Ultralight / Ultralight C do not implement GET_VERSION.
+  // Probe UL-C explicitly before falling back to the original 16-page UL.
+  // The AUTH probe changes UL-C authentication state, but every raw operation
+  // auto-selects the card again, so subsequent reads start a fresh activation.
+  if (_mfuUlCAuthProbe(*this)) {
+    out->type  = MFU_ULTRALIGHT_C;
+    out->pages = 48;
+    return true;
+  }
+
+  uint8_t tmp[16] = {};
+  if (_mfuRead4(*this, 0, tmp) && !_mfuRead4(*this, 16, tmp)) {
+    out->type  = MFU_ULTRALIGHT;
+    out->pages = 16;
+    return true;
+  }
+
+  return false;
+}
+
+bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
+                                  uint16_t outSize, uint16_t* bytesRead) {
+  if (bytesRead) *bytesRead = 0;
+  const uint32_t total = (uint32_t)info.pages * 4u;
+  if (!out || outSize < total || info.pages < 4) return false;
+
+  uint16_t page = 0;
+  uint16_t done = 0;
+
+  while (page < info.pages) {
+    uint8_t readPage;
+    uint8_t skipPages = 0;
+    uint8_t pagesToCopy = 4;
+
+    const uint16_t remainingPages = info.pages - page;
+    if (remainingPages >= 4) {
+      readPage = (uint8_t)page;
+    } else {
+      // READ always returns four pages. For a tag whose page count is not a
+      // multiple of four (e.g. NTAG215 = 135 pages), start four pages from
+      // the physical end and copy only the still-missing tail. This avoids
+      // asking the tag for page 135, which does not exist.
+      readPage = (uint8_t)(info.pages - 4);
+      skipPages = (uint8_t)(page - readPage);
+      pagesToCopy = (uint8_t)remainingPages;
+    }
+
+    uint8_t chunk[16] = {};
+    if (!_mfuRead4(*this, readPage, chunk)) {
+      // Ultralight C pages 44..47 contain the 3DES key and are intentionally
+      // not readable. Preserve a complete 48-page image with zeroes there.
+      if (info.type == MFU_ULTRALIGHT_C && readPage >= 44) {
+        memset(chunk, 0, sizeof(chunk));
+      } else {
+        if (bytesRead) *bytesRead = done;
+        return false;
+      }
+    }
+
+    const uint16_t copyBytes = (uint16_t)pagesToCopy * 4u;
+    memcpy(out + done, chunk + ((uint16_t)skipPages * 4u), copyBytes);
+    done += copyBytes;
+    page += pagesToCopy;
+  }
+
+  if (bytesRead) *bytesRead = done;
+  return done == total;
+}
+
+
 // ── Firmware nested-attack helpers ───────────────────────────────────────────
 
 bool ChameleonClient::mf1NTDistance(uint8_t keyType, uint8_t block,

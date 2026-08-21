@@ -158,6 +158,38 @@ public:
                 uint8_t* respOut, uint16_t* respLen, uint16_t respBufSize,
                 uint16_t* outStatus = nullptr);
 
+
+  // ── Ultralight / NTAG reader ──
+  enum MfuTagType : uint16_t {
+    MFU_UNKNOWN       = 0,
+    MFU_NTAG213       = 1100,
+    MFU_NTAG215       = 1101,
+    MFU_NTAG216       = 1102,
+    MFU_ULTRALIGHT    = 1103,
+    MFU_ULTRALIGHT_C  = 1104,
+    MFU_ULTRALIGHT_EV1_11 = 1105,
+    MFU_ULTRALIGHT_EV1_21 = 1106,
+    MFU_NTAG210       = 1107,
+    MFU_NTAG212       = 1108,
+  };
+
+  struct MfuTagInfo {
+    uint16_t type;
+    uint16_t pages;
+    uint8_t uid[7];
+    uint8_t uidLen;
+    uint8_t atqa[2];
+    uint8_t sak;
+  };
+
+  // Detect the concrete Ultralight / NTAG variant without asking the user.
+  // GET_VERSION is preferred; legacy tags fall back to safe capability probes.
+  bool mfuDetect(MfuTagInfo* out);
+  // Read a Type-2 memory image as consecutive 4-byte pages.
+  bool mfuReadDump(const MfuTagInfo& info, uint8_t* out, uint16_t outSize,
+                   uint16_t* bytesRead = nullptr);
+  static const char* mfuTagTypeName(uint16_t type);
+
   // Firmware-side nested-attack helpers (cmds 2003/2005/2006).
   // The Chameleon Ultra firmware does the entire CRYPTO1 + nested-AUTH dance
   // on-device and returns prepared (Nt, NtEnc, parity) samples that we feed
