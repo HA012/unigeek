@@ -186,8 +186,10 @@ public:
   // GET_VERSION is preferred; legacy tags fall back to safe capability probes.
   bool mfuDetect(MfuTagInfo* out);
   // Read a Type-2 memory image as consecutive 4-byte pages.
+  using MfuProgressCallback = void (*)(uint16_t pagesDone, uint16_t totalPages);
   bool mfuReadDump(const MfuTagInfo& info, uint8_t* out, uint16_t outSize,
-                   uint16_t* bytesRead = nullptr);
+                   uint16_t* bytesRead = nullptr,
+                   MfuProgressCallback progress = nullptr);
   static const char* mfuTagTypeName(uint16_t type);
 
   // Firmware-side nested-attack helpers (cmds 2003/2005/2006).

@@ -18,7 +18,6 @@ private:
   State _state = STATE_IDLE;
   bool _busy = false;
   bool _needsDraw = true;
-  bool _holdFired = false;
 
   ChameleonClient::MfuTagInfo _info = {};
   uint8_t* _dump = nullptr;

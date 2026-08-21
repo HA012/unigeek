@@ -774,7 +774,8 @@ bool ChameleonClient::mfuDetect(MfuTagInfo* out) {
 }
 
 bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
-                                  uint16_t outSize, uint16_t* bytesRead) {
+                                  uint16_t outSize, uint16_t* bytesRead,
+                                  MfuProgressCallback progress) {
   if (bytesRead) *bytesRead = 0;
   const uint32_t total = (uint32_t)info.pages * 4u;
   if (!out || outSize < total || info.pages < 4) return false;
@@ -816,6 +817,7 @@ bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
     memcpy(out + done, chunk + ((uint16_t)skipPages * 4u), copyBytes);
     done += copyBytes;
     page += pagesToCopy;
+    if (progress) progress(page, info.pages);
   }
 
   if (bytesRead) *bytesRead = done;

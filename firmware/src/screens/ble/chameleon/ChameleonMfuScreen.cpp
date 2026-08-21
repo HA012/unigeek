@@ -6,6 +6,18 @@
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
 
+namespace {
+void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
+  char msg[32];
+  snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+           (unsigned)pagesDone, (unsigned)totalPages);
+  const int pct = totalPages
+                    ? (int)((uint32_t)pagesDone * 100u / totalPages)
+                    : 0;
+  ProgressView::progress(msg, pct);
+}
+} // namespace
+
 void ChameleonMfuScreen::_freeDump() {
   if (_dump) {
     free(_dump);
@@ -105,8 +117,7 @@ void ChameleonMfuScreen::_buildResult() {
     addRow("NDEF", "Not found");
   }
 
-  addRow("[Press]", "Read again");
-  addRow("[Hold]", "Save dump");
+  addRow("[Press]", "Save dump");
 
   _scrollView.setRows(_rows, _rowCount);
 }
@@ -148,10 +159,13 @@ void ChameleonMfuScreen::_read() {
   }
 
   ProgressView::init();
-  ProgressView::progress("Reading tag", 0);
+  char progressMsg[32];
+  snprintf(progressMsg, sizeof(progressMsg), "Reading 0/%u pages",
+           (unsigned)_info.pages);
+  ProgressView::progress(progressMsg, 0);
 
   uint16_t got = 0;
-  bool ok = c.mfuReadDump(_info, _dump, (uint16_t)total, &got);
+  bool ok = c.mfuReadDump(_info, _dump, (uint16_t)total, &got, _mfuProgress);
   ProgressView::finish();
 
   _busy = false;
@@ -223,13 +237,6 @@ void ChameleonMfuScreen::onInit() {
 void ChameleonMfuScreen::onUpdate() {
   if (_busy) return;
 
-  if (!_holdFired && Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 700) {
-    _holdFired = true;
-    Uni.Nav->suppressCurrentPress();
-    if (_state == STATE_RESULT) _save();
-    return;
-  }
-
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK) {
@@ -238,12 +245,11 @@ void ChameleonMfuScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS) {
-      _read();
+      if (_state == STATE_RESULT) _save();
+      else _read();
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);
-  } else if (_holdFired && !Uni.Nav->isPressed()) {
-    _holdFired = false;
   }
 }
 

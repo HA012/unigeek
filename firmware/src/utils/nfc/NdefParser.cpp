@@ -165,6 +165,8 @@ bool NdefParser::parse(const uint8_t* ndef, size_t ndefLen, Result& out) {
   const uint8_t* payload = &ndef[p];
 
   out.type = _bytesToString(type, typeLen);
+  out.payload = payload;
+  out.payloadLen = payloadLen;
   out.valid = true;
 
   if (out.tnf == 0x01 && typeLen == 1 && type[0] == 'T' && payloadLen >= 1) {

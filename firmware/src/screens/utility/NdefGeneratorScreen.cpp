@@ -4,6 +4,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "utils/nfc/NdefBuilder.h"
+#include "utils/nfc/NdefParser.h"
 
 static String _sanitizeNdefName(String name) {
   name.trim();
@@ -26,18 +27,7 @@ static String _sanitizeNdefName(String name) {
   return name;
 }
 
-static String _previewUriPrefix(uint8_t code) {
-  switch (code) {
-    case 0x00: return "";
-    case 0x01: return "http://www.";
-    case 0x02: return "https://www.";
-    case 0x03: return "http://";
-    case 0x04: return "https://";
-    case 0x05: return "tel:";
-    case 0x06: return "mailto:";
-    default:   return "";
-  }
-}
+
 
 const char* NdefGeneratorScreen::title() {
   return (_state == STATE_PREVIEW) ? "NDEF Preview" : "New NDEF Record";
@@ -59,10 +49,10 @@ void NdefGeneratorScreen::onUpdate() {
       } else if (dir == INavigation::DIR_PRESS) {
         String name = InputTextAction::popup("File name", _previewSuggestedName.c_str());
         if (InputTextAction::wasCancelled()) {
-          // EXIT from the filename editor cancels the whole New NDEF operation.
           _previewNdefLen = 0;
           _previewSuggestedName = "";
-          Screen.goBack();
+          _state = STATE_TYPE_SELECT;
+          setItems(_items);
           return;
         }
         if (_saveNdef(_previewNdef, _previewNdefLen, name)) {
@@ -151,73 +141,47 @@ void NdefGeneratorScreen::_showPreview(const uint8_t* ndef, size_t ndefLen) {
   snprintf(lenBuf, sizeof(lenBuf), "%u bytes", (unsigned)ndefLen);
   _pushRow("NDEF Size", lenBuf);
 
-  if (!ndef || ndefLen < 3) {
+  NdefParser::Result parsed;
+  if (!NdefParser::parse(ndef, ndefLen, parsed)) {
     _pushRow("NDEF", "Invalid record");
   } else {
-    size_t p = 0;
-    uint8_t hdr = ndef[p++];
-    bool sr = (hdr & 0x10) != 0;
-    bool il = (hdr & 0x08) != 0;
-    uint8_t tnf = hdr & 0x07;
-    uint8_t typeLen = ndef[p++];
-
-    uint32_t payloadLen = 0;
-    if (sr && p < ndefLen) payloadLen = ndef[p++];
-    else if (!sr && p + 4 <= ndefLen) {
-      payloadLen = ((uint32_t)ndef[p] << 24) |
-                   ((uint32_t)ndef[p + 1] << 16) |
-                   ((uint32_t)ndef[p + 2] << 8) |
-                   (uint32_t)ndef[p + 3];
-      p += 4;
-    }
-
-    uint8_t idLen = 0;
-    if (il && p < ndefLen) idLen = ndef[p++];
-
-    if (p + typeLen + idLen + payloadLen <= ndefLen) {
-      const uint8_t* type = &ndef[p];
-      p += typeLen + idLen;
-      const uint8_t* payload = &ndef[p];
-
-      if (tnf == 0x01 && typeLen == 1 && type[0] == 'T' && payloadLen >= 1) {
-        uint8_t status = payload[0];
-        uint8_t langLen = status & 0x3F;
-        String text;
-        if ((size_t)1 + langLen <= payloadLen) {
-          for (size_t i = 1 + langLen; i < payloadLen; i++) text += (char)payload[i];
-        }
+    switch (parsed.kind) {
+      case NdefParser::RECORD_TEXT:
         _pushRow("Record", "Text");
-        _pushWrappedRow("Text", text);
-      } else if (tnf == 0x01 && typeLen == 1 && type[0] == 'U' && payloadLen >= 1) {
-        String uri = _previewUriPrefix(payload[0]);
-        for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
-        if (uri.startsWith("tel:")) {
-          _pushRow("Record", "Phone");
-          _pushWrappedRow("Phone", uri.substring(4));
-        } else if (uri.startsWith("mailto:")) {
-          _pushRow("Record", "Email");
-          _pushWrappedRow("Mail", uri.substring(7));
-        } else {
-          _pushRow("Record", "URI");
-          _pushWrappedRow("URI", uri);
-        }
-      } else {
-        String typeStr;
-        for (uint8_t i = 0; i < typeLen; i++) typeStr += (char)type[i];
-        typeStr.toLowerCase();
+        _pushWrappedRow("Text", parsed.text);
+        break;
 
-        if (tnf == 0x02 &&
-            (typeStr == "text/vcard" || typeStr == "text/x-vcard")) {
-          String card;
-          for (size_t i = 0; i < payloadLen; i++) card += (char)payload[i];
-          _pushRow("Record", "vCard");
-          _pushWrappedRow("vCard", card);
-        } else {
-          _pushRow("Record", typeStr.length() ? typeStr : "Unknown");
-        }
+      case NdefParser::RECORD_URL:
+        _pushRow("Record", "URI");
+        _pushWrappedRow("URI", parsed.uri);
+        break;
+
+      case NdefParser::RECORD_PHONE:
+        _pushRow("Record", "Phone");
+        _pushWrappedRow("Phone", parsed.phone);
+        break;
+
+      case NdefParser::RECORD_EMAIL:
+        _pushRow("Record", "Email");
+        _pushWrappedRow("Mail", parsed.email);
+        break;
+
+      case NdefParser::RECORD_VCARD:
+        _pushRow("Record", "vCard");
+        if (parsed.contact.length()) _pushWrappedRow("Contact", parsed.contact);
+        if (parsed.company.length()) _pushWrappedRow("Company", parsed.company);
+        if (parsed.address.length()) _pushWrappedRow("Address", parsed.address);
+        if (parsed.phone.length()) _pushWrappedRow("Phone", parsed.phone);
+        if (parsed.email.length()) _pushWrappedRow("Mail", parsed.email);
+        if (parsed.website.length()) _pushWrappedRow("Website", parsed.website);
+        break;
+
+      default: {
+        String typeStr = parsed.type;
+        typeStr.toLowerCase();
+        _pushRow("Record", typeStr.length() ? typeStr : "Unknown");
+        break;
       }
-    } else {
-      _pushRow("NDEF", "Truncated record");
     }
   }
 

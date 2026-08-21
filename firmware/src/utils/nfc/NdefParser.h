@@ -19,6 +19,11 @@ public:
     RecordKind kind = RECORD_UNSUPPORTED;
     uint8_t tnf = 0;
     String type;
+
+    // View into the original NDEF buffer. Valid only while that buffer remains alive.
+    const uint8_t* payload = nullptr;
+    size_t payloadLen = 0;
+
     String encoding;
     String language;
     String text;

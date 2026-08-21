@@ -9,6 +9,7 @@
 #include "ui/actions/InputSelectAction.h"
 #include "ui/views/ProgressView.h"
 #include "../../utils/nfc/NdefBuilder.h"
+#include "../../utils/nfc/NdefParser.h"
 
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
 // Adafruit_PN532 exposes sendCommandCheckAck() publicly but readdata() is
@@ -465,56 +466,9 @@ String PN532I2cScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
 }
 
 
-static String _ndefUriPrefix(uint8_t code) {
-  switch (code) {
-    case 0x00: return "";
-    case 0x01: return "http://www.";
-    case 0x02: return "https://www.";
-    case 0x03: return "http://";
-    case 0x04: return "https://";
-    case 0x05: return "tel:";
-    case 0x06: return "mailto:";
-    case 0x07: return "ftp://anonymous:anonymous@";
-    case 0x08: return "ftp://ftp.";
-    case 0x09: return "ftps://";
-    case 0x0A: return "sftp://";
-    case 0x0B: return "smb://";
-    case 0x0C: return "nfs://";
-    case 0x0D: return "ftp://";
-    case 0x0E: return "dav://";
-    case 0x0F: return "news:";
-    case 0x10: return "telnet://";
-    case 0x11: return "imap:";
-    case 0x12: return "rtsp://";
-    case 0x13: return "urn:";
-    case 0x14: return "pop:";
-    case 0x15: return "sip:";
-    case 0x16: return "sips:";
-    case 0x17: return "tftp:";
-    case 0x18: return "btspp://";
-    case 0x19: return "btl2cap://";
-    case 0x1A: return "btgoep://";
-    case 0x1B: return "tcpobex://";
-    case 0x1C: return "irdaobex://";
-    case 0x1D: return "file://";
-    case 0x1E: return "urn:epc:id:";
-    case 0x1F: return "urn:epc:tag:";
-    case 0x20: return "urn:epc:pat:";
-    case 0x21: return "urn:epc:raw:";
-    case 0x22: return "urn:epc:";
-    case 0x23: return "urn:nfc:";
-    default:   return "";
-  }
-}
 
-static String _bytesToPrintable(const uint8_t* data, size_t len) {
-  String s;
-  for (size_t i = 0; i < len; i++) {
-    char c = (char)data[i];
-    s += (c >= 32 && c <= 126) ? c : '.';
-  }
-  return s;
-}
+
+
 
 void PN532I2cScreen::_resetRows() { _rowCount = 0; }
 
@@ -976,9 +930,13 @@ void PN532I2cScreen::_doUltralightDump() {
   _ndefLen = 0;
 
   ProgressView::init();
-  for (uint8_t page = 0; page < 64; page++) {
-    int pct = page * 100 / 64;
-    char msg[24]; snprintf(msg, sizeof(msg), "Page %d", page);
+  static constexpr uint8_t TOTAL_PAGES = 64;
+  for (uint8_t page = 0; page < TOTAL_PAGES; page++) {
+    const uint8_t currentPage = page + 1;
+    int pct = (int)((uint16_t)page * 100u / TOTAL_PAGES);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+             (unsigned)currentPage, (unsigned)TOTAL_PAGES);
     ProgressView::progress(msg, pct);
     uint8_t data[4];
     if (!_nfc->mifareultralight_ReadPage(page, data)) break;
@@ -1082,10 +1040,14 @@ void PN532I2cScreen::_doReadNdef() {
   size_t userLen = 0;
 
   ProgressView::init();
+  const uint8_t totalPages = LAST_PAGE - FIRST_PAGE + 1;
   for (uint8_t page = FIRST_PAGE; page <= LAST_PAGE; page++) {
-    char msg[24];
-    snprintf(msg, sizeof(msg), "Reading page %u", page);
-    ProgressView::progress(msg, (page - FIRST_PAGE) * 100 / (LAST_PAGE - FIRST_PAGE + 1));
+    const uint8_t currentPage = page - FIRST_PAGE + 1;
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+             (unsigned)currentPage, (unsigned)totalPages);
+    ProgressView::progress(msg,
+                           (int)((uint16_t)(currentPage - 1) * 100u / totalPages));
 
     uint8_t data[4];
     if (!_nfc->mifareultralight_ReadPage(page, data)) break;
@@ -1184,197 +1146,74 @@ void PN532I2cScreen::_showNdefResult(const uint8_t* uid, uint8_t uidLen,
     return;
   }
 
-  if (ndefLen < 3) {
+  NdefParser::Result parsed;
+  if (!NdefParser::parse(ndef, ndefLen, parsed)) {
     _pushRow("NDEF", "Invalid record");
     _scrollView.setRows(_rows, _rowCount);
     render();
     return;
   }
-
-  // Decode the first NDEF record. Support both Short Record (SR) and normal
-  // payload-length encoding. Text and URI are decoded; other record types fall
-  // back to a compact generic view.
-  size_t p = 0;
-  uint8_t flagsTnf = ndef[p++];
-  bool sr = (flagsTnf & 0x10) != 0;
-  bool il = (flagsTnf & 0x08) != 0;
-  uint8_t tnf = flagsTnf & 0x07;
-
-  if (p >= ndefLen) {
-    _pushRow("NDEF", "Invalid record");
-    _scrollView.setRows(_rows, _rowCount);
-    render();
-    return;
-  }
-
-  uint8_t typeLen = ndef[p++];
-  uint32_t payloadLen = 0;
-
-  if (sr) {
-    if (p >= ndefLen) {
-      _pushRow("NDEF", "Invalid record");
-      _scrollView.setRows(_rows, _rowCount);
-      render();
-      return;
-    }
-    payloadLen = ndef[p++];
-  } else {
-    if (p + 3 >= ndefLen) {
-      _pushRow("NDEF", "Invalid record");
-      _scrollView.setRows(_rows, _rowCount);
-      render();
-      return;
-    }
-    payloadLen = ((uint32_t)ndef[p] << 24) |
-                 ((uint32_t)ndef[p + 1] << 16) |
-                 ((uint32_t)ndef[p + 2] << 8) |
-                 (uint32_t)ndef[p + 3];
-    p += 4;
-  }
-
-  uint8_t idLen = 0;
-  if (il) {
-    if (p >= ndefLen) {
-      _pushRow("NDEF", "Invalid record");
-      _scrollView.setRows(_rows, _rowCount);
-      render();
-      return;
-    }
-    idLen = ndef[p++];
-  }
-
-  if (p + typeLen + idLen + payloadLen > ndefLen) {
-    _pushRow("NDEF", "Truncated record");
-    _scrollView.setRows(_rows, _rowCount);
-    render();
-    return;
-  }
-
-  const uint8_t* type = &ndef[p];
-  p += typeLen;
-  p += idLen;
-  const uint8_t* payload = &ndef[p];
 
   char tnfBuf[8];
-  snprintf(tnfBuf, sizeof(tnfBuf), "%u", tnf);
+  snprintf(tnfBuf, sizeof(tnfBuf), "%u", parsed.tnf);
   _pushRow("TNF", tnfBuf);
+  _pushRow("Type", parsed.type.length() ? parsed.type : "(empty)");
 
-  String typeStr = _bytesToPrintable(type, typeLen);
-  _pushRow("Type", typeStr.length() ? typeStr : "(empty)");
-
-  // NFC Forum Well Known Text record ("T").
-  if (tnf == 0x01 && typeLen == 1 && type[0] == 'T' && payloadLen >= 1) {
-    uint8_t status = payload[0];
-    bool utf16 = (status & 0x80) != 0;
-    uint8_t langLen = status & 0x3F;
-
-    if ((size_t)1 + langLen <= payloadLen) {
-      String lang;
-      for (uint8_t i = 0; i < langLen; i++) lang += (char)payload[1 + i];
-
+  switch (parsed.kind) {
+    case NdefParser::RECORD_TEXT:
       _pushRow("Record", "Text");
-      _pushRow("Encoding", utf16 ? "UTF-16" : "UTF-8");
-      if (lang.length()) _pushRow("Language", lang);
-
-      if (!utf16) {
-        String text;
-        for (size_t i = 1 + langLen; i < payloadLen; i++) text += (char)payload[i];
-        _pushWrappedRow("Text", text);
-      } else {
+      _pushRow("Encoding", parsed.encoding);
+      if (parsed.language.length()) _pushRow("Language", parsed.language);
+      if (parsed.encoding == "UTF-16") {
         _pushRow("Text", "(UTF-16 raw)");
-        uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
-        _pushRow("Raw", _hexBlock(payload, rawLen));
+        uint8_t rawLen = (uint8_t)(parsed.payloadLen < 32 ? parsed.payloadLen : 32);
+        _pushRow("Raw", _hexBlock(parsed.payload, rawLen));
+      } else {
+        _pushWrappedRow("Text", parsed.text);
       }
-    }
-  }
-  // NFC Forum Well Known URI record ("U").
-  else if (tnf == 0x01 && typeLen == 1 && type[0] == 'U' && payloadLen >= 1) {
-    String uri = _ndefUriPrefix(payload[0]);
-    for (size_t i = 1; i < payloadLen; i++) uri += (char)payload[i];
+      break;
 
-    if (uri.startsWith("mailto:")) {
-      _pushRow("Record", "Email");
-      _pushWrappedRow("Mail", uri.substring(7));
-    } else if (uri.startsWith("tel:")) {
-      _pushRow("Record", "Phone");
-      _pushWrappedRow("Phone", uri.substring(4));
-    } else {
+    case NdefParser::RECORD_URL:
       _pushRow("Record", "URI");
-      _pushWrappedRow("URI", uri);
-    }
-  }
-  // MIME vCard.
-  else if (tnf == 0x02 &&
-           (typeStr.equalsIgnoreCase("text/vcard") ||
-            typeStr.equalsIgnoreCase("text/x-vcard"))) {
-    String vcard;
-    vcard.reserve(payloadLen);
-    for (size_t i = 0; i < payloadLen; i++) vcard += (char)payload[i];
-    vcard.replace("\r\n", "\n");
-    vcard.replace("\r", "\n");
-    _pushRow("Record", "vCard");
+      _pushWrappedRow("URI", parsed.uri);
+      break;
 
-    auto vcardValue = [&](const char* key) -> String {
-      int start = 0;
-      while (start < (int)vcard.length()) {
-        int end = vcard.indexOf('\n', start);
-        if (end < 0) end = vcard.length();
-        String line = vcard.substring(start, end);
-        line.trim();
-        int colon = line.indexOf(':');
-        if (colon > 0) {
-          String lhs = line.substring(0, colon);
-          int semi = lhs.indexOf(';');
-          if (semi >= 0) lhs = lhs.substring(0, semi);
-          if (lhs.equalsIgnoreCase(key)) {
-            String value = line.substring(colon + 1);
-            value.replace("\\n", "\n");
-            value.replace("\\,", ",");
-            value.replace("\\;", ";");
-            value.replace("\\\\", "\\");
-            value.trim();
-            return value;
-          }
-        }
-        start = end + 1;
+    case NdefParser::RECORD_PHONE:
+      _pushRow("Record", "Phone");
+      _pushWrappedRow("Phone", parsed.phone);
+      break;
+
+    case NdefParser::RECORD_EMAIL:
+      _pushRow("Record", "Email");
+      _pushWrappedRow("Mail", parsed.email);
+      break;
+
+    case NdefParser::RECORD_VCARD:
+      _pushRow("Record", "vCard");
+      if (parsed.contact.length()) _pushWrappedRow("Contact name", parsed.contact);
+      if (parsed.company.length()) _pushWrappedRow("Company", parsed.company);
+      if (parsed.address.length()) _pushWrappedRow("Address", parsed.address);
+      if (parsed.phone.length()) _pushWrappedRow("Phone", parsed.phone);
+      if (parsed.email.length()) _pushWrappedRow("Mail", parsed.email);
+      if (parsed.website.length()) _pushWrappedRow("Website", parsed.website);
+      if (!parsed.contact.length() && !parsed.company.length() &&
+          !parsed.address.length() && !parsed.phone.length() &&
+          !parsed.email.length() && !parsed.website.length()) {
+        String vcard;
+        vcard.reserve(parsed.payloadLen);
+        for (size_t i = 0; i < parsed.payloadLen; ++i) vcard += (char)parsed.payload[i];
+        vcard.replace("\r\n", "\n");
+        vcard.replace("\r", "\n");
+        _pushWrappedRow("vCard", vcard);
       }
-      return "";
-    };
+      break;
 
-    auto cleanStructured = [](String value) -> String {
-      while (value.indexOf(";;") >= 0) value.replace(";;", ";");
-      while (value.startsWith(";")) value.remove(0, 1);
-      while (value.endsWith(";")) value.remove(value.length() - 1);
-      value.replace(";", ", ");
-      return value;
-    };
-
-    String name = vcardValue("FN");
-    if (name.length() == 0) name = vcardValue("N");
-    String company = vcardValue("ORG");
-    String address = vcardValue("ADR");
-    String phone = vcardValue("TEL");
-    String mail = vcardValue("EMAIL");
-    String website = vcardValue("URL");
-    name = cleanStructured(name);
-    company = cleanStructured(company);
-    address = cleanStructured(address);
-
-    if (name.length())    _pushWrappedRow("Contact name", name);
-    if (company.length()) _pushWrappedRow("Company", company);
-    if (address.length()) _pushWrappedRow("Address", address);
-    if (phone.length())   _pushWrappedRow("Phone", phone);
-    if (mail.length())    _pushWrappedRow("Mail", mail);
-    if (website.length()) _pushWrappedRow("Website", website);
-    if (!name.length() && !company.length() && !address.length() &&
-        !phone.length() && !mail.length() && !website.length()) {
-      _pushWrappedRow("vCard", vcard);
+    default: {
+      _pushRow("Record", "Unsupported");
+      uint8_t rawLen = (uint8_t)(parsed.payloadLen < 32 ? parsed.payloadLen : 32);
+      _pushRow("Payload", _hexBlock(parsed.payload, rawLen));
+      break;
     }
-  }
-  else {
-    _pushRow("Record", "Unsupported");
-    uint8_t rawLen = (uint8_t)(payloadLen < 32 ? payloadLen : 32);
-    _pushRow("Payload", _hexBlock(payload, rawLen));
   }
 
   if (_hasNdef) {
@@ -1882,11 +1721,14 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
   ProgressView::init();
   bool success = true;
 
+  const size_t totalPages = paddedLen / 4;
   for (size_t offset = 0; offset < paddedLen; offset += 4) {
     uint8_t page = 4 + (offset / 4);
+    const size_t currentPage = offset / 4 + 1;
 
-    char msg[24];
-    snprintf(msg, sizeof(msg), "Writing page %u", page);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Writing %u/%u pages",
+             (unsigned)currentPage, (unsigned)totalPages);
     ProgressView::progress(msg, (int)(offset * 100 / paddedLen));
 
     if (!_nfc->mifareultralight_WritePage(page, &payload[offset])) {
