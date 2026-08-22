@@ -65,7 +65,9 @@ public:
   static constexpr uint16_t CMD_MF1_DET_COUNT    = 4005;
   static constexpr uint16_t CMD_MF1_DET_RESULT   = 4006;
   static constexpr uint16_t CMD_MF1_GET_BLOCK    = 4008;
+  static constexpr uint16_t CMD_MF0_NTAG_READ_EMU_PAGE_DATA  = 4021;
   static constexpr uint16_t CMD_MF0_NTAG_WRITE_EMU_PAGE_DATA = 4022;
+  static constexpr uint16_t CMD_MF0_NTAG_GET_PAGE_COUNT      = 4030;
   static constexpr uint16_t CMD_SET_EM410X_ID    = 5000;
   static constexpr uint16_t CMD_GET_EM410X_ID    = 5001;
   static constexpr uint16_t CMD_SET_HID_PROX_ID  = 5002;
@@ -153,6 +155,11 @@ public:
   // The firmware command payload is: firstPage | pageCount | pageData.
   bool mfuLoadPageData(uint8_t slot, uint8_t firstPage,
                        const uint8_t* data, uint8_t pageCount);
+  // Read MF0 / NTAG emulator memory from the active slot.
+  bool mfuGetPageCount(uint8_t* pageCount);
+  bool mfuGetPageData(uint8_t firstPage, uint8_t pageCount, uint8_t* out,
+                      uint16_t* outStatus = nullptr,
+                      uint16_t* outLen = nullptr);
   bool hf14ARaw(uint8_t options, uint16_t timeoutMs, uint16_t bitLen,
                 const uint8_t* data, uint16_t dataBytes,
                 uint8_t* respOut, uint16_t* respLen, uint16_t respBufSize,

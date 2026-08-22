@@ -21,6 +21,7 @@ void ChameleonSlotContentScreen::_freeDump() {
   }
   _dumpLen = 0;
   _blocks = 0;
+  _pages = 0;
 }
 
 void ChameleonSlotContentScreen::_restoreActiveSlot() {
@@ -202,6 +203,57 @@ void ChameleonSlotContentScreen::_buildPreview() {
   _scrollView.setRows(_rows, _rowCount);
 }
 
+
+void ChameleonSlotContentScreen::_buildMfuPreview() {
+  _rowCount = 0;
+  _addRow("Type", ChameleonClient::tagTypeName(_hfType));
+  _addRow("Pages", String(_pages));
+  _addRow("Dump", String(_dumpLen) + " bytes");
+
+  const uint8_t* ndef = nullptr;
+  size_t ndefLen = 0;
+  NdefParser::Result parsed;
+
+  if (NdefParser::extractType2Ndef(_dump, _dumpLen, &ndef, &ndefLen) &&
+      NdefParser::parse(ndef, ndefLen, parsed)) {
+    switch (parsed.kind) {
+      case NdefParser::RECORD_TEXT:
+        _addRow("NDEF", "Text");
+        if (parsed.language.length()) _addRow("Language", parsed.language);
+        if (parsed.text.length()) _addRow("Text", parsed.text);
+        break;
+      case NdefParser::RECORD_URL:
+        _addRow("NDEF", "URL");
+        _addRow("URL", parsed.uri);
+        break;
+      case NdefParser::RECORD_PHONE:
+        _addRow("NDEF", "Phone");
+        _addRow("Phone", parsed.phone);
+        break;
+      case NdefParser::RECORD_EMAIL:
+        _addRow("NDEF", "Email");
+        _addRow("Email", parsed.email);
+        break;
+      case NdefParser::RECORD_VCARD:
+        _addRow("NDEF", "vCard");
+        if (parsed.contact.length()) _addRow("Contact", parsed.contact);
+        if (parsed.company.length()) _addRow("Company", parsed.company);
+        if (parsed.address.length()) _addRow("Address", parsed.address);
+        if (parsed.phone.length()) _addRow("Phone", parsed.phone);
+        if (parsed.email.length()) _addRow("Email", parsed.email);
+        if (parsed.website.length()) _addRow("Website", parsed.website);
+        break;
+      default:
+        _addRow("NDEF", "Unsupported");
+        break;
+    }
+  } else {
+    _addRow("NDEF", "Not found");
+  }
+
+  _scrollView.setRows(_rows, _rowCount);
+}
+
 void ChameleonSlotContentScreen::_run() {
   auto& c = ChameleonClient::get();
 
@@ -212,9 +264,67 @@ void ChameleonSlotContentScreen::_run() {
   }
 
   _hfType = types[_slot].hfType;
-  if (_hfType < 1000 || _hfType > 1003) {
+
+  const bool isClassic = _hfType >= 1000 && _hfType <= 1003;
+  const bool isMfu = _hfType >= ChameleonClient::MFU_NTAG213 &&
+                     _hfType <= ChameleonClient::MFU_NTAG212;
+
+  if (!isClassic && !isMfu) {
     _addRow("Type", ChameleonClient::tagTypeName(_hfType));
     _addRow("Content", "Not supported yet");
+    return;
+  }
+
+  // Emulator-memory commands operate on the active slot, so temporarily select
+  // the slot chosen in Slot Manager. onUpdate() restores the previous active slot.
+  if (!c.setActiveSlot(_slot)) {
+    _addRow("Error", "Could not select slot");
+    return;
+  }
+  delay(50);
+
+  if (isMfu) {
+    uint8_t pageCount = 0;
+    if (!c.mfuGetPageCount(&pageCount) || pageCount == 0) {
+      _addRow("Error", "Could not read page count");
+      return;
+    }
+
+    _pages = pageCount;
+    _dumpLen = (uint16_t)_pages * 4u;
+    _dump = (uint8_t*)malloc(_dumpLen);
+    if (!_dump) {
+      _dumpLen = 0;
+      _addRow("Error", "Out of memory");
+      return;
+    }
+
+    ProgressView::init();
+    uint16_t done = 0;
+    // Keep each response comfortably below the BLE notification buffer.
+    const uint8_t maxChunkPages = 32;
+    while (done < _pages) {
+      uint8_t count = (uint8_t)min<uint16_t>(maxChunkPages, _pages - done);
+      char msg[32];
+      snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+               (unsigned)(done + count), (unsigned)_pages);
+      int pct = (int)(((uint32_t)(done + count) * 100u) / _pages);
+      ProgressView::progress(msg, pct);
+
+      uint16_t st = 0, rlen = 0;
+      if (!c.mfuGetPageData((uint8_t)done, count,
+                            _dump + (size_t)done * 4u, &st, &rlen)) {
+        ProgressView::finish();
+        char diag[36];
+        snprintf(diag, sizeof(diag), "Page %u failed", (unsigned)done);
+        _addRow("Error", diag);
+        _freeDump();
+        return;
+      }
+      done += count;
+    }
+    ProgressView::finish();
+    _buildMfuPreview();
     return;
   }
 
@@ -229,13 +339,6 @@ void ChameleonSlotContentScreen::_run() {
     _addRow("Error", "Out of memory");
     return;
   }
-
-  if (!c.setActiveSlot(_slot)) {
-    _addRow("Error", "Could not select slot");
-    _freeDump();
-    return;
-  }
-  delay(50);
 
   ProgressView::init();
   uint8_t block[16];

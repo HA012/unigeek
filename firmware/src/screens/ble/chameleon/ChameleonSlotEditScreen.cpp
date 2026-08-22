@@ -427,12 +427,6 @@ bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
 
 void ChameleonSlotEditScreen::_viewContent() {
   // First implementation: interpreted HF content for MIFARE Classic slots.
-  if (_hfType < 1000 || _hfType > 1003) {
-    render();
-    ShowStatusAction::show("Classic content only", 1200);
-    render();
-    return;
-  }
   Screen.push(new ChameleonSlotContentScreen(_slot));
 }
 

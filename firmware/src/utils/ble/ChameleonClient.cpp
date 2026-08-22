@@ -609,6 +609,33 @@ bool ChameleonClient::mfuLoadPageData(uint8_t slot, uint8_t firstPage,
   return ok && (st == 0 || st == 0x68);
 }
 
+
+bool ChameleonClient::mfuGetPageCount(uint8_t* pageCount) {
+  if (!pageCount) return false;
+  uint8_t buf[4] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_MF0_NTAG_GET_PAGE_COUNT, nullptr, 0,
+                   buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x68) || len < 1) return false;
+  *pageCount = buf[0];
+  return true;
+}
+
+bool ChameleonClient::mfuGetPageData(uint8_t firstPage, uint8_t pageCount,
+                                     uint8_t* out,
+                                     uint16_t* outStatus, uint16_t* outLen) {
+  if (!out || pageCount == 0) return false;
+  uint8_t p[2] = { firstPage, pageCount };
+  uint16_t st = 0, len = 0;
+  const uint16_t want = (uint16_t)pageCount * 4u;
+  bool ok = sendCommand(CMD_MF0_NTAG_READ_EMU_PAGE_DATA, p, 2,
+                        out, &len, &st, 3000, want);
+  if (outStatus) *outStatus = st;
+  if (outLen) *outLen = len;
+  if (!ok || len < want) return false;
+  return st == 0 || st == 0x68;
+}
+
 bool ChameleonClient::hf14ARaw(uint8_t options, uint16_t timeoutMs, uint16_t bitLen,
                                 const uint8_t* data, uint16_t dataBytes,
                                 uint8_t* respOut, uint16_t* respLen,
