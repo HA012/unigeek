@@ -38,7 +38,7 @@ void ChameleonMfuScreen::_drawIdle() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_CYAN, TFT_BLACK);
-  sp.drawString("MIFARE Ultralight / NTAG", bw / 2, bh / 2 - 28);
+  sp.drawString("Ultralight / NTAG", bw / 2, bh / 2 - 28);
   sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
   sp.drawString("Place tag near CU reader", bw / 2, bh / 2 - 8);
   sp.setTextColor(TFT_WHITE, TFT_BLACK);

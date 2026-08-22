@@ -4,7 +4,7 @@
 
 class ChameleonMfuToolsScreen : public ListScreen {
 public:
-  const char* title() override { return "MIFARE Ultralight / NTAG"; }
+  const char* title() override { return "Ultralight / NTAG"; }
   void onInit() override;
   void onItemSelected(uint8_t index) override;
   void onBack() override;
