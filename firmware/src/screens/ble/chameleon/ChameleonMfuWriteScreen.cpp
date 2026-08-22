@@ -189,7 +189,7 @@ void ChameleonMfuWriteScreen::_buildSourcePreview() {
   } else {
     _addRow("NDEF", "Not found");
   }
-  _addRow("[Press]", "Write tag");
+  _addRow("[Press]", "Write to Tag");
   _scrollView.setRows(_rows, _rowCount);
 }
 

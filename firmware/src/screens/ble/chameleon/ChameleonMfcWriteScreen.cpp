@@ -183,7 +183,7 @@ void ChameleonMfcWriteScreen::_buildSourcePreview() {
     }
   } else _addRow("NDEF", "Not found");
   if (ndef) free(ndef);
-  _addRow("[Press]", "Write Tag");
+  _addRow("[Press]", "Write to Tag");
   _scrollView.setRows(_rows, _rowCount);
 }
 

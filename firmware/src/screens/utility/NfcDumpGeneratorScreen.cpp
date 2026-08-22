@@ -1,17 +1,18 @@
-#include "NfcTagGeneratorScreen.h"
+#include "NfcDumpGeneratorScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "screens/utility/NdefGeneratorScreen.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
-#include "utils/nfc/NfcTagBuilder.h"
+#include "utils/nfc/NfcDumpBuilder.h"
 #include "utils/nfc/NdefParser.h"
+#include "utils/ble/ChameleonClient.h"
 
 #if defined(ESP32)
 #include <esp_system.h>
 #endif
 
-static String _sanitizeTagName(String name) {
+static String _sanitizeDumpName(String name) {
   name.trim();
   if (name.length() == 0) name = "ntag215";
 
@@ -35,22 +36,22 @@ static String _sanitizeTagName(String name) {
   return name;
 }
 
-const char* NfcTagGeneratorScreen::title() {
+const char* NfcDumpGeneratorScreen::title() {
   switch (_state) {
-    case STATE_TAG_TYPE:         return "Generate NFC Tag";
+    case STATE_TAG_TYPE:         return "Generate Dump";
     case STATE_NDEF_CONTENT:     return "NDEF Content";
     case STATE_NDEF_TYPE:        return "New NDEF Record";
     case STATE_NDEF_FILE_SELECT: return "NDEF Files";
     case STATE_NDEF_PREVIEW:     return "NDEF Preview";
   }
-  return "Generate NFC Tag";
+  return "Generate Dump";
 }
 
-void NfcTagGeneratorScreen::onInit() {
+void NfcDumpGeneratorScreen::onInit() {
   _goTagType();
 }
 
-void NfcTagGeneratorScreen::onUpdate() {
+void NfcDumpGeneratorScreen::onUpdate() {
   if (_state == STATE_NDEF_PREVIEW) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -65,7 +66,7 @@ void NfcTagGeneratorScreen::onUpdate() {
           _goTagType();
         }
       } else if (dir == INavigation::DIR_PRESS && _previewNdefLen > 0) {
-        if (_saveTag(_previewNdef, _previewNdefLen, _previewSuggestedName)) {
+        if (_saveDump(_previewNdef, _previewNdefLen, _previewSuggestedName)) {
           _previewNdefLen = 0;
           _previewSuggestedName = "";
           _previewFromFile = false;
@@ -84,7 +85,7 @@ void NfcTagGeneratorScreen::onUpdate() {
   ListScreen::onUpdate();
 }
 
-void NfcTagGeneratorScreen::onRender() {
+void NfcDumpGeneratorScreen::onRender() {
   if (_state == STATE_NDEF_PREVIEW) {
     _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
     return;
@@ -92,7 +93,7 @@ void NfcTagGeneratorScreen::onRender() {
   ListScreen::onRender();
 }
 
-void NfcTagGeneratorScreen::onBack() {
+void NfcDumpGeneratorScreen::onBack() {
   switch (_state) {
     case STATE_TAG_TYPE:
       Screen.goBack();
@@ -133,7 +134,7 @@ void NfcTagGeneratorScreen::onBack() {
   }
 }
 
-void NfcTagGeneratorScreen::onItemSelected(uint8_t index) {
+void NfcDumpGeneratorScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_TAG_TYPE:
       if (index == 0) {
@@ -152,7 +153,7 @@ void NfcTagGeneratorScreen::onItemSelected(uint8_t index) {
         _ndefPickDir = _ndefPath;
         _openNdefFiles();
       } else if (index == 2) {
-        _saveTag(nullptr, 0, _tagType == TAG_MIFARE_CLASSIC_1K ? "mfc1k_empty" : "ntag215_empty");
+        _saveDump(nullptr, 0, _tagType == TAG_MIFARE_CLASSIC_1K ? "mfc1k_empty" : "ntag215_empty");
         render();
       }
       break;
@@ -177,22 +178,22 @@ void NfcTagGeneratorScreen::onItemSelected(uint8_t index) {
   }
 }
 
-void NfcTagGeneratorScreen::_goTagType() {
+void NfcDumpGeneratorScreen::_goTagType() {
   _state = STATE_TAG_TYPE;
   setItems(_tagItems);
 }
 
-void NfcTagGeneratorScreen::_goNdefContent() {
+void NfcDumpGeneratorScreen::_goNdefContent() {
   _state = STATE_NDEF_CONTENT;
   setItems(_contentItems);
 }
 
-void NfcTagGeneratorScreen::_goNdefType() {
+void NfcDumpGeneratorScreen::_goNdefType() {
   _state = STATE_NDEF_TYPE;
   setItems(_ndefTypeItems);
 }
 
-void NfcTagGeneratorScreen::_openNdefFiles() {
+void NfcDumpGeneratorScreen::_openNdefFiles() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
     _goNdefContent();
@@ -216,7 +217,7 @@ void NfcTagGeneratorScreen::_openNdefFiles() {
   setItems(_browser.items(), n);
 }
 
-void NfcTagGeneratorScreen::_selectNdefFile(uint8_t index) {
+void NfcDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
   if (index >= _browser.count()) return;
 
   const auto& e = _browser.entry(index);
@@ -261,9 +262,9 @@ void NfcTagGeneratorScreen::_selectNdefFile(uint8_t index) {
 
 
 
-void NfcTagGeneratorScreen::_resetRows() { _rowCount = 0; }
+void NfcDumpGeneratorScreen::_resetRows() { _rowCount = 0; }
 
-void NfcTagGeneratorScreen::_pushRow(const String& label, const String& value) {
+void NfcDumpGeneratorScreen::_pushRow(const String& label, const String& value) {
   if (_rowCount >= MAX_ROWS) return;
   _rowLabels[_rowCount] = label;
   _rowValues[_rowCount] = value;
@@ -271,7 +272,7 @@ void NfcTagGeneratorScreen::_pushRow(const String& label, const String& value) {
   _rowCount++;
 }
 
-String NfcTagGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
+String NfcDumpGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
   String s;
   for (uint8_t i = 0; i < len; i++) {
     char buf[4];
@@ -281,7 +282,7 @@ String NfcTagGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const 
   return s;
 }
 
-void NfcTagGeneratorScreen::_pushWrappedRow(const String& label, const String& value) {
+void NfcDumpGeneratorScreen::_pushWrappedRow(const String& label, const String& value) {
   if (value.length() == 0) {
     _pushRow(label, "");
     return;
@@ -324,7 +325,7 @@ void NfcTagGeneratorScreen::_pushWrappedRow(const String& label, const String& v
   }
 }
 
-void NfcTagGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen,
+void NfcDumpGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen,
                                              const String& suggestedName) {
   _state = STATE_NDEF_PREVIEW;
   _resetRows();
@@ -346,7 +347,7 @@ void NfcTagGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen
   _pushRow("NDEF Size", lenBuf);
 
   auto finishPreview = [&]() {
-    if (_previewNdefLen > 0) _pushRow("[Press]", "Generate Tag");
+    if (_previewNdefLen > 0) _pushRow("[Press]", "Generate Dump");
     _scrollView.setRows(_rows, _rowCount);
     render();
   };
@@ -424,7 +425,7 @@ void NfcTagGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen
 }
 
 
-bool NfcTagGeneratorScreen::_saveTag(const uint8_t* ndef, size_t ndefLen,
+bool NfcDumpGeneratorScreen::_saveDump(const uint8_t* ndef, size_t ndefLen,
                                      const String& suggestedName) {
   if (_tagType == TAG_MIFARE_CLASSIC_1K) {
     return _saveMifareClassic1K(ndef, ndefLen, suggestedName);
@@ -432,7 +433,7 @@ bool NfcTagGeneratorScreen::_saveTag(const uint8_t* ndef, size_t ndefLen,
   return _saveNtag215(ndef, ndefLen, suggestedName);
 }
 
-void NfcTagGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
+void NfcDumpGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
 #if defined(ESP32)
   const uint32_t r = esp_random();
   uid[0] = (uint8_t)(r >> 0);
@@ -444,8 +445,8 @@ void NfcTagGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
 #endif
 }
 
-bool NfcTagGeneratorScreen::_saveMifareClassic1K(
-    const uint8_t* ndef, size_t ndefLen, const String& suggestedName) {
+bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
+    const uint8_t* ndef, size_t ndefLen, const String&) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
     return false;
@@ -454,21 +455,28 @@ bool NfcTagGeneratorScreen::_saveMifareClassic1K(
   uint8_t uid[4] = {};
   _generateMifareUid(uid);
 
-  uint8_t image[NfcTagBuilder::MIFARE_CLASSIC_1K_SIZE] = {};
+  uint8_t image[NfcDumpBuilder::MIFARE_CLASSIC_1K_SIZE] = {};
   size_t imageLen = 0;
-  if (!NfcTagBuilder::buildMifareClassic1K(
+  if (!NfcDumpBuilder::buildMifareClassic1K(
           uid, ndef, ndefLen, image, imageLen, sizeof(image))) {
     ShowStatusAction::show("Cannot build MFC1K", 1500);
     return false;
   }
 
-  String name = InputTextAction::popup("File name", suggestedName.c_str());
+  char suggested[32] = {};
+  size_t suggestedPos = snprintf(suggested, sizeof(suggested), "%s_",
+                                 ChameleonClient::tagTypeName(1001));
+  for (uint8_t i = 0; i < 4 && suggestedPos + 2 < sizeof(suggested); ++i) {
+    suggestedPos += snprintf(suggested + suggestedPos,
+                             sizeof(suggested) - suggestedPos, "%02X", uid[i]);
+  }
+  String name = InputTextAction::popup("File name", suggested);
   if (InputTextAction::wasCancelled()) return false;
 
   Uni.Storage->makeDir(_nfcPath);
   Uni.Storage->makeDir(_dumpPath);
 
-  const String base = _sanitizeTagName(name);
+  const String base = _sanitizeDumpName(name);
   String path = String(_dumpPath) + "/" + base + ".bin";
 
   if (Uni.Storage->exists(path.c_str())) {
@@ -500,7 +508,7 @@ bool NfcTagGeneratorScreen::_saveMifareClassic1K(
   return true;
 }
 
-void NfcTagGeneratorScreen::_generateUid(uint8_t uid[7]) {
+void NfcDumpGeneratorScreen::_generateUid(uint8_t uid[7]) {
   uid[0] = 0x04; // NXP manufacturer ID
 
 #if defined(ESP32)
@@ -517,7 +525,7 @@ void NfcTagGeneratorScreen::_generateUid(uint8_t uid[7]) {
 #endif
 }
 
-bool NfcTagGeneratorScreen::_saveNtag215(const uint8_t* ndef, size_t ndefLen,
+bool NfcDumpGeneratorScreen::_saveNtag215(const uint8_t* ndef, size_t ndefLen,
                                          const String& suggestedName) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
@@ -527,21 +535,28 @@ bool NfcTagGeneratorScreen::_saveNtag215(const uint8_t* ndef, size_t ndefLen,
   uint8_t uid[7] = {};
   _generateUid(uid);
 
-  uint8_t image[NfcTagBuilder::NTAG215_SIZE] = {};
+  uint8_t image[NfcDumpBuilder::NTAG215_SIZE] = {};
   size_t imageLen = 0;
-  if (!NfcTagBuilder::buildNtag215(uid, ndef, ndefLen,
+  if (!NfcDumpBuilder::buildNtag215(uid, ndef, ndefLen,
                                    image, imageLen, sizeof(image))) {
     ShowStatusAction::show("Cannot build NTAG215", 1500);
     return false;
   }
 
-  String name = InputTextAction::popup("File name", suggestedName.c_str());
+  char suggested[32] = {};
+  size_t suggestedPos = snprintf(suggested, sizeof(suggested), "%s_",
+                                 ChameleonClient::tagTypeName(1101));
+  for (uint8_t i = 0; i < 7 && suggestedPos + 2 < sizeof(suggested); ++i) {
+    suggestedPos += snprintf(suggested + suggestedPos,
+                             sizeof(suggested) - suggestedPos, "%02X", uid[i]);
+  }
+  String name = InputTextAction::popup("File name", suggested);
   if (InputTextAction::wasCancelled()) return false;
 
   Uni.Storage->makeDir(_nfcPath);
   Uni.Storage->makeDir(_dumpPath);
 
-  const String base = _sanitizeTagName(name);
+  const String base = _sanitizeDumpName(name);
   String path = String(_dumpPath) + "/" + base + ".bin";
 
   if (Uni.Storage->exists(path.c_str())) {

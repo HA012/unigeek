@@ -1,9 +1,9 @@
-#include "NfcTagBuilder.h"
+#include "NfcDumpBuilder.h"
 
 #include <cstring>
 
 
-bool NfcTagBuilder::buildMifareClassic1K(const uint8_t uid[4],
+bool NfcDumpBuilder::buildMifareClassic1K(const uint8_t uid[4],
                                          const uint8_t* ndef, size_t ndefLen,
                                          uint8_t* out, size_t& outLen,
                                          size_t maxLen) {
@@ -102,7 +102,7 @@ bool NfcTagBuilder::buildMifareClassic1K(const uint8_t uid[4],
 }
 
 
-bool NfcTagBuilder::buildNtag215(const uint8_t uid[7],
+bool NfcDumpBuilder::buildNtag215(const uint8_t uid[7],
                                  const uint8_t* ndef, size_t ndefLen,
                                  uint8_t* out, size_t& outLen, size_t maxLen) {
   if (!uid || !out || maxLen < NTAG215_SIZE) return false;

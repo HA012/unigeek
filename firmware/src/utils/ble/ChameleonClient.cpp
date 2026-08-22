@@ -310,6 +310,9 @@ const char* ChameleonClient::tagTypeName(uint16_t type) {
     case 1101: return "NTAG215";
     case 1102: return "NTAG216";
     case 1103: return "ULight";
+    case 1104: return "ULight-C";
+    case 1105: return "UL-EV1-11";
+    case 1106: return "UL-EV1-21";
     case 1107: return "NTAG210";
     case 1108: return "NTAG212";
     case 0:    return "Empty";

@@ -14,6 +14,6 @@ private:
   ListItem _items[3] = {
     {"New NDEF Record"},
     {"Edit NDEF Record"},
-    {"Generate NFC Tag"},
+    {"Generate Dump"},
   };
 };

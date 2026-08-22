@@ -61,13 +61,13 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
   _subs[8][0] = 0;
   snprintf(_labels[9], sizeof(_labels[9]), "View Data");
   _subs[9][0] = 0;
-  snprintf(_labels[10], sizeof(_labels[10]), "Load Tag to Slot");
+  snprintf(_labels[10], sizeof(_labels[10]), "Load Dump to Slot");
   _subs[10][0] = 0;
-  snprintf(_labels[11], sizeof(_labels[11]), "Write Tag");
+  snprintf(_labels[11], sizeof(_labels[11]), "Write to Tag");
   _subs[11][0] = 0;
-  snprintf(_labels[12], sizeof(_labels[12]), "Reset Tag Data");
+  snprintf(_labels[12], sizeof(_labels[12]), "Reset Slot Data");
   _subs[12][0] = 0;
-  snprintf(_labels[13], sizeof(_labels[13]), "Delete Tag");
+  snprintf(_labels[13], sizeof(_labels[13]), "Delete Dump from Slot");
   _subs[13][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
@@ -178,7 +178,7 @@ void ChameleonSlotEditScreen::_loadDefault() {
     {"HF Data", "hf"},
     {"LF Data", "lf"},
   };
-  const char* r = InputSelectAction::popup("Reset Tag Data", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Reset Slot Data", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint16_t t = lf ? _lfType : _hfType;
@@ -199,7 +199,7 @@ void ChameleonSlotEditScreen::_deleteSlot(bool) {
     {"Delete HF", "hf"},
     {"Delete LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Delete Tag", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Delete Dump from Slot", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint8_t freq = lf ? 1 : 2;
@@ -294,8 +294,8 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       if (n <= 0) break;
 
       const uint16_t loadedBlocks = (uint16_t)(loaded / 16);
-      char msg[40];
-      snprintf(msg, sizeof(msg), "Loading tag into slot %u: block %u/%u",
+      char msg[48];
+      snprintf(msg, sizeof(msg), "Loading dump into slot %u: block %u/%u",
                _slot + 1, (unsigned)loadedBlocks, (unsigned)totalBlocks);
       const int pct = (size > 0) ? (int)((loaded * 100UL) / size) : 0;
       ProgressView::progress(msg, pct);
@@ -362,8 +362,8 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
         return false;
       }
 
-      char msg[40];
-      snprintf(msg, sizeof(msg), "Loading tag into slot %u: page %u/%u",
+      char msg[48];
+      snprintf(msg, sizeof(msg), "Loading dump into slot %u: page %u/%u",
                _slot + 1, (unsigned)loadedPages, (unsigned)kTotalPages);
       const int pct = (int)((loadedPages * 100UL) / kTotalPages);
       ProgressView::progress(msg, pct);
@@ -377,7 +377,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       firstPage += pageCount;
     }
     f.close();
-    ProgressView::progress("Tag loaded", 100);
+    ProgressView::progress("Dump loaded", 100);
     ProgressView::finish();
   } else {
     f.close();
@@ -476,7 +476,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "Tag loaded" : "Tag load failed", 1500);
+    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1500);
     render();
 
     if (ok) {
@@ -495,7 +495,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "Tag loaded" : "Tag load failed", 1500);
+    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1500);
     render();
 
     if (ok) {

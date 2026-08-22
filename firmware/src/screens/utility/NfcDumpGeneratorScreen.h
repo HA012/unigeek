@@ -4,7 +4,7 @@
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"
 
-class NfcTagGeneratorScreen : public ListScreen
+class NfcDumpGeneratorScreen : public ListScreen
 {
 public:
   const char* title() override;
@@ -82,7 +82,7 @@ private:
   void _pushWrappedRow(const String& label, const String& value);
   String _hexBlock(const uint8_t* data, uint8_t len) const;
 
-  bool _saveTag(const uint8_t* ndef, size_t ndefLen,
+  bool _saveDump(const uint8_t* ndef, size_t ndefLen,
                 const String& suggestedName);
   bool _saveMifareClassic1K(const uint8_t* ndef, size_t ndefLen,
                             const String& suggestedName);

@@ -11,7 +11,7 @@ public:
   ChameleonMfuWriteScreen(const uint8_t* dump, uint16_t dumpLen,
                           const ChameleonClient::MfuTagInfo& info);
 
-  const char* title() override { return "Write Tag"; }
+  const char* title() override { return "Write to Tag"; }
   bool inhibitPowerOff() override { return _busy; }
 
   void onInit() override;

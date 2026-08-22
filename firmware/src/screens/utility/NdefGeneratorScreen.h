@@ -17,7 +17,7 @@ public:
   void onItemSelected(uint8_t index) override;
 
   // Shared interactive NDEF creation flow. Used both by this screen (save .ndef)
-  // and by Generate NFC Tag (embed directly into a tag image).
+  // and by Generate Dump (embed directly into a dump image).
   static bool buildRecordInteractive(uint8_t index,
                                      uint8_t* out, size_t& outLen, size_t maxLen,
                                      String& suggestedName);

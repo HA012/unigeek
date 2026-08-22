@@ -143,6 +143,7 @@ void ChameleonMfcScreen::_callAuth() {
     _authLog.addLine("No card detected", TFT_RED);
     _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
     delay(1200);
+    c.setMode(0);
     _running = false;
     Screen.goBack();
     return;
@@ -157,6 +158,7 @@ void ChameleonMfcScreen::_callAuth() {
     _authLog.addLine("Not MIFARE Classic", TFT_RED);
     _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
     delay(1200);
+    c.setMode(0);
     _running = false;
     Screen.goBack();
     return;
@@ -215,6 +217,7 @@ void ChameleonMfcScreen::_callAuth() {
     if (_recovered >= 10) Achievement.unlock("chameleon_mfc_keys_found");
   }
 
+  c.setMode(0);
   _running = false;
   _goMfMenu();
 }
@@ -521,8 +524,10 @@ void ChameleonMfcScreen::_saveDump() {
     return;
   }
 
-  char suggested[24] = {};
-  size_t pos = 0;
+  char suggested[32] = {};
+  size_t pos = snprintf(suggested, sizeof(suggested), "%s_",
+                        ChameleonClient::tagTypeName(
+                            _sectors == 5 ? 1000 : (_sectors == 40 ? 1003 : 1001)));
   for (uint8_t i = 0; i < _uidLen && pos + 2 < sizeof(suggested); ++i) {
     pos += snprintf(suggested + pos, sizeof(suggested) - pos, "%02X", _uid[i]);
   }
@@ -756,6 +761,7 @@ void ChameleonMfcScreen::_runDictAttack() {
     if (_recovered >= 10) Achievement.unlock("chameleon_mfc_keys_found");
   }
 
+  c.setMode(0);
   _running = false;
   _state   = STATE_DICT_LOG;
 }
@@ -790,6 +796,7 @@ void ChameleonMfcScreen::_callStaticNested() {
   }
   if (knownSec < 0) {
     _log("No known key to exploit", TFT_RED);
+    c.setMode(0);
     _running = false; _state = STATE_STATIC_NESTED_LOG; return;
   }
   snprintf(m, sizeof(m), "Exploit: S%d %c key=%012llX",
@@ -801,6 +808,7 @@ void ChameleonMfcScreen::_callStaticNested() {
   if (!c.mf1NTLevel(&ntLevel) || ntLevel != 1) {
     snprintf(m, sizeof(m), "Not a static-nonce card (NTLevel=%d) — abort", (int)ntLevel);
     _log(m, ntLevel == 0 ? TFT_RED : TFT_YELLOW);
+    c.setMode(0);
     _running = false; _state = STATE_STATIC_NESTED_LOG; return;
   }
   _log("NTLevel=1: static nonce confirmed", TFT_GREEN);
@@ -949,6 +957,7 @@ void ChameleonMfcScreen::_callStaticNested() {
     if (_recovered >= 10) Achievement.unlock("chameleon_mfc_keys_found");
   }
 
+  c.setMode(0);
   _running = false;
   _state = STATE_STATIC_NESTED_LOG;
 }
@@ -983,6 +992,7 @@ void ChameleonMfcScreen::_callNestedAttack() {
   }
   if (knownSec < 0) {
     _log("No known key to exploit", TFT_RED);
+    c.setMode(0);
     _running = false; _state = STATE_NESTED_LOG; return;
   }
   snprintf(m, sizeof(m), "Exploit: S%d %c key=%012llX",
@@ -1183,6 +1193,7 @@ void ChameleonMfcScreen::_callNestedAttack() {
     if (_recovered >= 10) Achievement.unlock("chameleon_mfc_keys_found");
   }
 
+  c.setMode(0);
   _running = false;
   _state = STATE_NESTED_LOG;
 }
@@ -1210,10 +1221,10 @@ void ChameleonMfcScreen::onUpdate() {
       }
       if (dir == INavigation::DIR_PRESS) {
         static const InputSelectAction::Option opts[] = {
-          {"Save to File", "save"},
-          {"Write Tag",    "write"},
+          {"Save Dump to File", "save"},
+          {"Write to Tag",       "write"},
         };
-        const char* r = InputSelectAction::popup("Tag Actions", opts, 2, nullptr);
+        const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
         if (!r) { render(); return; }
         if (strcmp(r, "save") == 0) {
           _saveDump();

@@ -10,7 +10,7 @@ public:
   explicit ChameleonMfcWriteScreen(uint8_t slot) : _source(SOURCE_SLOT), _slot(slot) {}
   ChameleonMfcWriteScreen(const uint8_t* dump, uint16_t dumpLen);
 
-  const char* title() override { return "Write Tag"; }
+  const char* title() override { return "Write to Tag"; }
   bool inhibitPowerOff() override { return _busy; }
   void onInit() override;
   void onUpdate() override;

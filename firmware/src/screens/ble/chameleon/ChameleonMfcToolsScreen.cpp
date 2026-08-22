@@ -8,7 +8,7 @@
 
 void ChameleonMfcToolsScreen::onInit() {
   _items[0] = {"Read Tag"};
-  _items[1] = {"Write Tag"};
+  _items[1] = {"Write to Tag"};
   setItems(_items);
 }
 
@@ -81,10 +81,10 @@ void ChameleonMfcToolsScreen::_writeFromSlot() {
 
 void ChameleonMfcToolsScreen::_writeTag() {
   static const InputSelectAction::Option opts[] = {
-    {"From File", "file"},
-    {"From Slot", "slot"},
+    {"from File", "file"},
+    {"from Slot", "slot"},
   };
-  const char* r = InputSelectAction::popup("Write Tag", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Write to Tag", opts, 2, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "file") == 0) _writeFromFile();
   else _writeFromSlot();

@@ -139,6 +139,7 @@ void ChameleonMfuScreen::_read() {
   c.setMode(1);
 
   if (!c.mfuDetect(&_info)) {
+    c.setMode(0);
     _busy = false;
     _state = STATE_IDLE;
     _needsDraw = true;
@@ -151,6 +152,7 @@ void ChameleonMfuScreen::_read() {
   const uint32_t total = (uint32_t)_info.pages * 4u;
   _dump = (uint8_t*)malloc(total);
   if (!_dump) {
+    c.setMode(0);
     _busy = false;
     _state = STATE_IDLE;
     _needsDraw = true;
@@ -169,6 +171,7 @@ void ChameleonMfuScreen::_read() {
   uint16_t got = 0;
   bool ok = c.mfuReadDump(_info, _dump, (uint16_t)total, &got, _mfuProgress);
   ProgressView::finish();
+  c.setMode(0);
 
   _busy = false;
   if (!ok) {
@@ -194,8 +197,9 @@ void ChameleonMfuScreen::_save() {
   // Keep the save-name convention consistent with the other NFC dump
   // workflows: suggest the UID as the editable basename. The .bin extension
   // is deliberately not shown in the editor; it is appended only on save.
-  char suggested[24] = {};
-  size_t pos = 0;
+  char suggested[32] = {};
+  const char* typeName = ChameleonClient::tagTypeName((uint16_t)_info.type);
+  size_t pos = snprintf(suggested, sizeof(suggested), "%s_", typeName);
   for (uint8_t i = 0; i < _info.uidLen && pos + 2 < sizeof(suggested); ++i) {
     pos += snprintf(suggested + pos, sizeof(suggested) - pos,
                     "%02X", _info.uid[i]);
@@ -233,11 +237,11 @@ void ChameleonMfuScreen::_save() {
 
 void ChameleonMfuScreen::_resultActions() {
   static const InputSelectAction::Option opts[] = {
-    {"Save to File", "save"},
-    {"Write Tag",    "write"},
+    {"Save Dump to File", "save"},
+    {"Write to Tag",       "write"},
   };
 
-  const char* r = InputSelectAction::popup("Tag Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
   if (!r) { render(); return; }
 
   if (strcmp(r, "save") == 0) {

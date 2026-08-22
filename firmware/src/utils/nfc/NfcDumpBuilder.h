@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-class NfcTagBuilder {
+class NfcDumpBuilder {
 public:
   static constexpr size_t MIFARE_CLASSIC_1K_SIZE = 1024;
   static constexpr size_t MIFARE_CLASSIC_1K_NDEF_CAPACITY = 720;
