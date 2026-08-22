@@ -536,6 +536,46 @@ bool ChameleonClient::mf1ReadBlock(uint8_t block, uint8_t keyType,
   return true;
 }
 
+bool ChameleonClient::mf1WriteBlock(uint8_t block, uint8_t keyType,
+                                     const uint8_t key[6],
+                                     const uint8_t data[16]) {
+  uint8_t p[24];
+  p[0] = keyType;
+  p[1] = block;
+  memcpy(p + 2, key, 6);
+  memcpy(p + 8, data, 16);
+  uint16_t st = 0;
+  if (!sendCommand(CMD_MF1_WRITE_BLOCK, p, sizeof(p),
+                   nullptr, nullptr, &st, 1800)) return false;
+  return st == 0 || st == 0x68;
+}
+
+bool ChameleonClient::mf1CheckKeysOfSectors(
+    const uint8_t mask[10], const uint8_t* keys, uint8_t keyCount,
+    uint8_t found[10], uint8_t sectorKeys[40][2][6]) {
+  if (!mask || !keys || !found || !sectorKeys || keyCount == 0 || keyCount > 83)
+    return false;
+
+  const uint16_t payLen = (uint16_t)(10u + (uint16_t)keyCount * 6u);
+  uint8_t* payload = (uint8_t*)malloc(payLen);
+  if (!payload) return false;
+  memcpy(payload, mask, 10);
+  memcpy(payload + 10, keys, (size_t)keyCount * 6u);
+
+  uint8_t* rsp = (uint8_t*)malloc(490);
+  if (!rsp) { free(payload); return false; }
+  uint16_t len = 0, st = 0;
+  bool ok = sendCommand(CMD_MF1_CHECK_SECTORS, payload, payLen,
+                        rsp, &len, &st, 30000, 490);
+  free(payload);
+  if (!ok || (st != 0 && st != 0x68) || len < 490) { free(rsp); return false; }
+
+  memcpy(found, rsp, 10);
+  memcpy(sectorKeys, rsp + 10, 480);
+  free(rsp);
+  return true;
+}
+
 bool ChameleonClient::mf1CheckKeysOfBlock(uint8_t block, uint8_t keyType,
                                            const uint8_t* keys, uint8_t keyCount,
                                            uint8_t outKey[6]) {

@@ -1,7 +1,7 @@
 #include "ChameleonHFMenuScreen.h"
 #include "ChameleonMenuScreen.h"
 #include "ChameleonHFScreen.h"
-#include "ChameleonMfcScreen.h"
+#include "ChameleonMfcToolsScreen.h"
 #include "ChameleonMfuToolsScreen.h"
 #include "ChameleonMagicScreen.h"
 #include "ChameleonMfkey32Screen.h"
@@ -19,7 +19,7 @@ void ChameleonHFMenuScreen::onInit() {
 void ChameleonHFMenuScreen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: Screen.push(new ChameleonHFScreen());      break;
-    case 1: Screen.push(new ChameleonMfcScreen());     break;
+    case 1: Screen.push(new ChameleonMfcToolsScreen()); break;
     case 2: Screen.push(new ChameleonMfuToolsScreen()); break;
     case 3: Screen.push(new ChameleonMagicScreen());   break;
     case 4: Screen.push(new ChameleonMfkey32Screen()); break;

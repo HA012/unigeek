@@ -5,6 +5,8 @@
 #include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputTextAction.h"
+#include "ui/actions/InputSelectAction.h"
+#include "ChameleonMfcWriteScreen.h"
 #include "utils/nfc/NdefParser.h"
 
 extern "C" {
@@ -508,7 +510,7 @@ void ChameleonMfcScreen::_buildDumpPreview() {
   }
   if (ndef) free(ndef);
 
-  addRow("[Press]", "Save dump");
+  addRow("[Press]", "Actions");
   _scrollView.setRows(_rows, _rowCount);
 }
 
@@ -1207,7 +1209,23 @@ void ChameleonMfcScreen::onUpdate() {
         return;
       }
       if (dir == INavigation::DIR_PRESS) {
-        _saveDump();
+        static const InputSelectAction::Option opts[] = {
+          {"Save to File", "save"},
+          {"Write Tag",    "write"},
+        };
+        const char* r = InputSelectAction::popup("Tag Actions", opts, 2, nullptr);
+        if (!r) { render(); return; }
+        if (strcmp(r, "save") == 0) {
+          _saveDump();
+        } else {
+          if (_dumpLen != 1024) {
+            render();
+            ShowStatusAction::show("Classic 1K only for now", 1500);
+            render();
+          } else {
+            Screen.push(new ChameleonMfcWriteScreen(_dump, _dumpLen));
+          }
+        }
         return;
       }
       _scrollView.onNav(dir);

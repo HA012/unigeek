@@ -1,18 +1,18 @@
-#include "ChameleonMfuToolsScreen.h"
-#include "ChameleonMfuScreen.h"
-#include "ChameleonMfuWriteScreen.h"
+#include "ChameleonMfcToolsScreen.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfcWriteScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
 
-void ChameleonMfuToolsScreen::onInit() {
+void ChameleonMfcToolsScreen::onInit() {
   _items[0] = {"Read Tag"};
   _items[1] = {"Write Tag"};
   setItems(_items);
 }
 
-void ChameleonMfuToolsScreen::_writeFromFile() {
+void ChameleonMfcToolsScreen::_writeFromFile() {
   static constexpr uint8_t kMax = 10;
   uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", ".bin");
   if (!n) {
@@ -28,16 +28,16 @@ void ChameleonMfuToolsScreen::_writeFromFile() {
     vals[i] = String(i);
     opts[i] = {_browser.entry(i).name.c_str(), vals[i].c_str()};
   }
-  const char* r = InputSelectAction::popup("NTAG215 dump", opts, count, nullptr);
+  const char* r = InputSelectAction::popup("Classic 1K dump", opts, count, nullptr);
   if (!r) { render(); return; }
   const uint8_t idx = (uint8_t)atoi(r);
   if (idx >= count) { render(); return; }
   String path = _browser.entry(idx).path;
   render();
-  Screen.push(new ChameleonMfuWriteScreen(path));
+  Screen.push(new ChameleonMfcWriteScreen(path));
 }
 
-void ChameleonMfuToolsScreen::_writeFromSlot() {
+void ChameleonMfcToolsScreen::_writeFromSlot() {
   auto& c = ChameleonClient::get();
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) {
@@ -69,17 +69,17 @@ void ChameleonMfuToolsScreen::_writeFromSlot() {
     render();
     return;
   }
-  if (!(hfType == ChameleonClient::MFU_NTAG215)) {
+  if (!(hfType == 1001)) {
     render();
     ShowStatusAction::show("Unsupported tag type", 1500);
     render();
     return;
   }
 
-  Screen.push(new ChameleonMfuWriteScreen(slot));
+  Screen.push(new ChameleonMfcWriteScreen(slot));
 }
 
-void ChameleonMfuToolsScreen::_writeTag() {
+void ChameleonMfcToolsScreen::_writeTag() {
   static const InputSelectAction::Option opts[] = {
     {"From File", "file"},
     {"From Slot", "slot"},
@@ -90,9 +90,9 @@ void ChameleonMfuToolsScreen::_writeTag() {
   else _writeFromSlot();
 }
 
-void ChameleonMfuToolsScreen::onItemSelected(uint8_t index) {
-  if (index == 0) Screen.push(new ChameleonMfuScreen());
+void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
+  if (index == 0) Screen.push(new ChameleonMfcScreen());
   else if (index == 1) _writeTag();
 }
 
-void ChameleonMfuToolsScreen::onBack() { Screen.goBack(); }
+void ChameleonMfcToolsScreen::onBack() { Screen.goBack(); }

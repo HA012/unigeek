@@ -4,6 +4,7 @@
 #include "ChameleonSlotViewScreen.h"
 #include "ChameleonSlotContentScreen.h"
 #include "ChameleonMfuWriteScreen.h"
+#include "ChameleonMfcWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -505,13 +506,17 @@ void ChameleonSlotEditScreen::_writeContent() {
 }
 
 void ChameleonSlotEditScreen::_writeTag() {
-  if (_hfType != ChameleonClient::MFU_NTAG215) {
-    render();
-    ShowStatusAction::show("NTAG215 only for now", 1400);
-    render();
+  if (_hfType == ChameleonClient::MFU_NTAG215) {
+    Screen.push(new ChameleonMfuWriteScreen(_slot));
     return;
   }
-  Screen.push(new ChameleonMfuWriteScreen(_slot));
+  if (_hfType == 1001) {
+    Screen.push(new ChameleonMfcWriteScreen(_slot));
+    return;
+  }
+  render();
+  ShowStatusAction::show("Tag type not supported", 1400);
+  render();
 }
 
 void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {

@@ -52,6 +52,7 @@ public:
   static constexpr uint16_t CMD_MF1_READ_BLOCK   = 2008;
   static constexpr uint16_t CMD_MF1_WRITE_BLOCK  = 2009;
   static constexpr uint16_t CMD_HF14A_RAW        = 2010;
+  static constexpr uint16_t CMD_MF1_CHECK_SECTORS = 2012;
   static constexpr uint16_t CMD_MF1_CHECK_BLOCK  = 2015;
   static constexpr uint16_t CMD_SCAN_EM410X      = 3000;
   static constexpr uint16_t CMD_WRITE_EM410X_T5  = 3001;
@@ -137,6 +138,14 @@ public:
   bool mf1CheckKey(uint8_t block, uint8_t keyType, const uint8_t key[6]);
   bool mf1ReadBlock(uint8_t block, uint8_t keyType, const uint8_t key[6],
                     uint8_t out[16]);
+  bool mf1WriteBlock(uint8_t block, uint8_t keyType, const uint8_t key[6],
+                     const uint8_t data[16]);
+  // Bulk-check candidate keys against selected sector Key A/B positions.
+  // `mask` uses the CU 2012 format: bit 1 = skip, bit 0 = check.
+  bool mf1CheckKeysOfSectors(const uint8_t mask[10],
+                             const uint8_t* keys, uint8_t keyCount,
+                             uint8_t found[10],
+                             uint8_t sectorKeys[40][2][6]);
   // Batch check up to ~32 keys against one block. Firmware returns the first
   // matching key directly; outKey[6] receives it on success.
   bool mf1CheckKeysOfBlock(uint8_t block, uint8_t keyType,
