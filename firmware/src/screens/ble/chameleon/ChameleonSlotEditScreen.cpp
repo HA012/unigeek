@@ -295,7 +295,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
 
       const uint16_t loadedBlocks = (uint16_t)(loaded / 16);
       char msg[40];
-      snprintf(msg, sizeof(msg), "Loading HF slot %u: block %u/%u",
+      snprintf(msg, sizeof(msg), "Loading tag into slot %u: block %u/%u",
                _slot + 1, (unsigned)loadedBlocks, (unsigned)totalBlocks);
       const int pct = (size > 0) ? (int)((loaded * 100UL) / size) : 0;
       ProgressView::progress(msg, pct);
@@ -363,7 +363,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       }
 
       char msg[40];
-      snprintf(msg, sizeof(msg), "Loading HF slot %u: page %u/%u",
+      snprintf(msg, sizeof(msg), "Loading tag into slot %u: page %u/%u",
                _slot + 1, (unsigned)loadedPages, (unsigned)kTotalPages);
       const int pct = (int)((loadedPages * 100UL) / kTotalPages);
       ProgressView::progress(msg, pct);
