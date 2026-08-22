@@ -35,40 +35,40 @@ void ChameleonSlotEditScreen::_load() {
 }
 
 void ChameleonSlotEditScreen::_rebuildLabels() {
-  snprintf(_labels[0], sizeof(_labels[0]), "Set active");
+  snprintf(_labels[0], sizeof(_labels[0]), "Set Active");
   snprintf(_subs[0],   sizeof(_subs[0]),   "%s", _isActive ? "[*]" : "-");
 
-  snprintf(_labels[1], sizeof(_labels[1]), "HF type");
+  snprintf(_labels[1], sizeof(_labels[1]), "HF Type");
   snprintf(_subs[1],   sizeof(_subs[1]),   "%s", ChameleonClient::tagTypeName(_hfType));
 
-  snprintf(_labels[2], sizeof(_labels[2]), "LF type");
+  snprintf(_labels[2], sizeof(_labels[2]), "LF Type");
   snprintf(_subs[2],   sizeof(_subs[2]),   "%s", ChameleonClient::tagTypeName(_lfType));
 
-  snprintf(_labels[3], sizeof(_labels[3]), "HF enable");
+  snprintf(_labels[3], sizeof(_labels[3]), "HF Enable");
   snprintf(_subs[3],   sizeof(_subs[3]),   "%s", _hfEnabled ? "On" : "Off");
 
-  snprintf(_labels[4], sizeof(_labels[4]), "LF enable");
+  snprintf(_labels[4], sizeof(_labels[4]), "LF Enable");
   snprintf(_subs[4],   sizeof(_subs[4]),   "%s", _lfEnabled ? "On" : "Off");
 
-  snprintf(_labels[5], sizeof(_labels[5]), "HF nickname");
+  snprintf(_labels[5], sizeof(_labels[5]), "HF Nickname");
   snprintf(_subs[5],   sizeof(_subs[5]),   "%s", _hfNick[0] ? _hfNick : "-");
 
-  snprintf(_labels[6], sizeof(_labels[6]), "LF nickname");
+  snprintf(_labels[6], sizeof(_labels[6]), "LF Nickname");
   snprintf(_subs[6],   sizeof(_subs[6]),   "%s", _lfNick[0] ? _lfNick : "-");
 
-  snprintf(_labels[7], sizeof(_labels[7]), "Load default data");
+  snprintf(_labels[7], sizeof(_labels[7]), "Load Default Data");
   _subs[7][0] = 0;
 
-  snprintf(_labels[8], sizeof(_labels[8]), "Write content");
+  snprintf(_labels[8], sizeof(_labels[8]), "Load Tag");
   _subs[8][0] = 0;
 
-  snprintf(_labels[9], sizeof(_labels[9]), "View content");
+  snprintf(_labels[9], sizeof(_labels[9]), "View Data");
   _subs[9][0] = 0;
 
   snprintf(_labels[10], sizeof(_labels[10]), "Delete HF / LF");
   _subs[10][0] = 0;
 
-  snprintf(_labels[11], sizeof(_labels[11]), "Save nicks");
+  snprintf(_labels[11], sizeof(_labels[11]), "Save Nicks");
   _subs[11][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
