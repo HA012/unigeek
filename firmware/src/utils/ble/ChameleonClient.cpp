@@ -851,6 +851,48 @@ bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
   return done == total;
 }
 
+bool ChameleonClient::mfuWriteNtag215User(const uint8_t* dump, uint16_t dumpLen,
+                                           MfuProgressCallback progress,
+                                           const MfuTagInfo* expectedTarget) {
+  static constexpr uint16_t kNtag215Bytes = 135u * 4u;
+  static constexpr uint8_t kFirstUserPage = 4;
+  static constexpr uint8_t kLastUserPage  = 129;
+  static constexpr uint16_t kUserPages =
+      (uint16_t)kLastUserPage - kFirstUserPage + 1u;
+
+  if (!dump || dumpLen != kNtag215Bytes) return false;
+
+  MfuTagInfo target = {};
+  if (!mfuDetect(&target) || target.type != MFU_NTAG215 || target.pages != 135)
+    return false;
+  if (expectedTarget) {
+    if (target.uidLen != expectedTarget->uidLen ||
+        memcmp(target.uid, expectedTarget->uid, target.uidLen) != 0)
+      return false;
+  }
+
+  // Standard Type-2 WRITE (A2) writes exactly one 4-byte page. Do not touch
+  // pages 0..3 (UID/manufacturer + CC), page 130 (dynamic locks), or pages
+  // 131..134 (CFG0/CFG1/PWD/PACK). This first writer intentionally clones
+  // user content without changing identity, locks or security configuration.
+  uint16_t done = 0;
+  for (uint16_t page = kFirstUserPage; page <= kLastUserPage; ++page) {
+    uint8_t cmd[6] = {0xA2, (uint8_t)page, 0, 0, 0, 0};
+    memcpy(cmd + 2, dump + page * 4u, 4);
+
+    uint8_t rsp[4] = {};
+    uint16_t len = 0;
+    if (!_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp), 700))
+      return false;
+    // Type-2 ACK is 0xA (4 bits). HF14A_RAW exposes it in the low nibble.
+    if (len < 1 || (rsp[0] & 0x0F) != 0x0A) return false;
+
+    ++done;
+    if (progress) progress(done, kUserPages);
+  }
+  return done == kUserPages;
+}
+
 
 // ── Firmware nested-attack helpers ───────────────────────────────────────────
 

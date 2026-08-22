@@ -3,6 +3,7 @@
 #include "ChameleonSlotsScreen.h"
 #include "ChameleonSlotViewScreen.h"
 #include "ChameleonSlotContentScreen.h"
+#include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -37,46 +38,39 @@ void ChameleonSlotEditScreen::_load() {
 
 void ChameleonSlotEditScreen::_rebuildLabels() {
   snprintf(_labels[0], sizeof(_labels[0]), "Set Active");
-  snprintf(_subs[0],   sizeof(_subs[0]),   "%s", _isActive ? "[*]" : "-");
+  snprintf(_subs[0], sizeof(_subs[0]), "%s", _isActive ? "[*]" : "-");
 
   snprintf(_labels[1], sizeof(_labels[1]), "HF Type");
-  snprintf(_subs[1],   sizeof(_subs[1]),   "%s", ChameleonClient::tagTypeName(_hfType));
-
+  snprintf(_subs[1], sizeof(_subs[1]), "%s", ChameleonClient::tagTypeName(_hfType));
   snprintf(_labels[2], sizeof(_labels[2]), "LF Type");
-  snprintf(_subs[2],   sizeof(_subs[2]),   "%s", ChameleonClient::tagTypeName(_lfType));
-
+  snprintf(_subs[2], sizeof(_subs[2]), "%s", ChameleonClient::tagTypeName(_lfType));
   snprintf(_labels[3], sizeof(_labels[3]), "HF Enable");
-  snprintf(_subs[3],   sizeof(_subs[3]),   "%s", _hfEnabled ? "On" : "Off");
-
+  snprintf(_subs[3], sizeof(_subs[3]), "%s", _hfEnabled ? "On" : "Off");
   snprintf(_labels[4], sizeof(_labels[4]), "LF Enable");
-  snprintf(_subs[4],   sizeof(_subs[4]),   "%s", _lfEnabled ? "On" : "Off");
+  snprintf(_subs[4], sizeof(_subs[4]), "%s", _lfEnabled ? "On" : "Off");
 
   snprintf(_labels[5], sizeof(_labels[5]), "HF Nickname");
-  snprintf(_subs[5],   sizeof(_subs[5]),   "%s", _hfNick[0] ? _hfNick : "-");
-
+  snprintf(_subs[5], sizeof(_subs[5]), "%s", _hfNick[0] ? _hfNick : "-");
   snprintf(_labels[6], sizeof(_labels[6]), "LF Nickname");
-  snprintf(_subs[6],   sizeof(_subs[6]),   "%s", _lfNick[0] ? _lfNick : "-");
-
-  snprintf(_labels[7], sizeof(_labels[7]), "Load Default Data");
+  snprintf(_subs[6], sizeof(_subs[6]), "%s", _lfNick[0] ? _lfNick : "-");
+  snprintf(_labels[7], sizeof(_labels[7]), "Save Nicks");
   _subs[7][0] = 0;
 
-  snprintf(_labels[8], sizeof(_labels[8]), "Load Tag");
+  snprintf(_labels[8], sizeof(_labels[8]), "View Content");
   _subs[8][0] = 0;
-
-  snprintf(_labels[9], sizeof(_labels[9]), "View Content");
+  snprintf(_labels[9], sizeof(_labels[9]), "View Data");
   _subs[9][0] = 0;
-
-  snprintf(_labels[10], sizeof(_labels[10]), "View Data");
+  snprintf(_labels[10], sizeof(_labels[10]), "Load Tag to Slot");
   _subs[10][0] = 0;
-
-  snprintf(_labels[11], sizeof(_labels[11]), "Delete HF / LF");
+  snprintf(_labels[11], sizeof(_labels[11]), "Write Tag");
   _subs[11][0] = 0;
-
-  snprintf(_labels[12], sizeof(_labels[12]), "Save Nicks");
+  snprintf(_labels[12], sizeof(_labels[12]), "Reset Tag Data");
   _subs[12][0] = 0;
+  snprintf(_labels[13], sizeof(_labels[13]), "Delete Tag");
+  _subs[13][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
-    _items[i].label    = _labels[i];
+    _items[i].label = _labels[i];
     _items[i].sublabel = _subs[i][0] ? _subs[i] : nullptr;
   }
 }
@@ -180,10 +174,10 @@ void ChameleonSlotEditScreen::_editNick(bool lf) {
 
 void ChameleonSlotEditScreen::_loadDefault() {
   static const InputSelectAction::Option opts[] = {
-    {"HF default", "hf"},
-    {"LF default", "lf"},
+    {"HF Data", "hf"},
+    {"LF Data", "lf"},
   };
-  const char* r = InputSelectAction::popup("Load default", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Reset Tag Data", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint16_t t = lf ? _lfType : _hfType;
@@ -195,7 +189,7 @@ void ChameleonSlotEditScreen::_loadDefault() {
   }
   bool ok = ChameleonClient::get().setSlotDataDefault(_slot, t);
   render();
-  ShowStatusAction::show(ok ? "Default loaded" : "Load failed", 1200);
+  ShowStatusAction::show(ok ? "Data reset" : "Reset failed", 1200);
   render();
 }
 
@@ -204,7 +198,7 @@ void ChameleonSlotEditScreen::_deleteSlot(bool) {
     {"Delete HF", "hf"},
     {"Delete LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Delete", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Delete Tag", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint8_t freq = lf ? 1 : 2;
@@ -510,6 +504,16 @@ void ChameleonSlotEditScreen::_writeContent() {
   }
 }
 
+void ChameleonSlotEditScreen::_writeTag() {
+  if (_hfType != ChameleonClient::MFU_NTAG215) {
+    render();
+    ShowStatusAction::show("NTAG215 only for now", 1400);
+    render();
+    return;
+  }
+  Screen.push(new ChameleonMfuWriteScreen(_slot));
+}
+
 void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0:  _setActive();          break;
@@ -519,11 +523,12 @@ void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {
     case 4:  _toggleEnable(true);   break;
     case 5:  _editNick(false);      break;
     case 6:  _editNick(true);       break;
-    case 7:  _loadDefault();        break;
-    case 8:  _writeContent();       break;
-    case 9:  _viewContent();        break;
-    case 10: _viewData();           break;
-    case 11: _deleteSlot(false);    break;
-    case 12: _saveNicks();          break;
+    case 7:  _saveNicks();          break;
+    case 8:  _viewContent();        break;
+    case 9:  _viewData();           break;
+    case 10: _writeContent();       break;
+    case 11: _writeTag();           break;
+    case 12: _loadDefault();        break;
+    case 13: _deleteSlot(false);    break;
   }
 }

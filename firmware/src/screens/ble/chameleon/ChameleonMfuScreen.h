@@ -5,7 +5,7 @@
 
 class ChameleonMfuScreen : public BaseScreen {
 public:
-  const char* title() override { return "Ultralight / NTAG"; }
+  const char* title() override { return "MIFARE Ultralight / NTAG"; }
   bool inhibitPowerOff() override { return _busy; }
 
   void onInit() override;
@@ -34,5 +34,6 @@ private:
   void _read();
   void _buildResult();
   void _save();
+  void _resultActions();
   void _freeDump();
 };

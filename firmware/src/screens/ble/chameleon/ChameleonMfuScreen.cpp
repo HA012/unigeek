@@ -1,7 +1,9 @@
 #include "ChameleonMfuScreen.h"
+#include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
@@ -36,7 +38,7 @@ void ChameleonMfuScreen::_drawIdle() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_CYAN, TFT_BLACK);
-  sp.drawString("Ultralight / NTAG", bw / 2, bh / 2 - 28);
+  sp.drawString("MIFARE Ultralight / NTAG", bw / 2, bh / 2 - 28);
   sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
   sp.drawString("Place tag near CU reader", bw / 2, bh / 2 - 8);
   sp.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -117,7 +119,7 @@ void ChameleonMfuScreen::_buildResult() {
     addRow("NDEF", "Not found");
   }
 
-  addRow("[Press]", "Save dump");
+  addRow("[Press]", "Actions");
 
   _scrollView.setRows(_rows, _rowCount);
 }
@@ -229,6 +231,31 @@ void ChameleonMfuScreen::_save() {
   render();
 }
 
+void ChameleonMfuScreen::_resultActions() {
+  static const InputSelectAction::Option opts[] = {
+    {"Save to File", "save"},
+    {"Write Tag",    "write"},
+  };
+
+  const char* r = InputSelectAction::popup("Tag Actions", opts, 2, nullptr);
+  if (!r) { render(); return; }
+
+  if (strcmp(r, "save") == 0) {
+    _save();
+    return;
+  }
+
+  if (_info.type != ChameleonClient::MFU_NTAG215 || _info.pages != 135 ||
+      !_dump || _dumpLen != 540) {
+    render();
+    ShowStatusAction::show("Write supports NTAG215", 1400);
+    render();
+    return;
+  }
+
+  Screen.push(new ChameleonMfuWriteScreen(_dump, _dumpLen, _info));
+}
+
 void ChameleonMfuScreen::onInit() {
   _state = STATE_IDLE;
   _needsDraw = true;
@@ -245,7 +272,7 @@ void ChameleonMfuScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS) {
-      if (_state == STATE_RESULT) _save();
+      if (_state == STATE_RESULT) _resultActions();
       else _read();
       return;
     }
