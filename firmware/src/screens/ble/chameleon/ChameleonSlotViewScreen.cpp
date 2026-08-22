@@ -121,6 +121,9 @@ void ChameleonSlotViewScreen::_runLF() {
 }
 
 void ChameleonSlotViewScreen::onInit() {
+  auto& c = ChameleonClient::get();
+  _restoreSlot = c.getActiveSlot(&_previousSlot) && _previousSlot != _slot;
+
   snprintf(_title, sizeof(_title), "Slot %d %s", _slot + 1, _lf ? "LF" : "HF");
   _rowCount = 0;
   _loading  = true;
@@ -144,11 +147,19 @@ void ChameleonSlotViewScreen::onInit() {
   if (n == 1) Achievement.unlock("chameleon_slot_viewed");
 }
 
+void ChameleonSlotViewScreen::_restoreActiveSlot() {
+  if (_restoreSlot) {
+    ChameleonClient::get().setActiveSlot(_previousSlot);
+    _restoreSlot = false;
+  }
+}
+
 void ChameleonSlotViewScreen::onUpdate() {
   if (_loading) return;
 
   if (Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 1000) {
     Uni.Nav->suppressCurrentPress();
+    _restoreActiveSlot();
     Screen.goBack();
     return;
   }
@@ -157,6 +168,7 @@ void ChameleonSlotViewScreen::onUpdate() {
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK ||
         dir == INavigation::DIR_PRESS) {
+      _restoreActiveSlot();
       Screen.goBack();
       return;
     }

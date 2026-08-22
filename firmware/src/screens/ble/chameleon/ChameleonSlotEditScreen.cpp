@@ -2,6 +2,7 @@
 #include "utils/ble/ChameleonClient.h"
 #include "ChameleonSlotsScreen.h"
 #include "ChameleonSlotViewScreen.h"
+#include "ChameleonSlotContentScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -62,14 +63,17 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
   snprintf(_labels[8], sizeof(_labels[8]), "Load Tag");
   _subs[8][0] = 0;
 
-  snprintf(_labels[9], sizeof(_labels[9]), "View Data");
+  snprintf(_labels[9], sizeof(_labels[9]), "View Content");
   _subs[9][0] = 0;
 
-  snprintf(_labels[10], sizeof(_labels[10]), "Delete HF / LF");
+  snprintf(_labels[10], sizeof(_labels[10]), "View Data");
   _subs[10][0] = 0;
 
-  snprintf(_labels[11], sizeof(_labels[11]), "Save Nicks");
+  snprintf(_labels[11], sizeof(_labels[11]), "Delete HF / LF");
   _subs[11][0] = 0;
+
+  snprintf(_labels[12], sizeof(_labels[12]), "Save Nicks");
+  _subs[12][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
     _items[i].label    = _labels[i];
@@ -422,11 +426,22 @@ bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
 }
 
 void ChameleonSlotEditScreen::_viewContent() {
+  // First implementation: interpreted HF content for MIFARE Classic slots.
+  if (_hfType < 1000 || _hfType > 1003) {
+    render();
+    ShowStatusAction::show("Classic content only", 1200);
+    render();
+    return;
+  }
+  Screen.push(new ChameleonSlotContentScreen(_slot));
+}
+
+void ChameleonSlotEditScreen::_viewData() {
   static const InputSelectAction::Option opts[] = {
-    {"HF content", "hf"},
-    {"LF content", "lf"},
+    {"HF Data", "hf"},
+    {"LF Data", "lf"},
   };
-  const char* r = InputSelectAction::popup("View which?", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("View Data", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   Screen.push(new ChameleonSlotViewScreen(_slot, lf));
@@ -513,7 +528,8 @@ void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {
     case 7:  _loadDefault();        break;
     case 8:  _writeContent();       break;
     case 9:  _viewContent();        break;
-    case 10: _deleteSlot(false);    break;
-    case 11: _saveNicks();          break;
+    case 10: _viewData();           break;
+    case 11: _deleteSlot(false);    break;
+    case 12: _saveNicks();          break;
   }
 }

@@ -13,7 +13,7 @@ public:
   void onBack()                      override;
 
 private:
-  static constexpr int kCount = 12;
+  static constexpr int kCount = 13;
 
   uint8_t  _slot;
   char     _title[14];
@@ -41,6 +41,7 @@ private:
   void _loadDefault();
   void _writeContent();
   void _viewContent();
+  void _viewData();
   bool _writeHfFromBin(const char* path);
   bool _writeLfFromHex(const char* hex);
   void _deleteSlot(bool lf);
