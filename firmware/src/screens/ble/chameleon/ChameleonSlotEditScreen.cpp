@@ -377,7 +377,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       firstPage += pageCount;
     }
     f.close();
-    ProgressView::progress("NTAG215 loaded", 100);
+    ProgressView::progress("Tag loaded", 100);
     ProgressView::finish();
   } else {
     f.close();
@@ -476,7 +476,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "HF loaded" : "HF load failed", 1500);
+    ShowStatusAction::show(ok ? "Tag loaded" : "Tag load failed", 1500);
     render();
 
     if (ok) {
@@ -495,7 +495,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "LF loaded" : "LF load failed", 1500);
+    ShowStatusAction::show(ok ? "Tag loaded" : "Tag load failed", 1500);
     render();
 
     if (ok) {
