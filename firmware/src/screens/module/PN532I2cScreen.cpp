@@ -784,14 +784,21 @@ void PN532I2cScreen::_doDumpMemory() {
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
-  _hasDump  = false;
-  size_t totalBlocks = dims.second;
+  _hasDump = false;
+  const size_t totalSectors = dims.first;
+  const size_t totalBlocks = dims.second;
+  _dumpLen = totalBlocks * 16u;
 
   memset(_dumpImg, 0x00, sizeof(_dumpImg));
   static constexpr uint8_t kTrailer[16] = {
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0x07,0x80,0x69, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
   };
-  for (int s = 0; s < 16; s++) memcpy(&_dumpImg[(s * 4 + 3) * 16], kTrailer, 16);
+  for (size_t sector = 0; sector < totalSectors; ++sector) {
+    const size_t trailerBlock =
+        (sector < 32) ? (sector * 4 + 3)
+                      : (128 + (sector - 32) * 16 + 15);
+    memcpy(&_dumpImg[trailerBlock * 16], kTrailer, 16);
+  }
 
   _dumpImg[0] = _uid[0]; _dumpImg[1] = _uid[1];
   _dumpImg[2] = _uid[2]; _dumpImg[3] = _uid[3];
@@ -837,7 +844,7 @@ void PN532I2cScreen::_doDumpMemory() {
     }
     _pushRow(label, _hexBlock(data + 13, 3));
     readCount++;
-    if (blk < 64) memcpy(&_dumpImg[blk * 16], data, 16);
+    memcpy(&_dumpImg[blk * 16], data, 16);
   }
 
   char summary[32];
@@ -2400,7 +2407,13 @@ void PN532I2cScreen::_doSaveDump() {
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) { ShowStatusAction::show("Save failed"); render(); return; }
-  f.write(_dumpImg, sizeof(_dumpImg));
+  if (_dumpLen == 0 || _dumpLen > sizeof(_dumpImg)) {
+    f.close();
+    ShowStatusAction::show("Invalid dump size");
+    render();
+    return;
+  }
+  f.write(_dumpImg, _dumpLen);
   f.close();
 
   char msg[48];
