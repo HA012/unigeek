@@ -5,11 +5,25 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/views/ProgressView.h"
+#include "utils/nfc/NfcDumpBuilder.h"
+
+namespace {
+static constexpr uint16_t kNtag215WritablePages = 126;
+
+void _mfuEraseProgress(uint16_t done, uint16_t total) {
+  char msg[36];
+  snprintf(msg, sizeof(msg), "Erasing %u/%u pages",
+           (unsigned)done, (unsigned)kNtag215WritablePages);
+  const int pct = total ? (int)((uint32_t)done * 100u / total) : 0;
+  ProgressView::progress(msg, pct);
+}
+}
 
 void ChameleonMfuToolsScreen::onInit() {
   _items[0] = {"Read Tag"};
   _items[1] = {"Write to Tag"};
-  _items[2] = {"Erase Tag [TODO]"};
+  _items[2] = {"Erase Tag"};
   setItems(_items);
 }
 
@@ -91,14 +105,74 @@ void ChameleonMfuToolsScreen::_writeTag() {
   else _writeFromSlot();
 }
 
+
+void ChameleonMfuToolsScreen::_eraseTag() {
+  auto& c = ChameleonClient::get();
+
+  uint8_t previousMode = 0;
+  const bool restoreMode = c.getMode(&previousMode);
+  c.setMode(1);
+
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Place NTAG215...", bx + bw / 2, by + bh / 2);
+
+  ChameleonClient::MfuTagInfo info = {};
+  if (!c.mfuDetect(&info) ||
+      info.type != ChameleonClient::MFU_NTAG215 ||
+      info.pages != 135) {
+    if (restoreMode) c.setMode(previousMode);
+    render();
+    ShowStatusAction::show("Target must be NTAG215", 1500);
+    render();
+    return;
+  }
+
+  uint8_t* image = (uint8_t*)malloc(NfcDumpBuilder::NTAG215_SIZE);
+  if (!image) {
+    if (restoreMode) c.setMode(previousMode);
+    render();
+    ShowStatusAction::show("Out of memory", 1500);
+    render();
+    return;
+  }
+
+  size_t imageLen = 0;
+  const bool built = NfcDumpBuilder::buildNtag215(
+      info.uid, nullptr, 0, image, imageLen, NfcDumpBuilder::NTAG215_SIZE);
+
+  if (!built || imageLen != NfcDumpBuilder::NTAG215_SIZE) {
+    free(image);
+    if (restoreMode) c.setMode(previousMode);
+    render();
+    ShowStatusAction::show("Cannot build empty tag", 1500);
+    render();
+    return;
+  }
+
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  ProgressView::init();
+  ProgressView::progress("Erasing 0/126 pages", 0);
+  const bool ok = c.mfuWriteNtag215User(
+      image, (uint16_t)imageLen, _mfuEraseProgress, &info);
+  ProgressView::finish();
+
+  free(image);
+  if (restoreMode) c.setMode(previousMode);
+
+  render();
+  ShowStatusAction::show(ok ? "Tag erased" : "Erase failed", 1600);
+  render();
+}
+
 void ChameleonMfuToolsScreen::onItemSelected(uint8_t index) {
   if (index == 0) Screen.push(new ChameleonMfuScreen());
   else if (index == 1) _writeTag();
-  else if (index == 2) {
-    render();
-    ShowStatusAction::show("Not implemented yet", 1400);
-    render();
-  }
+  else if (index == 2) _eraseTag();
 }
 
 void ChameleonMfuToolsScreen::onBack() { Screen.goBack(); }

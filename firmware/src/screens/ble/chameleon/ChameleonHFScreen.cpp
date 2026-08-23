@@ -60,9 +60,34 @@ void ChameleonHFScreen::_doScan() {
   lcd.drawString("Hold card near reader", bx + bw / 2, by + bh / 2 + 8);
 
   auto& c = ChameleonClient::get();
+
+  uint8_t previousMode = 0;
+  const bool restoreMode = c.getMode(&previousMode);
   c.setMode(1); // reader mode
 
   bool found = c.scan14A(_uid, &_uidLen, _atqa, &_sak);
+  _tagType = 0;
+  if (found) {
+    _tagType = ChameleonClient::inferHFTagType(_sak, _atqa);
+    if (_sak == 0x00) {
+      ChameleonClient::MfuTagInfo info = {};
+      if (c.mfuDetect(&info)) {
+        _tagType = info.type;
+        memcpy(_uid, info.uid, sizeof(_uid));
+        _uidLen = info.uidLen;
+        memcpy(_atqa, info.atqa, sizeof(_atqa));
+        _sak = info.sak;
+      } else {
+        // SAK 00 alone cannot distinguish concrete Type-2 variants.
+        _tagType = 0;
+      }
+    }
+  }
+
+  // Scan is a temporary reader operation. Restore the CU mode so the HF field
+  // (and white reader LED) is not left active after returning the result.
+  if (restoreMode) c.setMode(previousMode);
+
   _scanning  = false;
 
   if (found) {
@@ -82,7 +107,10 @@ void ChameleonHFScreen::_doScan() {
     _rowCount++;
 
     _rowLabels[_rowCount] = "Type";
-    _rowValues[_rowCount] = _inferType(_sak, _atqa);
+    if (_sak == 0x00 && _tagType != 0)
+      _rowValues[_rowCount] = ChameleonClient::mfuTagTypeName(_tagType);
+    else
+      _rowValues[_rowCount] = _inferType(_sak, _atqa);
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
@@ -149,7 +177,7 @@ void ChameleonHFScreen::_doClone() {
 
   auto& c = ChameleonClient::get();
   c.getActiveSlot(&_activeSlot);
-  uint16_t tagType = ChameleonClient::inferHFTagType(_sak, _atqa);
+  uint16_t tagType = _tagType ? _tagType : ChameleonClient::inferHFTagType(_sak, _atqa);
   bool ok = c.cloneHF(_activeSlot, tagType, _uid, _uidLen, _atqa, _sak);
 
   _state = STATE_RESULT;

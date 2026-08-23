@@ -63,12 +63,14 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
   _subs[9][0] = 0;
   snprintf(_labels[10], sizeof(_labels[10]), "Load Dump to Slot");
   _subs[10][0] = 0;
-  snprintf(_labels[11], sizeof(_labels[11]), "Write to Tag");
+  snprintf(_labels[11], sizeof(_labels[11]), "Download Dump from Slot");
   _subs[11][0] = 0;
-  snprintf(_labels[12], sizeof(_labels[12]), "Reset Slot Data");
+  snprintf(_labels[12], sizeof(_labels[12]), "Write to Tag");
   _subs[12][0] = 0;
-  snprintf(_labels[13], sizeof(_labels[13]), "Delete Dump from Slot");
+  snprintf(_labels[13], sizeof(_labels[13]), "Reset Slot Data");
   _subs[13][0] = 0;
+  snprintf(_labels[14], sizeof(_labels[14]), "Delete Dump from Slot");
+  _subs[14][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
     _items[i].label = _labels[i];
@@ -245,6 +247,41 @@ static bool _isMfClassicType(uint16_t type) {
 static bool _isNtag21xType(uint16_t type) {
   return type == 1107 || type == 1108 || type == 1100 ||
          type == 1101 || type == 1102;
+}
+
+
+static uint16_t _dumpSizeForType(uint16_t type) {
+  switch (type) {
+    case 1001: return 1024; // MF Classic 1K
+    case 1003: return 4096; // MF Classic 4K
+    case 1107: return 80;   // NTAG210
+    case 1108: return 164;  // NTAG212
+    case 1100: return 180;  // NTAG213
+    case 1101: return 540;  // NTAG215
+    case 1102: return 924;  // NTAG216
+    default:   return 0;
+  }
+}
+
+static String _sanitizeDownloadName(String name) {
+  name.trim();
+  if (name.endsWith(".bin")) name.remove(name.length() - 4);
+
+  for (int i = 0; i < (int)name.length(); ++i) {
+    const char ch = name[i];
+    const bool ok =
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= '0' && ch <= '9') ||
+        ch == '-' || ch == '_';
+    if (!ok) name.setCharAt(i, '_');
+  }
+
+  while (name.indexOf("__") >= 0) name.replace("__", "_");
+  while (name.startsWith("_")) name.remove(0, 1);
+  while (name.endsWith("_")) name.remove(name.length() - 1);
+  if (name.length() == 0) name = "slot_dump";
+  return name;
 }
 
 bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
@@ -439,6 +476,179 @@ void ChameleonSlotEditScreen::_viewData() {
   Screen.push(new ChameleonSlotViewScreen(_slot, lf));
 }
 
+
+void ChameleonSlotEditScreen::_downloadDump() {
+  const uint16_t dumpSize = _dumpSizeForType(_hfType);
+  if (dumpSize == 0) {
+    render();
+    ShowStatusAction::show("Tag type not supported", 1400);
+    render();
+    return;
+  }
+
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    render();
+    ShowStatusAction::show("Storage unavailable", 1400);
+    render();
+    return;
+  }
+
+  auto& c = ChameleonClient::get();
+
+  uint8_t previousSlot = 0;
+  const bool restoreSlot =
+      c.getActiveSlot(&previousSlot) && previousSlot != _slot;
+
+  if (!c.setActiveSlot(_slot)) {
+    render();
+    ShowStatusAction::show("Select slot failed", 1400);
+    render();
+    return;
+  }
+
+  uint8_t* dump = (uint8_t*)malloc(dumpSize);
+  if (!dump) {
+    if (restoreSlot) c.setActiveSlot(previousSlot);
+    render();
+    ShowStatusAction::show("Out of memory", 1400);
+    render();
+    return;
+  }
+
+  memset(dump, 0, dumpSize);
+  bool ok = true;
+
+  // Clear the body before ProgressView so no previous overlay is left behind.
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  ProgressView::init();
+
+  if (_hfType == 1001 || _hfType == 1003) {
+    const uint16_t totalBlocks = dumpSize / 16u;
+    uint16_t doneBlocks = 0;
+
+    while (doneBlocks < totalBlocks) {
+      const uint8_t count =
+          (uint8_t)min((uint16_t)8, (uint16_t)(totalBlocks - doneBlocks));
+      const uint16_t want = (uint16_t)count * 16u;
+      uint16_t st = 0, len = 0;
+
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Downloading %u/%u blocks",
+               (unsigned)doneBlocks, (unsigned)totalBlocks);
+      ProgressView::progress(
+          msg, (int)((uint32_t)doneBlocks * 100u / totalBlocks));
+
+      if (!c.mf1GetBlockData((uint8_t)doneBlocks, count,
+                             dump + (size_t)doneBlocks * 16u,
+                             &st, &len) ||
+          len < want) {
+        ok = false;
+        break;
+      }
+
+      doneBlocks += count;
+    }
+
+    if (ok)
+      ProgressView::progress("Download complete", 100);
+  } else {
+    const uint16_t totalPages = dumpSize / 4u;
+    uint16_t donePages = 0;
+
+    while (donePages < totalPages) {
+      const uint8_t count =
+          (uint8_t)min((uint16_t)32, (uint16_t)(totalPages - donePages));
+      const uint16_t want = (uint16_t)count * 4u;
+      uint16_t st = 0, len = 0;
+
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Downloading %u/%u pages",
+               (unsigned)donePages, (unsigned)totalPages);
+      ProgressView::progress(
+          msg, (int)((uint32_t)donePages * 100u / totalPages));
+
+      if (!c.mfuGetPageData((uint8_t)donePages, count,
+                            dump + (size_t)donePages * 4u,
+                            &st, &len) ||
+          len < want) {
+        ok = false;
+        break;
+      }
+
+      donePages += count;
+    }
+
+    if (ok)
+      ProgressView::progress("Download complete", 100);
+  }
+
+  ProgressView::finish();
+
+  if (restoreSlot) c.setActiveSlot(previousSlot);
+
+  if (!ok) {
+    free(dump);
+    render();
+    ShowStatusAction::show("Download failed", 1500);
+    render();
+    return;
+  }
+
+  String typeName = ChameleonClient::tagTypeName(_hfType);
+  typeName.toLowerCase();
+  typeName.replace("-", "");
+  String suggested = typeName + "_slot_" + String(_slot + 1);
+
+  String name = InputTextAction::popup("File name", suggested);
+  if (InputTextAction::wasCancelled()) {
+    free(dump);
+    render();
+    return;
+  }
+
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/dumps");
+
+  const String base = _sanitizeDownloadName(name);
+  String path = String("/unigeek/nfc/dumps/") + base + ".bin";
+
+  if (Uni.Storage->exists(path.c_str())) {
+    for (int n = 2; n < 1000; ++n) {
+      String candidate =
+          String("/unigeek/nfc/dumps/") + base + "_(" + n + ").bin";
+      if (!Uni.Storage->exists(candidate.c_str())) {
+        path = candidate;
+        break;
+      }
+    }
+  }
+
+  fs::File f = Uni.Storage->open(path.c_str(), "w");
+  if (!f) {
+    free(dump);
+    render();
+    ShowStatusAction::show("Save failed", 1500);
+    render();
+    return;
+  }
+
+  const size_t written = f.write(dump, dumpSize);
+  f.close();
+  free(dump);
+
+  render();
+  if (written != dumpSize) {
+    ShowStatusAction::show("Save failed", 1500);
+    render();
+    return;
+  }
+
+  const int slash = path.lastIndexOf('/');
+  const String saved = (slash >= 0) ? path.substring(slash + 1) : path;
+  ShowStatusAction::show(("Saved: " + saved).c_str(), 1700);
+  render();
+}
+
 void ChameleonSlotEditScreen::_writeContent() {
   static const InputSelectAction::Option freqOpts[] = {
     {"HF from .bin",  "hf"},
@@ -535,8 +745,9 @@ void ChameleonSlotEditScreen::onItemSelected(uint8_t index) {
     case 8:  _viewContent();        break;
     case 9:  _viewData();           break;
     case 10: _writeContent();       break;
-    case 11: _writeTag();           break;
-    case 12: _loadDefault();        break;
-    case 13: _deleteSlot(false);    break;
+    case 11: _downloadDump();       break;
+    case 12: _writeTag();           break;
+    case 13: _loadDefault();        break;
+    case 14: _deleteSlot(false);    break;
   }
 }

@@ -563,6 +563,66 @@ const char* PN532I2cScreen::_inferType(uint8_t sak, uint16_t atqa) const {
   return "ISO14443A";
 }
 
+
+const char* PN532I2cScreen::_inferType2Variant() {
+  if (_sak != 0x00 || !_nfc || !_wire) return nullptr;
+
+  // NTAG21x / Ultralight EV1 GET_VERSION command.
+  // A successful NXP response is 8 bytes:
+  // fixed, vendor, product type, subtype, major, minor, storage size, protocol.
+  //
+  // Some PN532/library combinations are unreliable with InDataExchange for
+  // Type-2 proprietary commands immediately after passive selection. Retry it,
+  // then fall back to InCommunicateThru, which sends the same 0x60 command
+  // directly through the RF interface.
+  const uint8_t cmd = 0x60;
+  uint8_t version[8] = {};
+  bool gotVersion = false;
+
+  for (uint8_t attempt = 0; attempt < 3 && !gotVersion; ++attempt) {
+    uint8_t len = sizeof(version);
+    memset(version, 0, sizeof(version));
+    if (_nfcDataExch(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8)
+      gotVersion = true;
+    else
+      delay(20);
+  }
+
+  if (!gotVersion) {
+    uint8_t len = sizeof(version);
+    memset(version, 0, sizeof(version));
+    gotVersion = _nfcCommThru(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8;
+  }
+
+  if (!gotVersion) return nullptr;
+
+  // NXP GET_VERSION starts with a fixed 0x00 byte, then vendor ID 0x04.
+  if (version[0] != 0x00 || version[1] != 0x04) return nullptr;
+
+  // NTAG21x: product type 0x04; storage-size byte differentiates variants.
+  if (version[2] == 0x04) {
+    switch (version[6]) {
+      case 0x0B: return "NTAG210";
+      case 0x0E: return "NTAG212";
+      case 0x0F: return "NTAG213";
+      case 0x11: return "NTAG215";
+      case 0x13: return "NTAG216";
+      default:   return nullptr;
+    }
+  }
+
+  // MIFARE Ultralight EV1 family.
+  if (version[2] == 0x03) {
+    switch (version[6]) {
+      case 0x0B: return "Ultralight EV1 11";
+      case 0x0E: return "Ultralight EV1 21";
+      default:   return "Ultralight EV1";
+    }
+  }
+
+  return nullptr;
+}
+
 // ── scan helper ────────────────────────────────────────────────────────────
 
 bool PN532I2cScreen::_scanCardOrShow(uint32_t timeoutMs) {
@@ -649,7 +709,12 @@ void PN532I2cScreen::_doScan14A() {
   _resetRows();
   char buf[24];
   _pushRow("UID",  _hexUid(_uid, _uidLen));
-  _pushRow("Type", _inferType(_sak, _atqa));
+  const char* typeName = _inferType(_sak, _atqa);
+  if (_sak == 0x00) {
+    const char* concreteType = _inferType2Variant();
+    if (concreteType) typeName = concreteType;
+  }
+  _pushRow("Type", typeName);
   snprintf(buf, sizeof(buf), "%02X:%02X", (_atqa >> 8) & 0xFF, _atqa & 0xFF);
   _pushRow("ATQA", buf);
   snprintf(buf, sizeof(buf), "%02X", _sak);

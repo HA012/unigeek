@@ -195,6 +195,7 @@ private:
   String _hexUid(const uint8_t* uid, uint8_t len) const;
   String _hexBlock(const uint8_t* data, uint8_t len) const;
   const char* _inferType(uint8_t sak, uint16_t atqa) const;
+  const char* _inferType2Variant();
   bool _scanCardOrShow(uint32_t timeoutMs);
   void _pushRow(const String& label, const String& value);
   void _pushWrappedRow(const String& label, const String& value);

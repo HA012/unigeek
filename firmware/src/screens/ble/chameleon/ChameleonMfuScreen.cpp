@@ -229,6 +229,8 @@ void ChameleonMfuScreen::_save() {
   if (ok) {
     String msg = String("Saved: ") + filename;
     ShowStatusAction::show(msg.c_str(), 1500);
+    Screen.goBack();
+    return;
   } else {
     ShowStatusAction::show("Save failed", 1200);
   }

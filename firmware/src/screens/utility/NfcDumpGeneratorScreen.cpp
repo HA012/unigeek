@@ -7,6 +7,7 @@
 #include "utils/nfc/NfcDumpBuilder.h"
 #include "utils/nfc/NdefParser.h"
 #include "utils/ble/ChameleonClient.h"
+#include "screens/utility/NfcScreen.h"
 
 #if defined(ESP32)
 #include <esp_system.h>
@@ -71,7 +72,8 @@ void NfcDumpGeneratorScreen::onUpdate() {
           _previewSuggestedName = "";
           _previewFromFile = false;
           _ndefPickDir = "";
-          _goNdefContent();
+          Screen.goBack();
+          return;
         } else {
           render();
         }
@@ -173,7 +175,10 @@ void NfcDumpGeneratorScreen::onItemSelected(uint8_t index) {
           case TAG_NTAG215: emptyName = "ntag215_empty"; break;
           case TAG_NTAG216: emptyName = "ntag216_empty"; break;
         }
-        _saveDump(nullptr, 0, emptyName);
+        if (_saveDump(nullptr, 0, emptyName)) {
+          Screen.goBack();
+          return;
+        }
         render();
       }
       break;

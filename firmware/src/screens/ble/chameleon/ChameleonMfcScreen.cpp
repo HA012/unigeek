@@ -559,6 +559,8 @@ void ChameleonMfcScreen::_saveDump() {
     ShowStatusAction::show(msg.c_str(), 1500);
     int n = Achievement.inc("chameleon_mfc_dump");
     if (n == 1) Achievement.unlock("chameleon_mfc_dump");
+    Screen.goBack();
+    return;
   } else {
     ShowStatusAction::show("Save failed", 1200);
   }
@@ -576,10 +578,17 @@ void ChameleonMfcScreen::_callDump() {
   render();
 
   auto& c = ChameleonClient::get();
+
+  // _callAuth() returns the CU to emulator mode before opening the submenu.
+  // Physical-card reads (2008) require reader mode, otherwise every block read
+  // fails and the dump is filled with zeroes, which makes NDEF appear absent.
+  c.setMode(1);
+
   _dumpBlocks = _totalBlocks();
   _dumpLen = (uint16_t)(_dumpBlocks * 16u);
   _dump = (uint8_t*)malloc(_dumpLen);
   if (!_dump) {
+    c.setMode(0);
     _dumpLen = 0;
     _actionLog.addLine("Out of memory", TFT_RED);
     _actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _actionStatusBarCb, this);
@@ -620,6 +629,7 @@ void ChameleonMfcScreen::_callDump() {
 
   _actionPct = 100;
   strncpy(_actionStatus, "Done", sizeof(_actionStatus) - 1);
+  c.setMode(0);
   _running = false;
   _state = STATE_DUMP_RESULT;
   _buildDumpPreview();
