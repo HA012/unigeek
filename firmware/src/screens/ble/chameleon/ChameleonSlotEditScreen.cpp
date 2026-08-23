@@ -252,7 +252,9 @@ static bool _isNtag21xType(uint16_t type) {
 
 static uint16_t _dumpSizeForType(uint16_t type) {
   switch (type) {
+    case 1000: return 320;  // MF Classic Mini
     case 1001: return 1024; // MF Classic 1K
+    case 1002: return 2048; // MF Classic 2K
     case 1003: return 4096; // MF Classic 4K
     case 1107: return 80;   // NTAG210
     case 1108: return 164;  // NTAG212
@@ -522,7 +524,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
   ProgressView::init();
 
-  if (_hfType == 1001 || _hfType == 1003) {
+  if (_isMfClassicType(_hfType)) {
     const uint16_t totalBlocks = dumpSize / 16u;
     uint16_t doneBlocks = 0;
 
