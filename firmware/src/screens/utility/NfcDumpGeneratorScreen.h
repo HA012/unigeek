@@ -26,7 +26,12 @@ private:
 
   enum TagType {
     TAG_MIFARE_CLASSIC_1K,
+    TAG_MIFARE_CLASSIC_4K,
+    TAG_NTAG210,
+    TAG_NTAG212,
+    TAG_NTAG213,
     TAG_NTAG215,
+    TAG_NTAG216,
   };
 
   State _state = STATE_TAG_TYPE;
@@ -37,9 +42,14 @@ private:
   static constexpr const char* _dumpPath  = "/unigeek/nfc/dumps";
   static constexpr size_t MAX_INPUT_NDEF  = 491;
 
-  ListItem _tagItems[2] = {
-    {"MIFARE Classic"},
+  ListItem _tagItems[7] = {
+    {"MIFARE Classic 1K"},
+    {"MIFARE Classic 4K"},
+    {"NTAG210"},
+    {"NTAG212"},
+    {"NTAG213"},
     {"NTAG215"},
+    {"NTAG216"},
   };
 
   ListItem _contentItems[3] = {
@@ -86,7 +96,9 @@ private:
                 const String& suggestedName);
   bool _saveMifareClassic1K(const uint8_t* ndef, size_t ndefLen,
                             const String& suggestedName);
-  bool _saveNtag215(const uint8_t* ndef, size_t ndefLen,
+  bool _saveMifareClassic4K(const uint8_t* ndef, size_t ndefLen,
+                            const String& suggestedName);
+  bool _saveNtag21x(const uint8_t* ndef, size_t ndefLen,
                     const String& suggestedName);
   void _generateMifareUid(uint8_t uid[4]);
   void _generateUid(uint8_t uid[7]);

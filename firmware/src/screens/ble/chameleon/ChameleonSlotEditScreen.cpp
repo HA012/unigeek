@@ -224,15 +224,17 @@ void ChameleonSlotEditScreen::_saveNicks() {
 // ── Load content from SD / manual input ─────────────────────────────────────
 
 static uint16_t _hfTypeForSize(uint32_t size) {
-  // Type-2 dumps must be matched exactly before the Classic size ranges:
-  // an NTAG215 dump is 135 pages * 4 bytes = 540 bytes and would otherwise
-  // be mistaken for a MIFARE Classic Mini dump by the legacy >= 320 test.
+  // Raw NTAG21x dumps: exact page-image sizes.
+  if (size == 80)  return 1107; // NTAG210
+  if (size == 164) return 1108; // NTAG212
+  if (size == 180) return 1100; // NTAG213
   if (size == 540) return 1101; // NTAG215
+  if (size == 924) return 1102; // NTAG216
 
-  if (size >= 4096) return 1003; // MF Classic 4K
-  if (size >= 2048) return 1002; // MF Classic 2K
-  if (size >= 1024) return 1001; // MF Classic 1K
-  if (size >= 320)  return 1000; // MF Classic Mini
+  if (size == 4096) return 1003; // MF Classic 4K
+  if (size == 2048) return 1002; // MF Classic 2K
+  if (size == 1024) return 1001; // MF Classic 1K
+  if (size == 320)  return 1000; // MF Classic Mini
   return 0;
 }
 
@@ -240,8 +242,9 @@ static bool _isMfClassicType(uint16_t type) {
   return type >= 1000 && type <= 1003;
 }
 
-static bool _isNtag215Type(uint16_t type) {
-  return type == 1101;
+static bool _isNtag21xType(uint16_t type) {
+  return type == 1107 || type == 1108 || type == 1100 ||
+         type == 1101 || type == 1102;
 }
 
 bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
@@ -310,8 +313,8 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
     }
     f.close();
     ProgressView::finish();
-  } else if (_isNtag215Type(tagType)) {
-    // Standard raw NTAG215 dump: 135 pages (0..134), 4 bytes per page.
+  } else if (_isNtag21xType(tagType)) {
+    // Standard raw NTAG21x dump, 4 bytes per page.
     // UID is encoded across pages 0 and 1:
     //   page 0: UID0 UID1 UID2 BCC0
     //   page 1: UID3 UID4 UID5 UID6
@@ -348,12 +351,12 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
     uint8_t buf[kPagesPerChunk * 4];
     uint8_t firstPage = 0;
     uint16_t loadedPages = 0;
-    static constexpr uint16_t kTotalPages = 135;
+    const uint16_t totalPages = (uint16_t)(size / 4);
 
     ProgressView::init();
-    while (loadedPages < kTotalPages) {
+    while (loadedPages < totalPages) {
       const uint8_t pageCount = (uint8_t)min((uint16_t)kPagesPerChunk,
-                                             (uint16_t)(kTotalPages - loadedPages));
+                                             (uint16_t)(totalPages - loadedPages));
       const uint16_t want = (uint16_t)pageCount * 4;
       const int n = f.read(buf, want);
       if (n != want) {
@@ -364,8 +367,8 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
 
       char msg[48];
       snprintf(msg, sizeof(msg), "Loading dump into slot %u: page %u/%u",
-               _slot + 1, (unsigned)loadedPages, (unsigned)kTotalPages);
-      const int pct = (int)((loadedPages * 100UL) / kTotalPages);
+               _slot + 1, (unsigned)loadedPages, (unsigned)totalPages);
+      const int pct = (int)((loadedPages * 100UL) / totalPages);
       ProgressView::progress(msg, pct);
 
       if (!c.mfuLoadPageData(_slot, firstPage, buf, pageCount)) {
