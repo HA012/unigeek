@@ -567,58 +567,92 @@ const char* PN532I2cScreen::_inferType(uint8_t sak, uint16_t atqa) const {
 const char* PN532I2cScreen::_inferType2Variant() {
   if (_sak != 0x00 || !_nfc || !_wire) return nullptr;
 
-  // NTAG21x / Ultralight EV1 GET_VERSION command.
-  // A successful NXP response is 8 bytes:
-  // fixed, vendor, product type, subtype, major, minor, storage size, protocol.
+  // Keep the PN532 path aligned with the Chameleon Type-2 detector:
+  //   1) GET_VERSION for NTAG21x / Ultralight EV1
+  //   2) AUTH probe for legacy Ultralight C
+  //   3) page-boundary probe for original 16-page Ultralight
   //
-  // Some PN532/library combinations are unreliable with InDataExchange for
-  // Type-2 proprietary commands immediately after passive selection. Retry it,
-  // then fall back to InCommunicateThru, which sends the same 0x60 command
-  // directly through the RF interface.
-  const uint8_t cmd = 0x60;
+  // InDataExchange can be unreliable for Type-2 proprietary commands on some
+  // PN532/library combinations, so each probe may fall back to
+  // InCommunicateThru.
+
+  auto type2Exchange = [&](const uint8_t* tx, uint8_t txLen,
+                           uint8_t* rx, uint8_t& rxLen,
+                           uint32_t timeoutMs = 500) -> bool {
+    uint8_t cap = rxLen;
+    if (_nfcDataExch(_nfc, _wire, tx, txLen, rx, rxLen, timeoutMs))
+      return true;
+
+    rxLen = cap;
+    memset(rx, 0, cap);
+    return _nfcCommThru(_nfc, _wire, tx, txLen, rx, rxLen, timeoutMs);
+  };
+
+  // NTAG21x / Ultralight EV1 GET_VERSION.
+  const uint8_t getVersion = 0x60;
   uint8_t version[8] = {};
   bool gotVersion = false;
 
   for (uint8_t attempt = 0; attempt < 3 && !gotVersion; ++attempt) {
     uint8_t len = sizeof(version);
     memset(version, 0, sizeof(version));
-    if (_nfcDataExch(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8)
+    if (type2Exchange(&getVersion, 1, version, len) && len >= 8)
       gotVersion = true;
     else
       delay(20);
   }
 
-  if (!gotVersion) {
-    uint8_t len = sizeof(version);
-    memset(version, 0, sizeof(version));
-    gotVersion = _nfcCommThru(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8;
-  }
+  if (gotVersion) {
+    // NXP GET_VERSION starts with fixed byte 0x00 and vendor ID 0x04.
+    if (version[0] != 0x00 || version[1] != 0x04) return nullptr;
 
-  if (!gotVersion) return nullptr;
-
-  // NXP GET_VERSION starts with a fixed 0x00 byte, then vendor ID 0x04.
-  if (version[0] != 0x00 || version[1] != 0x04) return nullptr;
-
-  // NTAG21x: product type 0x04; storage-size byte differentiates variants.
-  if (version[2] == 0x04) {
-    switch (version[6]) {
-      case 0x0B: return "NTAG210";
-      case 0x0E: return "NTAG212";
-      case 0x0F: return "NTAG213";
-      case 0x11: return "NTAG215";
-      case 0x13: return "NTAG216";
-      default:   return nullptr;
+    if (version[2] == 0x04) { // NTAG21x
+      switch (version[6]) {
+        case 0x0B: return "NTAG210";
+        case 0x0E: return "NTAG212";
+        case 0x0F: return "NTAG213";
+        case 0x11: return "NTAG215";
+        case 0x13: return "NTAG216";
+        default:   return nullptr;
+      }
     }
+
+    if (version[2] == 0x03) { // MIFARE Ultralight EV1
+      switch (version[6]) {
+        case 0x0B: return "Ultralight EV1 11";
+        case 0x0E: return "Ultralight EV1 21";
+        default:   return nullptr;
+      }
+    }
+
+    // A real but unknown GET_VERSION response must not be forced into one of
+    // the legacy Ultralight variants.
+    return nullptr;
   }
 
-  // MIFARE Ultralight EV1 family.
-  if (version[2] == 0x03) {
-    switch (version[6]) {
-      case 0x0B: return "Ultralight EV1 11";
-      case 0x0E: return "Ultralight EV1 21";
-      default:   return "Ultralight EV1";
-    }
+  // Legacy Ultralight C has no GET_VERSION. AUTHENTICATE part 1 returns
+  // AF + 8 encrypted bytes when the command is supported.
+  const uint8_t authCmd[2] = {0x1A, 0x00};
+  uint8_t authResp[16] = {};
+  uint8_t authLen = sizeof(authResp);
+  if (type2Exchange(authCmd, sizeof(authCmd), authResp, authLen) &&
+      authLen >= 9 && authResp[0] == 0xAF) {
+    return "Ultralight C";
   }
+
+  // Original MIFARE Ultralight: page 0 is readable, while page 16 is beyond
+  // the 16-page memory. READ returns four pages (16 bytes).
+  const uint8_t read0[2]  = {0x30, 0x00};
+  const uint8_t read16[2] = {0x30, 0x10};
+  uint8_t data[18] = {};
+  uint8_t len = sizeof(data);
+  bool page0Ok = type2Exchange(read0, sizeof(read0), data, len) && len >= 16;
+
+  len = sizeof(data);
+  memset(data, 0, sizeof(data));
+  bool page16Ok = type2Exchange(read16, sizeof(read16), data, len) && len >= 16;
+
+  if (page0Ok && !page16Ok) return "Ultralight";
 
   return nullptr;
 }
