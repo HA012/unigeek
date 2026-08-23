@@ -6,6 +6,12 @@ volatile bool ChameleonClient::_notifyReady = false;
 uint8_t       ChameleonClient::_notifyBuf[1100] = {};
 uint16_t      ChameleonClient::_notifyLen = 0;
 
+// Notification callbacks run in the NimBLE host task while sendCommand() runs
+// in its caller's task. Protect the shared single-response buffer and ready
+// flag so a new notification cannot overwrite or be cleared while it is being
+// inspected.
+static portMUX_TYPE s_notifyMux = portMUX_INITIALIZER_UNLOCKED;
+
 ChameleonClient& ChameleonClient::get() {
   static ChameleonClient inst;
   return inst;
@@ -59,9 +65,12 @@ bool ChameleonClient::_parseFrame(const uint8_t* d, uint16_t n,
 void ChameleonClient::_onNotify(NimBLERemoteCharacteristic*, uint8_t* d,
                                  size_t n, bool) {
   if (n > sizeof(_notifyBuf)) n = sizeof(_notifyBuf);
+
+  portENTER_CRITICAL(&s_notifyMux);
   memcpy(_notifyBuf, d, n);
   _notifyLen   = (uint16_t)n;
   _notifyReady = true;
+  portEXIT_CRITICAL(&s_notifyMux);
 }
 
 // ── Connection ───────────────────────────────────────────────────────────────
@@ -130,7 +139,10 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
   if (!frame) return false;
   _buildFrame(cmd, data, dataLen, frame, &frameLen);
 
+  portENTER_CRITICAL(&s_notifyMux);
   _notifyReady = false;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   bool wrote = _rxChar->writeValue(frame, frameLen, false);
   free(frame);
   if (!wrote) return false;
@@ -138,32 +150,66 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
   uint32_t start = millis();
 
   for (;;) {
-    while (!_notifyReady) {
+    bool ready = false;
+    while (!ready) {
+      portENTER_CRITICAL(&s_notifyMux);
+      ready = _notifyReady;
+      portEXIT_CRITICAL(&s_notifyMux);
+
+      if (ready) break;
       if ((millis() - start) >= timeoutMs) return false;
       delay(10);
     }
 
-    if (_notifyLen < 10) return false;
-    if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) return false;
+    // Keep the notification buffer stable while validating and consuming it.
+    // The NimBLE callback will wait briefly on the same spinlock if another
+    // notification arrives at this exact moment.
+    portENTER_CRITICAL(&s_notifyMux);
+
+    if (!_notifyReady) {
+      portEXIT_CRITICAL(&s_notifyMux);
+      continue;
+    }
+
+    if (_notifyLen < 10) {
+      _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+    if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) {
+      _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
 
     uint16_t parsedCmd = ((uint16_t)_notifyBuf[2] << 8) | _notifyBuf[3];
     uint16_t st        = ((uint16_t)_notifyBuf[4] << 8) | _notifyBuf[5];
     uint16_t dl        = ((uint16_t)_notifyBuf[6] << 8) | _notifyBuf[7];
 
-    if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8]) return false;
-    if (_notifyLen < (uint16_t)(10 + dl)) return false;
-    if (_lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) return false;
+    if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8] ||
+        _notifyLen < (uint16_t)(10 + dl) ||
+        _lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) {
+      _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
 
     // A delayed notification from a previous command must not be accepted as
-    // the response to the command currently in flight. Discard it and keep
-    // waiting within the original timeout window.
+    // the response to the command currently in flight. Consume it atomically
+    // and keep waiting within the original timeout window.
     if (parsedCmd != cmd) {
       _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
       continue;
     }
 
+    if (respBuf && respBufSize == 0) {
+      _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+
     if (respStatus) *respStatus = st;
-    if (respBuf && respBufSize == 0) return false;
 
     uint16_t copy = dl;
     if (respBuf && copy > 0) {
@@ -171,6 +217,9 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
       memcpy(respBuf, _notifyBuf + 9, copy);
     }
     if (respLen) *respLen = copy;
+
+    _notifyReady = false;
+    portEXIT_CRITICAL(&s_notifyMux);
     return true;
   }
 }
