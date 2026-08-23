@@ -159,11 +159,43 @@ void ChameleonSlotContentScreen::_buildPreview() {
 
   if (_extractClassicNdef(&ndef, &ndefLen) &&
       NdefParser::parse(ndef, ndefLen, parsed)) {
+    auto addWrappedRow = [&](const String& label, const String& value) {
+      if (value.length() == 0) {
+        _addRow(label.c_str(), "");
+        return;
+      }
+      String normalized = value;
+      normalized.replace("\r\n", "\n");
+      normalized.replace("\r", "\n");
+      int pos = 0;
+      bool first = true;
+      while (pos <= (int)normalized.length()) {
+        int nl = normalized.indexOf('\n', pos);
+        if (nl < 0) nl = normalized.length();
+        String line = normalized.substring(pos, nl);
+        if (line.length() == 0) {
+          _addRow(first ? label.c_str() : "", "");
+          first = false;
+        } else {
+          static constexpr int kChunk = 28;
+          int off = 0;
+          while (off < (int)line.length()) {
+            int end = min(off + kChunk, (int)line.length());
+            _addRow(first ? label.c_str() : "", line.substring(off, end));
+            first = false;
+            off = end;
+          }
+        }
+        if (nl >= (int)normalized.length()) break;
+        pos = nl + 1;
+      }
+    };
+
     switch (parsed.kind) {
       case NdefParser::RECORD_TEXT:
         _addRow("NDEF", "Text");
         if (parsed.language.length()) _addRow("Language", parsed.language);
-        if (parsed.text.length()) _addRow("Text", parsed.text);
+        if (parsed.text.length()) addWrappedRow("Text", parsed.text);
         break;
 
       case NdefParser::RECORD_URL:

@@ -3,7 +3,7 @@
 #include "ui/views/ScrollListView.h"
 
 // Shows the current emulator payload of a Chameleon slot:
-//  - HF: reads all blocks of the active MF Classic slot via CMD_MF1_GET_BLOCK
+//  - HF: reads MIFARE Classic blocks or MF0 / Ultralight / NTAG pages
 //  - LF: reads the EM410X / HID / Viking UID from the LF slot getters
 class ChameleonSlotViewScreen : public BaseScreen {
 public:
@@ -26,7 +26,7 @@ private:
   uint8_t _previousSlot = 0;
   bool    _restoreSlot = false;
 
-  static constexpr int MAX_ROWS = 270;      // 256 blocks + headers + controls
+  static constexpr int MAX_ROWS = 270;      // up to 256 blocks/pages + headers + controls
   ScrollListView      _scrollView;
   ScrollListView::Row _rows[MAX_ROWS];
   String              _labels[MAX_ROWS];

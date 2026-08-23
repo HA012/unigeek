@@ -6,6 +6,14 @@ volatile bool ChameleonClient::_notifyReady = false;
 uint8_t       ChameleonClient::_notifyBuf[1100] = {};
 uint16_t      ChameleonClient::_notifyLen = 0;
 
+// Notification callbacks run in the NimBLE host task while sendCommand() runs
+// in its caller's task. Protect the shared single-response buffer and ready
+// flag so a new notification cannot overwrite or be cleared while it is being
+// inspected.
+static portMUX_TYPE s_notifyMux = portMUX_INITIALIZER_UNLOCKED;
+static bool           s_waitingForCmd = false;
+static uint16_t       s_expectedCmd = 0;
+
 ChameleonClient& ChameleonClient::get() {
   static ChameleonClient inst;
   return inst;
@@ -59,9 +67,24 @@ bool ChameleonClient::_parseFrame(const uint8_t* d, uint16_t n,
 void ChameleonClient::_onNotify(NimBLERemoteCharacteristic*, uint8_t* d,
                                  size_t n, bool) {
   if (n > sizeof(_notifyBuf)) n = sizeof(_notifyBuf);
+
+  portENTER_CRITICAL(&s_notifyMux);
+
+  // While a command is in flight, ignore notifications for other commands
+  // before they can overwrite a matching response already waiting in the
+  // single-response buffer.
+  if (s_waitingForCmd && n >= 4) {
+    const uint16_t incomingCmd = ((uint16_t)d[2] << 8) | d[3];
+    if (incomingCmd != s_expectedCmd) {
+      portEXIT_CRITICAL(&s_notifyMux);
+      return;
+    }
+  }
+
   memcpy(_notifyBuf, d, n);
   _notifyLen   = (uint16_t)n;
   _notifyReady = true;
+  portEXIT_CRITICAL(&s_notifyMux);
 }
 
 // ── Connection ───────────────────────────────────────────────────────────────
@@ -89,20 +112,54 @@ bool ChameleonClient::connect(const NimBLEAddress& addr) {
 
   if (!_txChar->subscribe(true, _onNotify)) { disconnect(); return false; }
 
-  // Handshake no-op frame (fixes MTU negotiation quirks on nRF stack).
+  // Handshake frame used to settle MTU / notification timing on the nRF stack.
+  portENTER_CRITICAL(&s_notifyMux);
   _notifyReady = false;
+  s_expectedCmd = 0x03FB;
+  s_waitingForCmd = true;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   _rxChar->writeValue(kChamNoOpFrame, sizeof(kChamNoOpFrame), false);
   uint32_t t0 = millis();
-  while (!_notifyReady && (millis() - t0) < 500) delay(10);
+  for (;;) {
+    bool ready = false;
+    portENTER_CRITICAL(&s_notifyMux);
+    ready = _notifyReady;
+    portEXIT_CRITICAL(&s_notifyMux);
+    if (ready || (millis() - t0) >= 500) break;
+    delay(10);
+  }
 
-  // Initial ping: getVersion
+  portENTER_CRITICAL(&s_notifyMux);
+  s_waitingForCmd = false;
+  _notifyReady = false;
+  portEXIT_CRITICAL(&s_notifyMux);
+
+  // Initial ping: getVersion.
   uint8_t frame[10];
   uint16_t frameLen = 0;
   _buildFrame(CMD_GET_VERSION, nullptr, 0, frame, &frameLen);
-  _notifyReady = false;
+
+  portENTER_CRITICAL(&s_notifyMux);
+  s_expectedCmd = CMD_GET_VERSION;
+  s_waitingForCmd = true;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   _rxChar->writeValue(frame, frameLen, false);
   uint32_t t = millis();
-  while (!_notifyReady && (millis() - t) < 1500) delay(10);
+  for (;;) {
+    bool ready = false;
+    portENTER_CRITICAL(&s_notifyMux);
+    ready = _notifyReady;
+    portEXIT_CRITICAL(&s_notifyMux);
+    if (ready || (millis() - t) >= 1500) break;
+    delay(10);
+  }
+
+  portENTER_CRITICAL(&s_notifyMux);
+  s_waitingForCmd = false;
+  _notifyReady = false;
+  portEXIT_CRITICAL(&s_notifyMux);
 
   return true;
 }
@@ -130,35 +187,107 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
   if (!frame) return false;
   _buildFrame(cmd, data, dataLen, frame, &frameLen);
 
+  portENTER_CRITICAL(&s_notifyMux);
   _notifyReady = false;
+  s_expectedCmd = cmd;
+  s_waitingForCmd = true;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   bool wrote = _rxChar->writeValue(frame, frameLen, false);
   free(frame);
-  if (!wrote) return false;
+  if (!wrote) {
+    portENTER_CRITICAL(&s_notifyMux);
+    s_waitingForCmd = false;
+    portEXIT_CRITICAL(&s_notifyMux);
+    return false;
+  }
 
   uint32_t start = millis();
-  while (!_notifyReady) {
-    if ((millis() - start) >= timeoutMs) return false;
-    delay(10);
-  }
 
-  if (_notifyLen < 10) return false;
-  if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) return false;
-  uint16_t parsedCmd = ((uint16_t)_notifyBuf[2] << 8) | _notifyBuf[3];
-  uint16_t st        = ((uint16_t)_notifyBuf[4] << 8) | _notifyBuf[5];
-  uint16_t dl        = ((uint16_t)_notifyBuf[6] << 8) | _notifyBuf[7];
-  if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8]) return false;
-  if (_notifyLen < (uint16_t)(10 + dl)) return false;
-  if (_lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) return false;
-  (void)parsedCmd;
+  for (;;) {
+    bool ready = false;
+    while (!ready) {
+      portENTER_CRITICAL(&s_notifyMux);
+      ready = _notifyReady;
+      portEXIT_CRITICAL(&s_notifyMux);
 
-  if (respStatus) *respStatus = st;
-  uint16_t copy = dl;
-  if (respBuf && copy > 0) {
-    if (copy > respBufSize) copy = respBufSize;
-    memcpy(respBuf, _notifyBuf + 9, copy);
+      if (ready) break;
+      if ((millis() - start) >= timeoutMs) {
+        portENTER_CRITICAL(&s_notifyMux);
+        s_waitingForCmd = false;
+        _notifyReady = false;
+        portEXIT_CRITICAL(&s_notifyMux);
+        return false;
+      }
+      delay(10);
+    }
+
+    // Keep the notification buffer stable while validating and consuming it.
+    // The NimBLE callback will wait briefly on the same spinlock if another
+    // notification arrives at this exact moment.
+    portENTER_CRITICAL(&s_notifyMux);
+
+    if (!_notifyReady) {
+      portEXIT_CRITICAL(&s_notifyMux);
+      continue;
+    }
+
+    if (_notifyLen < 10) {
+      _notifyReady = false;
+      s_waitingForCmd = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+    if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) {
+      _notifyReady = false;
+      s_waitingForCmd = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+
+    uint16_t parsedCmd = ((uint16_t)_notifyBuf[2] << 8) | _notifyBuf[3];
+    uint16_t st        = ((uint16_t)_notifyBuf[4] << 8) | _notifyBuf[5];
+    uint16_t dl        = ((uint16_t)_notifyBuf[6] << 8) | _notifyBuf[7];
+
+    if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8] ||
+        _notifyLen < (uint16_t)(10 + dl) ||
+        _lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) {
+      _notifyReady = false;
+      s_waitingForCmd = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+
+    // A delayed notification from a previous command must not be accepted as
+    // the response to the command currently in flight. Consume it atomically
+    // and keep waiting within the original timeout window.
+    if (parsedCmd != cmd) {
+      _notifyReady = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      continue;
+    }
+
+    if (respBuf && respBufSize == 0) {
+      _notifyReady = false;
+      s_waitingForCmd = false;
+      portEXIT_CRITICAL(&s_notifyMux);
+      return false;
+    }
+
+    if (respStatus) *respStatus = st;
+
+    uint16_t copy = dl;
+    if (respBuf && copy > 0) {
+      if (copy > respBufSize) copy = respBufSize;
+      memcpy(respBuf, _notifyBuf + 9, copy);
+    }
+    if (respLen) *respLen = copy;
+
+    _notifyReady = false;
+    s_waitingForCmd = false;
+    portEXIT_CRITICAL(&s_notifyMux);
+    return true;
   }
-  if (respLen) *respLen = dl;
-  return true;
 }
 
 // ── High-level commands ──────────────────────────────────────────────────────
@@ -166,7 +295,7 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
 bool ChameleonClient::getVersion(char* out, uint8_t maxLen) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_VERSION, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_VERSION, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len >= 3)
     snprintf(out, maxLen, "%d.%d.%d", buf[0], buf[1], buf[2]);
   else if (len >= 2)
@@ -178,7 +307,7 @@ bool ChameleonClient::getVersion(char* out, uint8_t maxLen) {
 bool ChameleonClient::getBattery(uint8_t* pct, uint16_t* mV) {
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_BATTERY, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_BATTERY, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 3) return false;
   if (mV)  *mV  = ((uint16_t)buf[0] << 8) | buf[1];
   if (pct) *pct = buf[2];
@@ -188,7 +317,7 @@ bool ChameleonClient::getBattery(uint8_t* pct, uint16_t* mV) {
 bool ChameleonClient::getDeviceType(uint8_t* type) {
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_DEV_TYPE, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_DEV_TYPE, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 1) return false;
   *type = buf[0];
   return true;
@@ -197,7 +326,7 @@ bool ChameleonClient::getDeviceType(uint8_t* type) {
 bool ChameleonClient::getChipId(char* out, uint8_t maxLen) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_CHIP_ID, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_CHIP_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   char tmp[48] = {};
   for (uint16_t i = 0; i < len && (i * 2 + 2) < (int)sizeof(tmp); i++) {
     char hex[3];
@@ -212,7 +341,7 @@ bool ChameleonClient::getChipId(char* out, uint8_t maxLen) {
 bool ChameleonClient::getActiveSlot(uint8_t* slot) {
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_ACT_SLOT, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_ACT_SLOT, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 1) return false;
   *slot = buf[0];
   return true;
@@ -226,7 +355,7 @@ bool ChameleonClient::setActiveSlot(uint8_t slot) {
 bool ChameleonClient::getMode(uint8_t* mode) {
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_MODE, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_MODE, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 1) return false;
   *mode = buf[0];
   return true;
@@ -240,7 +369,7 @@ bool ChameleonClient::setMode(uint8_t mode) {
 bool ChameleonClient::getSlotTypes(SlotTypes types[8]) {
   uint8_t buf[64] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_SLOT_INFO, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_SLOT_INFO, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 32) {
     for (int i = 0; i < 8; i++) { types[i].hfType = 0; types[i].lfType = 0; }
     return false;
@@ -255,7 +384,7 @@ bool ChameleonClient::getSlotTypes(SlotTypes types[8]) {
 bool ChameleonClient::getEnabledSlots(bool hfEn[8], bool lfEn[8]) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_EN_SLOTS, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_EN_SLOTS, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 16) {
     for (int i = 0; i < 8; i++) { hfEn[i] = false; lfEn[i] = false; }
     return false;
@@ -271,7 +400,7 @@ bool ChameleonClient::scan14A(uint8_t uid[7], uint8_t* uidLen,
                                uint8_t atqa[2], uint8_t* sak) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_SCAN_14A, nullptr, 0, buf, &len, &st, 3000)) return false;
+  if (!sendCommand(CMD_SCAN_14A, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
   if (st != 0 || len < 5) return false;
   uint8_t ul = buf[0];
   if (ul > 7) ul = 7;
@@ -286,7 +415,7 @@ bool ChameleonClient::scan14A(uint8_t uid[7], uint8_t* uidLen,
 bool ChameleonClient::scanEM410X(uint8_t uid[5]) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_SCAN_EM410X, nullptr, 0, buf, &len, &st, 3000)) return false;
+  if (!sendCommand(CMD_SCAN_EM410X, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
   if (st != 0 || len < 5) return false;
   memcpy(uid, buf, 5);
   return true;
@@ -367,7 +496,7 @@ bool ChameleonClient::cloneHF(uint8_t slot, uint16_t tagType,
 bool ChameleonClient::getGitVersion(char* out, uint8_t maxLen) {
   uint8_t buf[64] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_GIT_VERSION, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_GIT_VERSION, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len >= maxLen) len = maxLen - 1;
   memcpy(out, buf, len);
   out[len] = 0;
@@ -378,7 +507,7 @@ bool ChameleonClient::getGitVersion(char* out, uint8_t maxLen) {
 bool ChameleonClient::getDeviceSettings(DeviceSettings* out) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_DEV_SETTINGS, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_DEV_SETTINGS, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 13) return false;
   out->settingsVersion   = buf[0];
   out->animation         = buf[1];
@@ -410,7 +539,7 @@ bool ChameleonClient::setAnimation(uint8_t mode) {
 bool ChameleonClient::getAnimation(uint8_t* mode) {
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_ANIMATION, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_ANIMATION, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 1) return false;
   *mode = buf[0];
   return true;
@@ -428,7 +557,7 @@ bool ChameleonClient::getButtonConfig(uint8_t buttonIdx, bool longPress, uint8_t
   uint16_t cmd = longPress ? CMD_GET_LBTN_PRESS : CMD_GET_BTN_PRESS;
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(cmd, &buttonIdx, 1, buf, &len, &st)) return false;
+  if (!sendCommand(cmd, &buttonIdx, 1, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 1) return false;
   *action = buf[0];
   return true;
@@ -480,7 +609,7 @@ bool ChameleonClient::getSlotNick(uint8_t slot, uint8_t freq, char* out, uint8_t
   uint8_t p[2] = { slot, freq };
   uint8_t buf[64] = {};
   uint16_t len = 0;
-  if (!sendCommand(CMD_GET_SLOT_NICK, p, 2, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_SLOT_NICK, p, 2, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (st != 0) { out[0] = 0; return false; }
   if (len >= maxLen) len = maxLen - 1;
   memcpy(out, buf, len);
@@ -509,7 +638,7 @@ bool ChameleonClient::mf1Support() {
 bool ChameleonClient::mf1NTLevel(uint8_t* level) {
   uint8_t buf[4] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_NT_LEVEL, nullptr, 0, buf, &len, &st, 4000)) return false;
+  if (!sendCommand(CMD_MF1_NT_LEVEL, nullptr, 0, buf, &len, &st, 4000, sizeof(buf))) return false;
   if (st != 0 || len < 1) return false;
   *level = buf[0];
   return true;
@@ -533,7 +662,7 @@ bool ChameleonClient::mf1ReadBlock(uint8_t block, uint8_t keyType,
   memcpy(p + 2, key, 6);
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_READ_BLOCK, p, 8, buf, &len, &st, 1500)) return false;
+  if (!sendCommand(CMD_MF1_READ_BLOCK, p, 8, buf, &len, &st, 1500, sizeof(buf))) return false;
   if (st != 0 || len < 16) return false;
   memcpy(out, buf, 16);
   return true;
@@ -592,7 +721,7 @@ bool ChameleonClient::mf1CheckKeysOfBlock(uint8_t block, uint8_t keyType,
   uint8_t rsp[16] = {};
   uint16_t rspLen = 0, st = 0;
   if (!sendCommand(CMD_MF1_CHECK_BLOCK, p, 3 + 6 * keyCount,
-                   rsp, &rspLen, &st, 8000)) return false;
+                   rsp, &rspLen, &st, 8000, sizeof(rsp))) return false;
   if (st != 0) return false;        // no match in this batch
   // Response: [first byte reserved / index, key0..key5]
   if (rspLen < 7) return false;
@@ -946,7 +1075,7 @@ bool ChameleonClient::mf1NTDistance(uint8_t keyType, uint8_t block,
                    key[0], key[1], key[2], key[3], key[4], key[5] };
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_NT_DISTANCE, p, 8, buf, &len, &st, 4000)) return false;
+  if (!sendCommand(CMD_MF1_NT_DISTANCE, p, 8, buf, &len, &st, 4000, sizeof(buf))) return false;
   if (st != 0 || len < 8) return false;
   if (uidOut)  *uidOut  = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
                         | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
@@ -1022,7 +1151,7 @@ bool ChameleonClient::mf1SetDetectEnable(bool on) {
 bool ChameleonClient::mf1GetDetectCount(uint32_t* count) {
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 4) return false;
   *count = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
          | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
@@ -1036,7 +1165,7 @@ bool ChameleonClient::mf1GetDetectRecord(uint32_t index, uint8_t out[18]) {
   };
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_DET_RESULT, p, 4, buf, &len, &st, 2500)) return false;
+  if (!sendCommand(CMD_MF1_DET_RESULT, p, 4, buf, &len, &st, 2500, sizeof(buf))) return false;
   if (st != 0 || len < 18) return false;
   memcpy(out, buf, 18);
   return true;
@@ -1046,7 +1175,7 @@ bool ChameleonClient::mf1GetDetectRecord(uint32_t index, uint8_t out[18]) {
 bool ChameleonClient::scanHIDProx(uint8_t payload[13], uint8_t* payloadLen) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_SCAN_HID_PROX, nullptr, 0, buf, &len, &st, 3000)) return false;
+  if (!sendCommand(CMD_SCAN_HID_PROX, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
   if (st != 0 || len == 0) return false;
   uint16_t cp = len > 13 ? 13 : len;
   memcpy(payload, buf, cp);
@@ -1057,7 +1186,7 @@ bool ChameleonClient::scanHIDProx(uint8_t payload[13], uint8_t* payloadLen) {
 bool ChameleonClient::scanViking(uint8_t uid[4], uint8_t* uidLen) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_SCAN_VIKING, nullptr, 0, buf, &len, &st, 3000)) return false;
+  if (!sendCommand(CMD_SCAN_VIKING, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
   if (st != 0 || len == 0) return false;
   uint16_t cp = len > 4 ? 4 : len;
   memcpy(uid, buf, cp);
@@ -1130,7 +1259,7 @@ bool ChameleonClient::setVikingSlot(const uint8_t uid[4], uint8_t uidLen) {
 bool ChameleonClient::getEM410XSlot(uint8_t uid[5]) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_EM410X_ID, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_EM410X_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 5) return false;
   memcpy(uid, buf, 5);
   return true;
@@ -1139,7 +1268,7 @@ bool ChameleonClient::getEM410XSlot(uint8_t uid[5]) {
 bool ChameleonClient::getHIDProxSlot(uint8_t payload[13], uint8_t* payloadLen) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_HID_PROX_ID, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_HID_PROX_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len == 0) return false;
   uint16_t cp = len > 13 ? 13 : len;
   memcpy(payload, buf, cp);
@@ -1150,7 +1279,7 @@ bool ChameleonClient::getHIDProxSlot(uint8_t payload[13], uint8_t* payloadLen) {
 bool ChameleonClient::getVikingSlot(uint8_t uid[4], uint8_t* uidLen) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_GET_VIKING_ID, nullptr, 0, buf, &len, &st)) return false;
+  if (!sendCommand(CMD_GET_VIKING_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len == 0) return false;
   uint16_t cp = len > 4 ? 4 : len;
   memcpy(uid, buf, cp);

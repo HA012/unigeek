@@ -60,6 +60,44 @@ void ChameleonMfuScreen::_buildResult() {
     return true;
   };
 
+  auto addWrappedRow = [&](const String& label, const String& value) {
+    if (value.length() == 0) {
+      addRow(label, "");
+      return;
+    }
+
+    String normalized = value;
+    normalized.replace("\r\n", "\n");
+    normalized.replace("\r", "\n");
+
+    int pos = 0;
+    bool first = true;
+    while (pos <= (int)normalized.length()) {
+      int nl = normalized.indexOf('\n', pos);
+      if (nl < 0) nl = normalized.length();
+
+      String line = normalized.substring(pos, nl);
+      if (line.length() == 0) {
+        addRow(first ? label : "", "");
+        first = false;
+      } else {
+        // Keep individual rows short enough for ScrollListView while
+        // preserving explicit line boundaries.
+        static constexpr int kChunk = 28;
+        int off = 0;
+        while (off < (int)line.length()) {
+          int end = min(off + kChunk, (int)line.length());
+          addRow(first ? label : "", line.substring(off, end));
+          first = false;
+          off = end;
+        }
+      }
+
+      if (nl >= (int)normalized.length()) break;
+      pos = nl + 1;
+    }
+  };
+
   char uid[24] = {};
   for (uint8_t i = 0; i < _info.uidLen; ++i) {
     char b[4];
@@ -83,7 +121,7 @@ void ChameleonMfuScreen::_buildResult() {
       case NdefParser::RECORD_TEXT:
         addRow("NDEF", "Text");
         if (parsed.language.length()) addRow("Language", parsed.language);
-        if (parsed.text.length()) addRow("Text", parsed.text);
+        if (parsed.text.length()) addWrappedRow("Text", parsed.text);
         break;
 
       case NdefParser::RECORD_URL:
