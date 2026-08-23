@@ -136,31 +136,43 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
   if (!wrote) return false;
 
   uint32_t start = millis();
-  while (!_notifyReady) {
-    if ((millis() - start) >= timeoutMs) return false;
-    delay(10);
+
+  for (;;) {
+    while (!_notifyReady) {
+      if ((millis() - start) >= timeoutMs) return false;
+      delay(10);
+    }
+
+    if (_notifyLen < 10) return false;
+    if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) return false;
+
+    uint16_t parsedCmd = ((uint16_t)_notifyBuf[2] << 8) | _notifyBuf[3];
+    uint16_t st        = ((uint16_t)_notifyBuf[4] << 8) | _notifyBuf[5];
+    uint16_t dl        = ((uint16_t)_notifyBuf[6] << 8) | _notifyBuf[7];
+
+    if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8]) return false;
+    if (_notifyLen < (uint16_t)(10 + dl)) return false;
+    if (_lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) return false;
+
+    // A delayed notification from a previous command must not be accepted as
+    // the response to the command currently in flight. Discard it and keep
+    // waiting within the original timeout window.
+    if (parsedCmd != cmd) {
+      _notifyReady = false;
+      continue;
+    }
+
+    if (respStatus) *respStatus = st;
+    if (respBuf && respBufSize == 0) return false;
+
+    uint16_t copy = dl;
+    if (respBuf && copy > 0) {
+      if (copy > respBufSize) copy = respBufSize;
+      memcpy(respBuf, _notifyBuf + 9, copy);
+    }
+    if (respLen) *respLen = copy;
+    return true;
   }
-
-  if (_notifyLen < 10) return false;
-  if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) return false;
-  uint16_t parsedCmd = ((uint16_t)_notifyBuf[2] << 8) | _notifyBuf[3];
-  uint16_t st        = ((uint16_t)_notifyBuf[4] << 8) | _notifyBuf[5];
-  uint16_t dl        = ((uint16_t)_notifyBuf[6] << 8) | _notifyBuf[7];
-  if (_lrc(_notifyBuf + 2, 6) != _notifyBuf[8]) return false;
-  if (_notifyLen < (uint16_t)(10 + dl)) return false;
-  if (_lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) return false;
-  (void)parsedCmd;
-
-  if (respStatus) *respStatus = st;
-  if (respBuf && respBufSize == 0) return false;
-
-  uint16_t copy = dl;
-  if (respBuf && copy > 0) {
-    if (copy > respBufSize) copy = respBufSize;
-    memcpy(respBuf, _notifyBuf + 9, copy);
-  }
-  if (respLen) *respLen = copy;
-  return true;
 }
 
 // ── High-level commands ──────────────────────────────────────────────────────
