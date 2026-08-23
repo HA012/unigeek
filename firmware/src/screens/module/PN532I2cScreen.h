@@ -118,7 +118,8 @@ private:
   static constexpr const char* _nfcPath  = "/unigeek/nfc";
   static constexpr const char* _ndefPath = "/unigeek/nfc/ndefs";
   static constexpr const char* _dumpPath = "/unigeek/nfc/dumps";
-  uint8_t  _dumpImg[1024] = {};
+  uint8_t  _dumpImg[4096] = {};
+  size_t   _dumpLen = 0;
   bool     _hasDump = false;
 
   enum NdefTarget_e {

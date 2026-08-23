@@ -78,8 +78,8 @@ const char* PN532I2cScreen::title() {
   switch (_state) {
     case STATE_MAIN_MENU:       return "PN532 I2C";
     case STATE_INFO:            return "Firmware Info";
-    case STATE_SCAN_RESULT:     return "Scan Result";
-    case STATE_SCAN_14A:        return "Scan ISO14443A";
+    case STATE_SCAN_RESULT:
+    case STATE_SCAN_14A:        return "HF Reader";
     case STATE_MIFARE_MENU:     return "MIFARE Classic";
     case STATE_MIFARE_DUMP:     return "Memory Dump";
     case STATE_MIFARE_KEYS:     return "Discovered Keys";
@@ -567,58 +567,100 @@ const char* PN532I2cScreen::_inferType(uint8_t sak, uint16_t atqa) const {
 const char* PN532I2cScreen::_inferType2Variant() {
   if (_sak != 0x00 || !_nfc || !_wire) return nullptr;
 
-  // NTAG21x / Ultralight EV1 GET_VERSION command.
-  // A successful NXP response is 8 bytes:
-  // fixed, vendor, product type, subtype, major, minor, storage size, protocol.
+  // Keep the PN532 path aligned with the Chameleon Type-2 detector:
+  //   1) GET_VERSION for NTAG21x / Ultralight EV1
+  //   2) AUTH probe for legacy Ultralight C
+  //   3) page-boundary probe for original 16-page Ultralight
   //
-  // Some PN532/library combinations are unreliable with InDataExchange for
-  // Type-2 proprietary commands immediately after passive selection. Retry it,
-  // then fall back to InCommunicateThru, which sends the same 0x60 command
-  // directly through the RF interface.
-  const uint8_t cmd = 0x60;
+  // InDataExchange can be unreliable for Type-2 proprietary commands on some
+  // PN532/library combinations, so each probe may fall back to
+  // InCommunicateThru.
+
+  auto type2Exchange = [&](const uint8_t* tx, uint8_t txLen,
+                           uint8_t* rx, uint8_t& rxLen,
+                           uint32_t timeoutMs = 500) -> bool {
+    uint8_t cap = rxLen;
+    if (_nfcDataExch(_nfc, _wire, tx, txLen, rx, rxLen, timeoutMs))
+      return true;
+
+    rxLen = cap;
+    memset(rx, 0, cap);
+    return _nfcCommThru(_nfc, _wire, tx, txLen, rx, rxLen, timeoutMs);
+  };
+
+  // NTAG21x / Ultralight EV1 GET_VERSION.
+  const uint8_t getVersion = 0x60;
   uint8_t version[8] = {};
   bool gotVersion = false;
 
   for (uint8_t attempt = 0; attempt < 3 && !gotVersion; ++attempt) {
     uint8_t len = sizeof(version);
     memset(version, 0, sizeof(version));
-    if (_nfcDataExch(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8)
+    if (type2Exchange(&getVersion, 1, version, len) && len >= 8)
       gotVersion = true;
     else
       delay(20);
   }
 
-  if (!gotVersion) {
-    uint8_t len = sizeof(version);
-    memset(version, 0, sizeof(version));
-    gotVersion = _nfcCommThru(_nfc, _wire, &cmd, 1, version, len, 500) && len >= 8;
-  }
+  if (gotVersion) {
+    // NXP GET_VERSION starts with fixed byte 0x00 and vendor ID 0x04.
+    if (version[0] != 0x00 || version[1] != 0x04) return nullptr;
 
-  if (!gotVersion) return nullptr;
-
-  // NXP GET_VERSION starts with a fixed 0x00 byte, then vendor ID 0x04.
-  if (version[0] != 0x00 || version[1] != 0x04) return nullptr;
-
-  // NTAG21x: product type 0x04; storage-size byte differentiates variants.
-  if (version[2] == 0x04) {
-    switch (version[6]) {
-      case 0x0B: return "NTAG210";
-      case 0x0E: return "NTAG212";
-      case 0x0F: return "NTAG213";
-      case 0x11: return "NTAG215";
-      case 0x13: return "NTAG216";
-      default:   return nullptr;
+    if (version[2] == 0x04) { // NTAG21x
+      switch (version[6]) {
+        case 0x0B: return "NTAG210";
+        case 0x0E: return "NTAG212";
+        case 0x0F: return "NTAG213";
+        case 0x11: return "NTAG215";
+        case 0x13: return "NTAG216";
+        default:   return nullptr;
+      }
     }
+
+    if (version[2] == 0x03) { // MIFARE Ultralight EV1
+      switch (version[6]) {
+        case 0x0B: return "Ultralight EV1 11";
+        case 0x0E: return "Ultralight EV1 21";
+        default:   return "Ultralight EV1";
+      }
+    }
+
+    // A real but unknown GET_VERSION response must not be forced into one of
+    // the legacy Ultralight variants.
+    return nullptr;
   }
 
-  // MIFARE Ultralight EV1 family.
-  if (version[2] == 0x03) {
-    switch (version[6]) {
-      case 0x0B: return "Ultralight EV1 11";
-      case 0x0E: return "Ultralight EV1 21";
-      default:   return "Ultralight EV1";
-    }
-  }
+  // Legacy Ultralight C has no GET_VERSION. AUTHENTICATE part 1 returns
+  // AF + 8 encrypted bytes when the command is supported.
+  const uint8_t authCmd[2] = {0x1A, 0x00};
+  uint8_t authResp[16] = {};
+  uint8_t authLen = sizeof(authResp);
+  const bool isUltralightC =
+      type2Exchange(authCmd, sizeof(authCmd), authResp, authLen) &&
+      authLen >= 9 && authResp[0] == 0xAF;
+
+  // The UL-C probe starts authentication. Re-select the card so the scan does
+  // not leave it in a partial authentication state for the next PN532 action.
+  uint8_t reselectUid[7] = {};
+  uint8_t reselectUidLen = 0;
+  _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                            reselectUid, &reselectUidLen, 200);
+
+  if (isUltralightC) return "Ultralight C";
+
+  // Original MIFARE Ultralight: page 0 is readable, while page 16 is beyond
+  // the 16-page memory. READ returns four pages (16 bytes).
+  const uint8_t read0[2]  = {0x30, 0x00};
+  const uint8_t read16[2] = {0x30, 0x10};
+  uint8_t data[18] = {};
+  uint8_t len = sizeof(data);
+  bool page0Ok = type2Exchange(read0, sizeof(read0), data, len) && len >= 16;
+
+  len = sizeof(data);
+  memset(data, 0, sizeof(data));
+  bool page16Ok = type2Exchange(read16, sizeof(read16), data, len) && len >= 16;
+
+  if (page0Ok && !page16Ok) return "Ultralight";
 
   return nullptr;
 }
@@ -678,7 +720,18 @@ void PN532I2cScreen::_showFirmwareInfo() {
 
 void PN532I2cScreen::_doScan14A() {
   _state = STATE_SCAN_14A;
-  ShowStatusAction::show("Scanning 14A...", 0);
+
+  // Match the Chameleon HF reader scan presentation.
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Scanning ISO14443A...", bx + bw / 2, by + bh / 2 - 8);
+  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  lcd.drawString("Hold card near reader", bx + bw / 2, by + bh / 2 + 8);
+
   bool ok = false;
   uint32_t start = millis();
   while (millis() - start < 5000) {
@@ -699,7 +752,7 @@ void PN532I2cScreen::_doScan14A() {
     }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("No card found", 1200); _goMain(); return; }
 
   int n = Achievement.inc("nfc_uid_first");
   if (n == 1)  Achievement.unlock("nfc_uid_first");
@@ -784,14 +837,21 @@ void PN532I2cScreen::_doDumpMemory() {
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
-  _hasDump  = false;
-  size_t totalBlocks = dims.second;
+  _hasDump = false;
+  const size_t totalSectors = dims.first;
+  const size_t totalBlocks = dims.second;
+  _dumpLen = totalBlocks * 16u;
 
   memset(_dumpImg, 0x00, sizeof(_dumpImg));
   static constexpr uint8_t kTrailer[16] = {
     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0x07,0x80,0x69, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
   };
-  for (int s = 0; s < 16; s++) memcpy(&_dumpImg[(s * 4 + 3) * 16], kTrailer, 16);
+  for (size_t sector = 0; sector < totalSectors; ++sector) {
+    const size_t trailerBlock =
+        (sector < 32) ? (sector * 4 + 3)
+                      : (128 + (sector - 32) * 16 + 15);
+    memcpy(&_dumpImg[trailerBlock * 16], kTrailer, 16);
+  }
 
   _dumpImg[0] = _uid[0]; _dumpImg[1] = _uid[1];
   _dumpImg[2] = _uid[2]; _dumpImg[3] = _uid[3];
@@ -837,7 +897,7 @@ void PN532I2cScreen::_doDumpMemory() {
     }
     _pushRow(label, _hexBlock(data + 13, 3));
     readCount++;
-    if (blk < 64) memcpy(&_dumpImg[blk * 16], data, 16);
+    memcpy(&_dumpImg[blk * 16], data, 16);
   }
 
   char summary[32];
@@ -2400,7 +2460,13 @@ void PN532I2cScreen::_doSaveDump() {
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) { ShowStatusAction::show("Save failed"); render(); return; }
-  f.write(_dumpImg, sizeof(_dumpImg));
+  if (_dumpLen == 0 || _dumpLen > sizeof(_dumpImg)) {
+    f.close();
+    ShowStatusAction::show("Invalid dump size");
+    render();
+    return;
+  }
+  f.write(_dumpImg, _dumpLen);
   f.close();
 
   char msg[48];
