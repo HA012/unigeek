@@ -78,8 +78,8 @@ const char* PN532I2cScreen::title() {
   switch (_state) {
     case STATE_MAIN_MENU:       return "PN532 I2C";
     case STATE_INFO:            return "Firmware Info";
-    case STATE_SCAN_RESULT:     return "Scan Result";
-    case STATE_SCAN_14A:        return "Scan ISO14443A";
+    case STATE_SCAN_RESULT:
+    case STATE_SCAN_14A:        return "HF Reader";
     case STATE_MIFARE_MENU:     return "MIFARE Classic";
     case STATE_MIFARE_DUMP:     return "Memory Dump";
     case STATE_MIFARE_KEYS:     return "Discovered Keys";
@@ -712,7 +712,18 @@ void PN532I2cScreen::_showFirmwareInfo() {
 
 void PN532I2cScreen::_doScan14A() {
   _state = STATE_SCAN_14A;
-  ShowStatusAction::show("Scanning 14A...", 0);
+
+  // Match the Chameleon HF reader scan presentation.
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Scanning ISO14443A...", bx + bw / 2, by + bh / 2 - 8);
+  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  lcd.drawString("Hold card near reader", bx + bw / 2, by + bh / 2 + 8);
+
   bool ok = false;
   uint32_t start = millis();
   while (millis() - start < 5000) {
@@ -733,7 +744,7 @@ void PN532I2cScreen::_doScan14A() {
     }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("No card found", 1200); _goMain(); return; }
 
   int n = Achievement.inc("nfc_uid_first");
   if (n == 1)  Achievement.unlock("nfc_uid_first");
