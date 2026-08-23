@@ -11,6 +11,8 @@ uint16_t      ChameleonClient::_notifyLen = 0;
 // flag so a new notification cannot overwrite or be cleared while it is being
 // inspected.
 static portMUX_TYPE s_notifyMux = portMUX_INITIALIZER_UNLOCKED;
+static bool           s_waitingForCmd = false;
+static uint16_t       s_expectedCmd = 0;
 
 ChameleonClient& ChameleonClient::get() {
   static ChameleonClient inst;
@@ -67,6 +69,18 @@ void ChameleonClient::_onNotify(NimBLERemoteCharacteristic*, uint8_t* d,
   if (n > sizeof(_notifyBuf)) n = sizeof(_notifyBuf);
 
   portENTER_CRITICAL(&s_notifyMux);
+
+  // While a command is in flight, ignore notifications for other commands
+  // before they can overwrite a matching response already waiting in the
+  // single-response buffer.
+  if (s_waitingForCmd && n >= 4) {
+    const uint16_t incomingCmd = ((uint16_t)d[2] << 8) | d[3];
+    if (incomingCmd != s_expectedCmd) {
+      portEXIT_CRITICAL(&s_notifyMux);
+      return;
+    }
+  }
+
   memcpy(_notifyBuf, d, n);
   _notifyLen   = (uint16_t)n;
   _notifyReady = true;
@@ -98,20 +112,54 @@ bool ChameleonClient::connect(const NimBLEAddress& addr) {
 
   if (!_txChar->subscribe(true, _onNotify)) { disconnect(); return false; }
 
-  // Handshake no-op frame (fixes MTU negotiation quirks on nRF stack).
+  // Handshake frame used to settle MTU / notification timing on the nRF stack.
+  portENTER_CRITICAL(&s_notifyMux);
   _notifyReady = false;
+  s_expectedCmd = 0x03FB;
+  s_waitingForCmd = true;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   _rxChar->writeValue(kChamNoOpFrame, sizeof(kChamNoOpFrame), false);
   uint32_t t0 = millis();
-  while (!_notifyReady && (millis() - t0) < 500) delay(10);
+  for (;;) {
+    bool ready = false;
+    portENTER_CRITICAL(&s_notifyMux);
+    ready = _notifyReady;
+    portEXIT_CRITICAL(&s_notifyMux);
+    if (ready || (millis() - t0) >= 500) break;
+    delay(10);
+  }
 
-  // Initial ping: getVersion
+  portENTER_CRITICAL(&s_notifyMux);
+  s_waitingForCmd = false;
+  _notifyReady = false;
+  portEXIT_CRITICAL(&s_notifyMux);
+
+  // Initial ping: getVersion.
   uint8_t frame[10];
   uint16_t frameLen = 0;
   _buildFrame(CMD_GET_VERSION, nullptr, 0, frame, &frameLen);
-  _notifyReady = false;
+
+  portENTER_CRITICAL(&s_notifyMux);
+  s_expectedCmd = CMD_GET_VERSION;
+  s_waitingForCmd = true;
+  portEXIT_CRITICAL(&s_notifyMux);
+
   _rxChar->writeValue(frame, frameLen, false);
   uint32_t t = millis();
-  while (!_notifyReady && (millis() - t) < 1500) delay(10);
+  for (;;) {
+    bool ready = false;
+    portENTER_CRITICAL(&s_notifyMux);
+    ready = _notifyReady;
+    portEXIT_CRITICAL(&s_notifyMux);
+    if (ready || (millis() - t) >= 1500) break;
+    delay(10);
+  }
+
+  portENTER_CRITICAL(&s_notifyMux);
+  s_waitingForCmd = false;
+  _notifyReady = false;
+  portEXIT_CRITICAL(&s_notifyMux);
 
   return true;
 }
@@ -141,11 +189,18 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
 
   portENTER_CRITICAL(&s_notifyMux);
   _notifyReady = false;
+  s_expectedCmd = cmd;
+  s_waitingForCmd = true;
   portEXIT_CRITICAL(&s_notifyMux);
 
   bool wrote = _rxChar->writeValue(frame, frameLen, false);
   free(frame);
-  if (!wrote) return false;
+  if (!wrote) {
+    portENTER_CRITICAL(&s_notifyMux);
+    s_waitingForCmd = false;
+    portEXIT_CRITICAL(&s_notifyMux);
+    return false;
+  }
 
   uint32_t start = millis();
 
@@ -157,7 +212,13 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
       portEXIT_CRITICAL(&s_notifyMux);
 
       if (ready) break;
-      if ((millis() - start) >= timeoutMs) return false;
+      if ((millis() - start) >= timeoutMs) {
+        portENTER_CRITICAL(&s_notifyMux);
+        s_waitingForCmd = false;
+        _notifyReady = false;
+        portEXIT_CRITICAL(&s_notifyMux);
+        return false;
+      }
       delay(10);
     }
 
@@ -173,11 +234,13 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
 
     if (_notifyLen < 10) {
       _notifyReady = false;
+      s_waitingForCmd = false;
       portEXIT_CRITICAL(&s_notifyMux);
       return false;
     }
     if (_lrc(_notifyBuf, 1) != _notifyBuf[1]) {
       _notifyReady = false;
+      s_waitingForCmd = false;
       portEXIT_CRITICAL(&s_notifyMux);
       return false;
     }
@@ -190,6 +253,7 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
         _notifyLen < (uint16_t)(10 + dl) ||
         _lrc(_notifyBuf, 9 + dl) != _notifyBuf[9 + dl]) {
       _notifyReady = false;
+      s_waitingForCmd = false;
       portEXIT_CRITICAL(&s_notifyMux);
       return false;
     }
@@ -205,6 +269,7 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
 
     if (respBuf && respBufSize == 0) {
       _notifyReady = false;
+      s_waitingForCmd = false;
       portEXIT_CRITICAL(&s_notifyMux);
       return false;
     }
@@ -219,6 +284,7 @@ bool ChameleonClient::sendCommand(uint16_t cmd, const uint8_t* data, uint16_t da
     if (respLen) *respLen = copy;
 
     _notifyReady = false;
+    s_waitingForCmd = false;
     portEXIT_CRITICAL(&s_notifyMux);
     return true;
   }
