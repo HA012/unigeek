@@ -206,7 +206,7 @@ void ChameleonMfuScreen::_save() {
   }
 
   String name = InputTextAction::popup("Save dump", suggested);
-  if (!name.length()) { render(); return; }
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
 
   // Treat the edited value as a basename. Do not expose the extension in the
   // editor; add it only when constructing the actual filename.

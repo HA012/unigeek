@@ -533,7 +533,7 @@ void ChameleonMfcScreen::_saveDump() {
   }
 
   String name = InputTextAction::popup("Save dump", suggested);
-  if (!name.length()) {
+  if (InputTextAction::wasCancelled() || name.length() == 0) {
     render();
     return;
   }

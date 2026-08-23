@@ -158,7 +158,7 @@ void ChameleonSlotEditScreen::_toggleEnable(bool lf) {
 void ChameleonSlotEditScreen::_editNick(bool lf) {
   String cur = lf ? _lfNick : _hfNick;
   String r = InputTextAction::popup(lf ? "LF nick" : "HF nick", cur);
-  if (r.length() == 0) { render(); return; }
+  if (InputTextAction::wasCancelled() || r.length() == 0) { render(); return; }
   uint8_t freq = lf ? 1 : 2;
   bool ok = ChameleonClient::get().setSlotNick(_slot, freq, r.c_str());
   if (ok) {
@@ -698,7 +698,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     }
   } else {
     String hex = InputTextAction::popup("EM410X UID (10 hex)");
-    if (hex.length() == 0) { render(); return; }
+    if (InputTextAction::wasCancelled() || hex.length() == 0) { render(); return; }
 
     // Restore the Slot Edit screen before the blocking BLE write begins.
     render();
