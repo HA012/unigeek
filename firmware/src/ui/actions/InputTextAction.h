@@ -115,17 +115,24 @@ private:
       _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
 
     } else if (_mode == INPUT_IP_ADDRESS) {
-      // rows 0-1: 0-9  row 2: CNCL · DEL SAVE
-      static constexpr const char* ipDigits[] = {
-        "0","1","2","3","4","5","6","7","8","9",
+      // Match the Phone keyboard geometry:
+      // rows 0-1: 1-9,0  row 2: . + spacers  row 3: spacers + BKSP SAVE EXIT
+      static constexpr const char* ipChars[] = {
+        "1","2","3","4","5",
+        "6","7","8","9","0",
+        ".",
       };
-      for (int i = 0; i < 10; i++)
-        _sets[_setCount++] = { ipDigits[i], ipDigits[i], false, SP_SAVE };
-      _sets[_setCount++] = { nullptr, "CNCL", true,  SP_CANCEL };
-      _sets[_setCount++] = { ".",     ".",    false, SP_SAVE   };
-      _sets[_setCount++] = { nullptr, "DEL",  true,  SP_DELETE };
-      _sets[_setCount++] = { nullptr, "",     false, SP_SAVE   };  // spacer
-      _sets[_setCount++] = { nullptr, "SAVE", true,  SP_SAVE   };
+      for (int i = 0; i < 11; i++)
+        _sets[_setCount++] = { ipChars[i], ipChars[i], false, SP_SAVE };
+
+      // Pad to 17 cells so the action keys occupy the same final-row
+      // positions as INPUT_PHONE.
+      while (_setCount < 17)
+        _sets[_setCount++] = { nullptr, "", false, SP_SAVE };
+
+      _sets[_setCount++] = { nullptr, "BKSP", true, SP_DELETE };
+      _sets[_setCount++] = { nullptr, "SAVE", true, SP_SAVE };
+      _sets[_setCount++] = { nullptr, "EXIT", true, SP_CANCEL };
 
     } else if (_mode == INPUT_PHONE) {
       static constexpr const char* phoneChars[] = {
