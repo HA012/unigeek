@@ -78,27 +78,37 @@ void ChameleonSlotViewScreen::_runHF() {
       return;
     }
 
-    for (uint16_t p = 0; p < totalPages; ++p) {
-      uint8_t buf[4] = {};
+    static constexpr uint8_t kPagesPerRead = 32;
+    uint8_t buf[kPagesPerRead * 4] = {};
+
+    for (uint16_t first = 0; first < totalPages; first += kPagesPerRead) {
+      const uint8_t count =
+          (uint8_t)min<uint16_t>(kPagesPerRead, (uint16_t)totalPages - first);
+      const uint16_t expected = (uint16_t)count * 4u;
       uint16_t st = 0, rlen = 0;
-      if (!c.mfuGetPageData((uint8_t)p, 1, buf, &st, &rlen) || rlen < sizeof(buf)) {
+
+      if (!c.mfuGetPageData((uint8_t)first, count, buf, &st, &rlen) ||
+          rlen < expected) {
         char diag[32];
-        snprintf(diag, sizeof(diag), "@%u st=%u rlen=%u", p, st, rlen);
+        snprintf(diag, sizeof(diag), "@%u st=%u rlen=%u", first, st, rlen);
         _addRow("Error", diag);
         break;
       }
 
-      char lbl[8];
-      snprintf(lbl, sizeof(lbl), "P%03u", p);
-      char hex[12];
-      snprintf(hex, sizeof(hex), "%02X%02X%02X%02X",
-               buf[0], buf[1], buf[2], buf[3]);
-      _addRow(lbl, hex);
+      for (uint8_t i = 0; i < count; ++i) {
+        const uint16_t page = first + i;
+        const uint8_t* data = &buf[(uint16_t)i * 4u];
 
-      if ((p & 0x0F) == 0x0F) {
-        _scrollView.setRows(_rows, _rowCount);
-        render();
+        char lbl[8];
+        snprintf(lbl, sizeof(lbl), "P%03u", page);
+        char hex[12];
+        snprintf(hex, sizeof(hex), "%02X%02X%02X%02X",
+                 data[0], data[1], data[2], data[3]);
+        _addRow(lbl, hex);
       }
+
+      _scrollView.setRows(_rows, _rowCount);
+      render();
     }
     return;
   }
