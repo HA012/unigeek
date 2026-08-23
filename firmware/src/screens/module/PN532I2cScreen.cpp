@@ -621,7 +621,7 @@ const char* PN532I2cScreen::_inferType2Variant() {
       switch (version[6]) {
         case 0x0B: return "Ultralight EV1 11";
         case 0x0E: return "Ultralight EV1 21";
-        default:   return nullptr;
+        default:   return "Ultralight EV1";
       }
     }
 
@@ -635,10 +635,18 @@ const char* PN532I2cScreen::_inferType2Variant() {
   const uint8_t authCmd[2] = {0x1A, 0x00};
   uint8_t authResp[16] = {};
   uint8_t authLen = sizeof(authResp);
-  if (type2Exchange(authCmd, sizeof(authCmd), authResp, authLen) &&
-      authLen >= 9 && authResp[0] == 0xAF) {
-    return "Ultralight C";
-  }
+  const bool isUltralightC =
+      type2Exchange(authCmd, sizeof(authCmd), authResp, authLen) &&
+      authLen >= 9 && authResp[0] == 0xAF;
+
+  // The UL-C probe starts authentication. Re-select the card so the scan does
+  // not leave it in a partial authentication state for the next PN532 action.
+  uint8_t reselectUid[7] = {};
+  uint8_t reselectUidLen = 0;
+  _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                            reselectUid, &reselectUidLen, 200);
+
+  if (isUltralightC) return "Ultralight C";
 
   // Original MIFARE Ultralight: page 0 is readable, while page 16 is beyond
   // the 16-page memory. READ returns four pages (16 bytes).
