@@ -9,6 +9,7 @@
 void ChameleonMfuToolsScreen::onInit() {
   _items[0] = {"Read Tag"};
   _items[1] = {"Write to Tag"};
+  _items[2] = {"Erase Tag [TODO]"};
   setItems(_items);
 }
 
@@ -93,6 +94,11 @@ void ChameleonMfuToolsScreen::_writeTag() {
 void ChameleonMfuToolsScreen::onItemSelected(uint8_t index) {
   if (index == 0) Screen.push(new ChameleonMfuScreen());
   else if (index == 1) _writeTag();
+  else if (index == 2) {
+    render();
+    ShowStatusAction::show("Not implemented yet", 1400);
+    render();
+  }
 }
 
 void ChameleonMfuToolsScreen::onBack() { Screen.goBack(); }
