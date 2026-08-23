@@ -97,7 +97,7 @@ public:
   bool sendCommand(uint16_t cmd, const uint8_t* data, uint16_t dataLen,
                    uint8_t* respBuf, uint16_t* respLen, uint16_t* respStatus,
                    uint32_t timeoutMs = 2000,
-                   uint16_t respBufSize = 256);
+                   uint16_t respBufSize = 0);
 
   bool getVersion(char* out, uint8_t maxLen);
   bool getGitVersion(char* out, uint8_t maxLen);
