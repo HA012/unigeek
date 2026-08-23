@@ -296,10 +296,23 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   if (tagType == 0) { f.close(); return false; }
 
   auto& c = ChameleonClient::get();
+
+  uint8_t previousSlot = 0;
+  uint8_t previousMode = 0;
+  const bool restoreSlot =
+      c.getActiveSlot(&previousSlot) && previousSlot != _slot;
+  const bool restoreMode = c.getMode(&previousMode);
+
+  auto restoreContext = [&]() {
+    if (restoreSlot) c.setActiveSlot(previousSlot);
+    if (restoreMode) c.setMode(previousMode);
+  };
+
   if (!c.setSlotTagType(_slot, tagType) ||
       !c.setSlotDataDefault(_slot, tagType) ||
       !c.setActiveSlot(_slot)) {
     f.close();
+    restoreContext();
     return false;
   }
 
@@ -307,7 +320,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
     // Existing Classic path: block 0 carries the anti-collision fields used by
     // UniGeek's Classic .bin format.
     uint8_t block0[16] = {};
-    if (f.read(block0, 16) != 16) { f.close(); return false; }
+    if (f.read(block0, 16) != 16) { f.close(); restoreContext(); return false; }
     const uint8_t uidLen = 4;
     uint8_t acoPayload[11] = {};
     acoPayload[0] = uidLen;
@@ -321,6 +334,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
                        acoPayload, 5 + uidLen, nullptr, nullptr, &st) ||
         (st != 0 && st != 0x68)) {
       f.close();
+      restoreContext();
       return false;
     }
 
@@ -345,6 +359,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       if (!c.mf1LoadBlockData(_slot, startBlock, buf, (uint16_t)n)) {
         f.close();
         ProgressView::finish();
+        restoreContext();
         return false;
       }
       loaded += (uint32_t)n;
@@ -360,6 +375,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
     uint8_t firstPages[12] = {};
     if (f.read(firstPages, sizeof(firstPages)) != (int)sizeof(firstPages)) {
       f.close();
+      restoreContext();
       return false;
     }
 
@@ -382,6 +398,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
                        acoPayload, sizeof(acoPayload), nullptr, nullptr, &st) ||
         (st != 0 && st != 0x68)) {
       f.close();
+      restoreContext();
       return false;
     }
 
@@ -401,6 +418,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       if (n != want) {
         f.close();
         ProgressView::finish();
+        restoreContext();
         return false;
       }
 
@@ -413,6 +431,7 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
       if (!c.mfuLoadPageData(_slot, firstPage, buf, pageCount)) {
         f.close();
         ProgressView::finish();
+        restoreContext();
         return false;
       }
       loadedPages += pageCount;
@@ -423,16 +442,24 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
     ProgressView::finish();
   } else {
     f.close();
+    restoreContext();
     return false;
   }
 
-  if (!c.setSlotEnable(_slot, 2, true)) return false; // HF = freq 2
-  if (!c.setMode(0)) return false;
+  if (!c.setSlotEnable(_slot, 2, true)) {
+    restoreContext();
+    return false;
+  }
+  if (!c.setMode(0)) {
+    restoreContext();
+    return false;
+  }
+
   _hfType = tagType;
   _hfEnabled = true;
+  restoreContext();
   return true;
 }
-
 static bool _parseHex(const String& in, uint8_t* out, uint8_t expectedLen) {
   String s = in;
   s.replace(":", ""); s.replace(" ", ""); s.trim();
@@ -452,13 +479,30 @@ bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
   if (!_parseHex(hex, uid, 5)) return false;
 
   auto& c = ChameleonClient::get();
-  if (!c.setSlotTagType(_slot, 100)) return false;   // EM4100
-  if (!c.setActiveSlot(_slot))       return false;
-  if (!c.setEM410XSlot(uid))         return false;
-  if (!c.setSlotEnable(_slot, 1, true)) return false; // LF = freq 1
-  if (!c.setMode(0)) return false;
+
+  uint8_t previousSlot = 0;
+  uint8_t previousMode = 0;
+  const bool restoreSlot =
+      c.getActiveSlot(&previousSlot) && previousSlot != _slot;
+  const bool restoreMode = c.getMode(&previousMode);
+
+  auto restoreContext = [&]() {
+    if (restoreSlot) c.setActiveSlot(previousSlot);
+    if (restoreMode) c.setMode(previousMode);
+  };
+
+  if (!c.setSlotTagType(_slot, 100) ||
+      !c.setActiveSlot(_slot) ||
+      !c.setEM410XSlot(uid) ||
+      !c.setSlotEnable(_slot, 1, true) ||
+      !c.setMode(0)) {
+    restoreContext();
+    return false;
+  }
+
   _lfType    = 100;
   _lfEnabled = true;
+  restoreContext();
   return true;
 }
 
