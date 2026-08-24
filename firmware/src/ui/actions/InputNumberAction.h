@@ -74,7 +74,7 @@ private:
 
   void _buildSets() {
     // 3 cols × 5 rows = 15 items
-    // rows 0-2: 1-9  row 3: dummy 0 dummy  row 4: CNCL DEL SAVE
+    // rows 0-2: 1-9  row 3: dummy 0 dummy  row 4: BKSP SAVE EXIT
     static constexpr const char* d[] = { "1","2","3","4","5","6","7","8","9" };
     _setCount = 0;
     for (int i = 0; i < 9; i++)
@@ -82,9 +82,9 @@ private:
     _sets[_setCount++] = { "",     false, DigitSet::ACT_DEL    };  // dummy
     _sets[_setCount++] = { "0",    false, DigitSet::ACT_DEL    };
     _sets[_setCount++] = { "",     false, DigitSet::ACT_DEL    };  // dummy
-    _sets[_setCount++] = { "CNCL", true,  DigitSet::ACT_CANCEL };
-    _sets[_setCount++] = { "DEL",  true,  DigitSet::ACT_DEL    };
+    _sets[_setCount++] = { "BKSP", true,  DigitSet::ACT_DEL    };
     _sets[_setCount++] = { "SAVE", true,  DigitSet::ACT_SAVE   };
+    _sets[_setCount++] = { "EXIT", true,  DigitSet::ACT_CANCEL };
   }
 
   bool _validate() {
@@ -324,7 +324,7 @@ private:
       sp.setTextColor(TFT_WHITE, theme);
     } else {
       sp.drawRoundRect(1, 1, cW - 2, cH - 2, 3, 0x2104);
-      sp.setTextColor(s.isAction ? TFT_CYAN : TFT_LIGHTGREY, TFT_BLACK);
+      sp.setTextColor(s.isAction ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
     }
     sp.drawString(s.label, cW / 2, cH / 2);
     sp.pushSprite(col * cW, hdr + row * cH);
