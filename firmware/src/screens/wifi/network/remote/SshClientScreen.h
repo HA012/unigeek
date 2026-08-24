@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/TextScrollView.h"
+#include "ui/views/BrowseFileView.h"
 
 class SshClientScreen : public ListScreen
 {
@@ -16,7 +17,14 @@ public:
   void onBack() override;
 
 private:
-  enum State : uint8_t { STATE_CONFIG, STATE_CONNECTING, STATE_OUTPUT };
+  enum State : uint8_t {
+    STATE_CONFIG,
+    STATE_SELECT_AUTH,
+    STATE_SELECT_KEY,
+    STATE_CONNECTING,
+    STATE_OUTPUT
+  };
+  enum AuthMode : uint8_t { AUTH_PASSWORD, AUTH_PRIVATE_KEY };
   enum WorkerState : uint8_t {
     WORKER_IDLE,
     WORKER_CONNECTING,
@@ -38,13 +46,23 @@ private:
   String _host;
   String _username;
   String _password;
+  String _keyPath;
+  String _keyData;
+  AuthMode _authMode = AUTH_PASSWORD;
   int    _port = 22;
 
   char _hostLabel[40] = {};
   char _portLabel[16] = {};
   char _userLabel[32] = {};
-  char _authLabel[16] = "Password";
-  ListItem _items[5];
+  char _authLabel[20] = "Password";
+  char _keyLabel[32] = {};
+  ListItem _items[6];
+  BrowseFileView _browser;
+  String _browsePath = "/unigeek/wifi/ssh";
+  ListItem _authItems[2] = {
+    {"Password", nullptr},
+    {"Private Key", nullptr},
+  };
 
   TaskHandle_t _sshTask = nullptr;
   SemaphoreHandle_t _ioMutex = nullptr;
@@ -69,6 +87,10 @@ private:
   void _configPort();
   void _configUsername();
   void _auth();
+  void _selectAuth(uint8_t index);
+  void _openKeyPicker();
+  void _loadKeyDir(const String& path);
+  void _selectKey(uint8_t index);
   void _connect();
   void _closeConnection(bool returnToConfig = true);
 

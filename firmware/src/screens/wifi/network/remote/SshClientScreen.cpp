@@ -34,9 +34,15 @@ void SshClientScreen::onInit() {
 }
 
 void SshClientScreen::onUpdate() {
+  if (_state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
+    ListScreen::onUpdate();
+    return;
+  }
+
   if (_state == STATE_CONNECTING) {
     if (_workerState == WORKER_RUNNING) {
       _password = "";
+      _keyData = "";
       _clearOutput();
       _remoteClosed = false;
       _state = STATE_OUTPUT;
@@ -52,6 +58,7 @@ void SshClientScreen::onUpdate() {
         xSemaphoreGive(_ioMutex);
       }
       _password = "";
+      _keyData = "";
       _workerState = WORKER_IDLE;
       _state = STATE_CONFIG;
       ShowStatusAction::show(error.c_str(), 1800);
@@ -61,6 +68,7 @@ void SshClientScreen::onUpdate() {
 
     if (_workerState == WORKER_CLOSED) {
       _password = "";
+      _keyData = "";
       _workerState = WORKER_IDLE;
       _state = STATE_CONFIG;
       _updateLabels();
@@ -121,7 +129,7 @@ void SshClientScreen::onUpdate() {
 }
 
 void SshClientScreen::onRender() {
-  if (_state == STATE_CONFIG) {
+  if (_state == STATE_CONFIG || _state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
     ListScreen::onRender();
     return;
   }
@@ -133,12 +141,26 @@ void SshClientScreen::onRender() {
 }
 
 void SshClientScreen::onItemSelected(uint8_t index) {
+  if (_state == STATE_SELECT_AUTH) {
+    _selectAuth(index);
+    return;
+  }
+
+  if (_state == STATE_SELECT_KEY) {
+    _selectKey(index);
+    return;
+  }
+
   switch (index) {
     case 0: _configHost();     break;
     case 1: _configPort();     break;
     case 2: _configUsername(); break;
     case 3: _auth();           break;
-    case 4: _connect();        break;
+    case 4:
+      if (_authMode == AUTH_PRIVATE_KEY) _openKeyPicker();
+      else                               _connect();
+      break;
+    case 5: _connect();        break;
     default: break;
   }
 }
@@ -148,6 +170,15 @@ void SshClientScreen::onBack() {
     _stopRequested = true;
     return;
   }
+
+  if (_state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
+    _state = STATE_CONFIG;
+    _updateLabels();
+    _rebuildItems();
+    render();
+    return;
+  }
+
   if (_state == STATE_OUTPUT) _closeConnection(true);
   else Screen.goBack();
 }
@@ -159,8 +190,20 @@ void SshClientScreen::_updateLabels() {
   if (_username.length() == 0) snprintf(_userLabel, sizeof(_userLabel), "-");
   else                         _username.toCharArray(_userLabel, sizeof(_userLabel));
 
-  snprintf(_authLabel, sizeof(_authLabel), "%s",
-           _password.length() > 0 ? "Password *" : "Password");
+  if (_authMode == AUTH_PASSWORD) {
+    snprintf(_authLabel, sizeof(_authLabel), "%s",
+             _password.length() > 0 ? "Password *" : "Password");
+  } else {
+    snprintf(_authLabel, sizeof(_authLabel), "Private Key");
+  }
+
+  if (_keyPath.length() == 0) {
+    snprintf(_keyLabel, sizeof(_keyLabel), "-");
+  } else {
+    int slash = _keyPath.lastIndexOf('/');
+    String keyName = (slash >= 0) ? _keyPath.substring(slash + 1) : _keyPath;
+    keyName.toCharArray(_keyLabel, sizeof(_keyLabel));
+  }
 
   snprintf(_portLabel, sizeof(_portLabel), "%d", _port);
 }
@@ -171,8 +214,15 @@ void SshClientScreen::_rebuildItems() {
   _items[1] = {"Port", _portLabel};
   _items[2] = {"Username", _userLabel};
   _items[3] = {"Auth", _authLabel};
-  _items[4] = {"Connect", nullptr};
-  setItems(_items, 5, sel);
+
+  if (_authMode == AUTH_PRIVATE_KEY) {
+    _items[4] = {"Key File", _keyLabel};
+    _items[5] = {"Connect", nullptr};
+    setItems(_items, 6, min<uint8_t>(sel, 5));
+  } else {
+    _items[4] = {"Connect", nullptr};
+    setItems(_items, 5, min<uint8_t>(sel, 4));
+  }
 }
 
 void SshClientScreen::_configHost() {
@@ -212,12 +262,67 @@ void SshClientScreen::_configUsername() {
 }
 
 void SshClientScreen::_auth() {
-  String value = InputTextAction::popup("Password", "", InputTextAction::INPUT_TEXT);
-  if (!InputTextAction::wasCancelled()) {
-    _password = value;
-    _updateLabels();
-    _rebuildItems();
+  _state = STATE_SELECT_AUTH;
+  setItems(_authItems, 2, _authMode == AUTH_PRIVATE_KEY ? 1 : 0);
+  render();
+}
+
+void SshClientScreen::_selectAuth(uint8_t index) {
+  if (index > 1) return;
+
+  _authMode = (index == 0) ? AUTH_PASSWORD : AUTH_PRIVATE_KEY;
+
+  if (_authMode == AUTH_PASSWORD) {
+    _keyData = "";
+  } else {
+    _password = "";
   }
+
+  _state = STATE_CONFIG;
+  _updateLabels();
+  _rebuildItems();
+  render();
+}
+
+void SshClientScreen::_openKeyPicker() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage not available", 1500);
+    render();
+    return;
+  }
+
+  // Keep SSH keys under the Wi-Fi subtree by default. Create each level
+  // explicitly because not every storage backend creates parent directories.
+  Uni.Storage->makeDir("/unigeek");
+  Uni.Storage->makeDir("/unigeek/wifi");
+  Uni.Storage->makeDir("/unigeek/wifi/ssh");
+
+  _browsePath = "/unigeek/wifi/ssh";
+  _browser.root = "/";
+  _state = STATE_SELECT_KEY;
+  _loadKeyDir(_browsePath);
+}
+
+void SshClientScreen::_loadKeyDir(const String& path) {
+  _browsePath = path;
+  uint8_t n = _browser.load(this, path, {}, "KEY");
+  setItems(_browser.items(), n);
+  render();
+}
+
+void SshClientScreen::_selectKey(uint8_t index) {
+  if (index >= _browser.count()) return;
+
+  const auto& entry = _browser.entry(index);
+  if (entry.isDir) {
+    _loadKeyDir(entry.path);
+    return;
+  }
+
+  _keyPath = entry.path;
+  _state = STATE_CONFIG;
+  _updateLabels();
+  _rebuildItems();
   render();
 }
 
@@ -243,13 +348,32 @@ void SshClientScreen::_connect() {
     return;
   }
 
-  if (_password.length() == 0) {
-    String value = InputTextAction::popup("Password", "", InputTextAction::INPUT_TEXT);
-    if (InputTextAction::wasCancelled()) {
+  if (_authMode == AUTH_PASSWORD) {
+    if (_password.length() == 0) {
+      String value = InputTextAction::popup("Password", "", InputTextAction::INPUT_TEXT);
+      if (InputTextAction::wasCancelled()) {
+        render();
+        return;
+      }
+      _password = value;
+    }
+  } else {
+    if (_keyPath.length() == 0) {
+      ShowStatusAction::show("Key file required", 1500);
       render();
       return;
     }
-    _password = value;
+    if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+      ShowStatusAction::show("Storage not available", 1500);
+      render();
+      return;
+    }
+    _keyData = Uni.Storage->readFile(_keyPath.c_str());
+    if (_keyData.length() == 0) {
+      ShowStatusAction::show("Key read failed", 1500);
+      render();
+      return;
+    }
   }
 
   if (!_ioMutex) _ioMutex = xSemaphoreCreateMutex();
@@ -260,6 +384,7 @@ void SshClientScreen::_connect() {
 
   if (!_startSshWorker()) {
     _password = "";
+    _keyData = "";
     ShowStatusAction::show("SSH task failed", 1500);
     render();
     return;
@@ -320,6 +445,8 @@ void SshClientScreen::_sshWorker() {
   String host = _host;
   String user = _username;
   String password = _password;
+  String keyData = _keyData;
+  AuthMode authMode = _authMode;
   int port = _port;
   int cols = _terminalCols();
   int rows = _terminalRows();
@@ -346,13 +473,51 @@ void SshClientScreen::_sshWorker() {
 
   if (_stopRequested) goto cleanup;
 
-  if (ssh_userauth_password(session, nullptr, password.c_str()) != SSH_AUTH_SUCCESS) {
-    _setWorkerError("SSH authentication failed");
-    goto cleanup;
+  if (authMode == AUTH_PASSWORD) {
+    if (ssh_userauth_password(session, nullptr, password.c_str()) != SSH_AUTH_SUCCESS) {
+      _setWorkerError("SSH authentication failed");
+      goto cleanup;
+    }
+  } else {
+    ssh_key privateKey = nullptr;
+    ssh_key publicKey = nullptr;
+
+    int rc = ssh_pki_import_privkey_base64(
+      keyData.c_str(), nullptr, nullptr, nullptr, &privateKey);
+    if (rc != SSH_OK || !privateKey) {
+      if (privateKey) ssh_key_free(privateKey);
+      _setWorkerError("SSH key import failed");
+      goto cleanup;
+    }
+
+    rc = ssh_pki_export_privkey_to_pubkey(privateKey, &publicKey);
+    if (rc != SSH_OK || !publicKey) {
+      if (publicKey) ssh_key_free(publicKey);
+      ssh_key_free(privateKey);
+      _setWorkerError("SSH public key failed");
+      goto cleanup;
+    }
+
+    rc = ssh_userauth_try_publickey(session, nullptr, publicKey);
+    if (rc != SSH_AUTH_SUCCESS) {
+      ssh_key_free(publicKey);
+      ssh_key_free(privateKey);
+      _setWorkerError("SSH key not accepted");
+      goto cleanup;
+    }
+
+    rc = ssh_userauth_publickey(session, nullptr, privateKey);
+    ssh_key_free(publicKey);
+    ssh_key_free(privateKey);
+
+    if (rc != SSH_AUTH_SUCCESS) {
+      _setWorkerError("SSH key auth failed");
+      goto cleanup;
+    }
   }
 
-  // Clear the worker's private copy as soon as authentication is complete.
   password = "";
+  keyData = "";
 
   channel = ssh_channel_new(session);
   if (!channel || ssh_channel_open_session(channel) != SSH_OK) {
@@ -448,6 +613,7 @@ cleanup:
   }
 
   password = "";
+  keyData = "";
   _sshTask = nullptr;
   vTaskDelete(nullptr);
 }
@@ -464,6 +630,7 @@ void SshClientScreen::_closeConnection(bool returnToConfig) {
   }
 
   _password = "";
+  _keyData = "";
   _remoteClosed = false;
 
   if (returnToConfig) {

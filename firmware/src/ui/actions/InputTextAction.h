@@ -31,7 +31,8 @@ private:
     SP_SYMBOL,
     SP_CANCEL,
     SP_COUNT,
-    SP_SPACE
+    SP_SPACE,
+    SP_TEXT
   };
 
   enum TextPage : uint8_t {
@@ -125,11 +126,14 @@ private:
       for (int i = 0; i < 11; i++)
         _sets[_setCount++] = { ipChars[i], ipChars[i], false, SP_SAVE };
 
-      // Pad to 17 cells so the action keys occupy the same final-row
-      // positions as INPUT_PHONE.
-      while (_setCount < 17)
+      // Keep the Phone keyboard geometry, but use the bottom-left cell as a
+      // one-way escape to the normal text keyboard for DNS hostnames.
+      // Layout of the final row: ABC | spacer | BKSP | SAVE | EXIT.
+      while (_setCount < 15)
         _sets[_setCount++] = { nullptr, "", false, SP_SAVE };
 
+      _sets[_setCount++] = { nullptr, "ABC",  true, SP_TEXT };
+      _sets[_setCount++] = { nullptr, "",     false, SP_SAVE };
       _sets[_setCount++] = { nullptr, "BKSP", true, SP_DELETE };
       _sets[_setCount++] = { nullptr, "SAVE", true, SP_SAVE };
       _sets[_setCount++] = { nullptr, "EXIT", true, SP_CANCEL };
@@ -284,6 +288,7 @@ private:
             _sets[_scrollPos].chars != nullptr) {
           bool pc = _capsLock, ps = _symbolMode;
           TextPage pp = _page;
+          Mode pm = _mode;
 
           _handleSelect(true);
           _longPressHandled = true;
@@ -293,7 +298,8 @@ private:
           Uni.Nav->suppressCurrentPress();
 
           if (!_done && !_cancelled) {
-            if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
+            if (pc != _capsLock || ps != _symbolMode || pp != _page || pm != _mode)
+              _drawFullGrid();
             else _drawGridCell(_scrollPos);
             _cursorVisible = true;
             _lastBlinkTime = millis();
@@ -346,9 +352,11 @@ private:
             }
             bool pc = _capsLock, ps = _symbolMode;
             TextPage pp = _page;
+            Mode pm = _mode;
             _handleSelect(false);
             if (!_done && !_cancelled) {
-              if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
+              if (pc != _capsLock || ps != _symbolMode || pp != _page || pm != _mode)
+                _drawFullGrid();
               else { _drawGridCell(prev); _drawGridCell(_scrollPos); }
               _cursorVisible = true; _lastBlinkTime = millis();
               _drawGridInput();
@@ -426,9 +434,11 @@ private:
       } else if (dir == INavigation::DIR_PRESS) {
         bool pc = _capsLock, ps = _symbolMode;
         TextPage pp = _page;
+        Mode pm = _mode;
         _handleSelect(false);
         if (!_done && !_cancelled) {
-          if (pc != _capsLock || ps != _symbolMode || pp != _page) _drawFullGrid();
+          if (pc != _capsLock || ps != _symbolMode || pp != _page || pm != _mode)
+            _drawFullGrid();
           else _drawGridCell(prev);
           _cursorVisible = true; _lastBlinkTime = millis();
           _drawGridInput();
@@ -502,6 +512,24 @@ private:
 
         case SP_SPACE:
           _input += ' ';
+          break;
+
+        case SP_TEXT:
+          // INPUT_IP_ADDRESS prioritizes fast IPv4 entry. ABC is a one-way
+          // switch for hostnames: discard the IP prefill/current IP text and
+          // continue in the normal text keyboard until SAVE/EXIT.
+          if (_mode == INPUT_IP_ADDRESS) {
+            _input = "";
+            _pendingChar = "";
+            _tapCount = 0;
+            _lastTapTime = 0;
+            _mode = INPUT_TEXT;
+            _page = PAGE_ABC;
+            _symbolMode = false;
+            _capsLock = false;
+            _buildSets();
+            _scrollPos = 0;
+          }
           break;
 
         case SP_CANCEL:
