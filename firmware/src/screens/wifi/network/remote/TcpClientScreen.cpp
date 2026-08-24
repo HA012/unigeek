@@ -83,10 +83,10 @@ void TcpClientScreen::onItemSelected(uint8_t index) {
 }
 
 void TcpClientScreen::_updateLabels() {
-  if (_host.length() == 0) snprintf(_hostLabel, sizeof(_hostLabel), "tap to set");
+  if (_host.length() == 0) snprintf(_hostLabel, sizeof(_hostLabel), "-");
   else                     _host.toCharArray(_hostLabel, sizeof(_hostLabel));
 
-  if (_port <= 0) snprintf(_portLabel, sizeof(_portLabel), "tap to set");
+  if (_port <= 0) snprintf(_portLabel, sizeof(_portLabel), "-");
   else            snprintf(_portLabel, sizeof(_portLabel), "%d", _port);
 }
 
