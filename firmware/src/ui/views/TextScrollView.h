@@ -10,6 +10,18 @@
 class TextScrollView
 {
 public:
+  enum WrapMode : uint8_t {
+    WRAP_WORD,
+    WRAP_CHARACTER,
+  };
+
+  void setWrapMode(WrapMode mode)
+  {
+    if (_wrapMode == mode) return;
+    _wrapMode = mode;
+    _wrapped = false;
+  }
+
   void setContent(const String& content)
   {
     _content = content;
@@ -104,6 +116,7 @@ private:
   int    _scrollOffset = 0;
   int    _x = 0, _y = 0, _w = 0, _h = 0;
   bool   _wrapped      = false;
+  WrapMode _wrapMode    = WRAP_WORD;
   bool   _scrollToBottomPending = false;
   int    _discardedRows = 0;
   int    _wrapDiscarded = 0;
@@ -160,6 +173,17 @@ private:
           }
 
           int wrapAt = pos + maxChars;
+
+          // Terminal/transcript mode must preserve every character position:
+          // wrapping at whitespace would consume the separator and distort
+          // column-oriented output such as `ls`. Other users retain the
+          // existing word-wrap behavior by default.
+          if (_wrapMode == WRAP_CHARACTER) {
+            _pushWrappedLine(_content.substring(pos, wrapAt));
+            pos = wrapAt;
+            continue;
+          }
+
           int lastSpace = -1;
           for (int i = wrapAt; i > pos; i--) {
             if (_content[i] == ' ') { lastSpace = i; break; }

@@ -36,6 +36,7 @@ private:
   static constexpr uint8_t SE   = 240;
   static constexpr uint8_t OPT_ECHO = 1;
   static constexpr uint8_t OPT_SGA  = 3;
+  static constexpr uint8_t OPT_NAWS = 31;
 
   State      _state = STATE_CONFIG;
   WiFiClient _client;
@@ -49,6 +50,8 @@ private:
   TextScrollView _outputView;
   String _transcript;
   String _partialLine;
+  int    _lineCursor = 0;
+  String _ansiParams;
   bool   _remoteClosed = false;
   bool   _followOutput = true;
 
@@ -56,6 +59,7 @@ private:
   uint8_t _tnCommand = 0;
   uint8_t _tnSbOption = 0;
   bool _tnSbHasOption = false;
+  bool _nawsEnabled = false;
   AnsiParseState _ansiState = ANSI_DATA;
 
   void _updateLabels();
@@ -68,11 +72,15 @@ private:
   void _openCommandInput();
   void _sendCommand(const String& command);
   void _sendTelnetReply(uint8_t command, uint8_t option);
+  void _sendNaws();
   void _handleNegotiation(uint8_t command, uint8_t option);
   void _processTelnetByte(uint8_t c);
 
   void _drainSocket();
   void _appendByte(uint8_t c);
+  void _handleAnsiCsi(uint8_t finalByte);
+  int  _ansiParam(int index, int defaultValue) const;
+  void _putLineChar(char c);
   void _commitPartial();
   void _pushOutputLine(const String& line);
   void _trimTranscript();

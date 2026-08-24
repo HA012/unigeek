@@ -12,6 +12,9 @@ TelnetClientScreen::~TelnetClientScreen() {
 }
 
 void TelnetClientScreen::onInit() {
+  // Terminal output must preserve whitespace/columns. TCP and other users of
+  // TextScrollView keep the default word-wrap behavior.
+  _outputView.setWrapMode(TextScrollView::WRAP_CHARACTER);
   _updateLabels();
   _rebuildItems();
 }
@@ -155,7 +158,10 @@ void TelnetClientScreen::_connect() {
   _tnState = TN_DATA;
   _tnCommand = 0;
   _tnSbHasOption = false;
+  _nawsEnabled = false;
   _ansiState = ANSI_DATA;
+  _ansiParams = "";
+  _lineCursor = 0;
   _state = STATE_OUTPUT;
   _followOutput = true;
   render();
@@ -190,10 +196,7 @@ void TelnetClientScreen::_openCommandInput() {
 void TelnetClientScreen::_sendCommand(const String& command) {
   if (_remoteClosed || !_client.connected()) return;
 
-  // Telnet command mode uses conventional CRLF line termination.
-  _pushOutputLine(String("> ") + command);
-  _followOutput = true;
-
+  // Telnet server controls echo; do not duplicate commands in the local transcript.
   if (command.length() > 0) {
     _client.write(reinterpret_cast<const uint8_t*>(command.c_str()), command.length());
   }
@@ -206,6 +209,38 @@ void TelnetClientScreen::_sendTelnetReply(uint8_t command, uint8_t option) {
   _client.write(reply, sizeof(reply));
 }
 
+void TelnetClientScreen::_sendNaws() {
+  if (!_client.connected()) return;
+
+  // Match TextScrollView's actual terminal geometry. Font 1 is 6 px wide and
+  // the view reserves 3 px for the scrollbar plus 8 px horizontal padding.
+  const int textW = max(1, bodyW() - 3 - 8);
+  const int cols = max(8, textW / 6);
+
+  // Same vertical geometry used by _renderOutput(): connection header,
+  // separator and footer are fixed; the remaining region is the terminal.
+  const int outputH = max(1, bodyH() - PAD - 11 - 4 - FOOTER_H - 2);
+  const int rows = max(1, outputH / 11);
+
+  // RFC 1073: IAC SB NAWS <16-bit width> <16-bit height> IAC SE.
+  // Width/height bytes equal to IAC must be escaped by doubling them.
+  uint8_t header[3] = {IAC, SB, OPT_NAWS};
+  _client.write(header, sizeof(header));
+
+  auto writeEscaped = [this](uint8_t b) {
+    _client.write(b);
+    if (b == IAC) _client.write(b);
+  };
+
+  writeEscaped((uint8_t)((cols >> 8) & 0xff));
+  writeEscaped((uint8_t)(cols & 0xff));
+  writeEscaped((uint8_t)((rows >> 8) & 0xff));
+  writeEscaped((uint8_t)(rows & 0xff));
+
+  uint8_t trailer[2] = {IAC, SE};
+  _client.write(trailer, sizeof(trailer));
+}
+
 void TelnetClientScreen::_handleNegotiation(uint8_t command, uint8_t option) {
   // Conservative client negotiation. Accept server ECHO and suppress-go-ahead;
   // reject options we do not implement. For DO SGA, advertise WILL SGA.
@@ -213,8 +248,17 @@ void TelnetClientScreen::_handleNegotiation(uint8_t command, uint8_t option) {
     if (option == OPT_ECHO || option == OPT_SGA) _sendTelnetReply(DO, option);
     else                                         _sendTelnetReply(DONT, option);
   } else if (command == DO) {
-    if (option == OPT_SGA) _sendTelnetReply(WILL, option);
-    else                   _sendTelnetReply(WONT, option);
+    if (option == OPT_SGA) {
+      _sendTelnetReply(WILL, option);
+    } else if (option == OPT_NAWS) {
+      _sendTelnetReply(WILL, option);
+      _nawsEnabled = true;
+      _sendNaws();
+    } else {
+      _sendTelnetReply(WONT, option);
+    }
+  } else if (command == DONT && option == OPT_NAWS) {
+    _nawsEnabled = false;
   }
   // DONT/WONT require no positive response for this minimal client.
 }
@@ -286,22 +330,31 @@ void TelnetClientScreen::_drainSocket() {
 }
 
 void TelnetClientScreen::_appendByte(uint8_t c) {
-  // Strip ANSI/VT100 control sequences in v1 instead of rendering their
-  // printable payload (e.g. "[1;32m"). Terminal interpretation comes later.
+  // Minimal ANSI/VT100 interpretation for line-oriented sessions. We still do
+  // not emulate a screen: colors/styles and vertical/fullscreen operations are
+  // ignored, while horizontal editing is applied to the current logical line.
   switch (_ansiState) {
     case ANSI_ESC:
+      _ansiParams = "";
       if (c == '[')      _ansiState = ANSI_CSI;
       else if (c == ']') _ansiState = ANSI_OSC;
       else               _ansiState = ANSI_DATA;
       return;
 
     case ANSI_CSI:
-      // CSI ends at the first final byte in 0x40..0x7E.
-      if (c >= 0x40 && c <= 0x7e) _ansiState = ANSI_DATA;
+      if (c >= 0x40 && c <= 0x7e) {
+        _handleAnsiCsi(c);
+        _ansiState = ANSI_DATA;
+        _ansiParams = "";
+      } else if (_ansiParams.length() < 24 &&
+                 ((c >= '0' && c <= '9') || c == ';' || c == '?' || c == '>')) {
+        _ansiParams += (char)c;
+      }
       return;
 
     case ANSI_OSC:
-      // OSC terminates on BEL or ST (ESC \).
+      // OSC terminates on BEL or ST (ESC \). Content is metadata (often a
+      // window title), not terminal transcript text.
       if (c == 0x07)      _ansiState = ANSI_DATA;
       else if (c == 0x1b) _ansiState = ANSI_OSC_ESC;
       return;
@@ -319,31 +372,119 @@ void TelnetClientScreen::_appendByte(uint8_t c) {
       break;
   }
 
-  if (c == '\r') return;
+  // CR returns to column zero. If followed by LF, LF commits the resulting
+  // logical line; a bare CR lets subsequent bytes overwrite that line.
+  if (c == '\r') {
+    _lineCursor = 0;
+    return;
+  }
 
   if (c == '\n') {
     _commitPartial();
     return;
   }
 
+  // Backspace moves left; the common "BS SP BS" erase sequence therefore
+  // works naturally with overwrite semantics.
   if (c == '\b' || c == 0x7f) {
-    if (_partialLine.length() > 0) _partialLine.remove(_partialLine.length() - 1);
+    if (_lineCursor > 0) _lineCursor--;
     return;
   }
 
   if (c == '\t') {
-    _partialLine += "    ";
+    // Traditional terminal tab stops every 8 columns.
+    int spaces = 8 - (_lineCursor % 8);
+    while (spaces-- > 0) _putLineChar(' ');
   } else if (c >= 0x20 && c <= 0x7e) {
-    _partialLine += (char)c;
+    _putLineChar((char)c);
   }
   // Other control/binary bytes are intentionally ignored in text-mode v1.
 
   if ((int)_partialLine.length() >= MAX_PARTIAL_LEN) _commitPartial();
 }
 
+void TelnetClientScreen::_putLineChar(char c) {
+  if (_lineCursor < 0) _lineCursor = 0;
+  if (_lineCursor > (int)_partialLine.length()) {
+    while ((int)_partialLine.length() < _lineCursor) _partialLine += ' ';
+  }
+
+  if (_lineCursor < (int)_partialLine.length()) {
+    _partialLine.setCharAt(_lineCursor, c);
+  } else {
+    _partialLine += c;
+  }
+  _lineCursor++;
+}
+
+int TelnetClientScreen::_ansiParam(int index, int defaultValue) const {
+  int current = 0;
+  int value = 0;
+  bool haveDigit = false;
+
+  for (int i = 0; i <= (int)_ansiParams.length(); i++) {
+    char c = (i < (int)_ansiParams.length()) ? _ansiParams[i] : ';';
+    if (c >= '0' && c <= '9') {
+      value = value * 10 + (c - '0');
+      haveDigit = true;
+    } else if (c == ';') {
+      if (current == index) return haveDigit ? value : defaultValue;
+      current++;
+      value = 0;
+      haveDigit = false;
+    }
+  }
+  return defaultValue;
+}
+
+void TelnetClientScreen::_handleAnsiCsi(uint8_t finalByte) {
+  int n = _ansiParam(0, 1);
+  if (n < 1) n = 1;
+
+  switch (finalByte) {
+    case 'm':
+      // SGR color/style: intentionally ignored in transcript mode.
+      break;
+
+    case 'C': // CUF — cursor forward
+      _lineCursor = min((int)_partialLine.length(), _lineCursor + n);
+      break;
+
+    case 'D': // CUB — cursor backward
+      _lineCursor = max(0, _lineCursor - n);
+      break;
+
+    case 'G': // CHA — horizontal absolute, 1-based
+      _lineCursor = max(0, n - 1);
+      if (_lineCursor > MAX_PARTIAL_LEN) _lineCursor = MAX_PARTIAL_LEN;
+      break;
+
+    case 'K': { // EL — erase in line
+      int mode = _ansiParam(0, 0);
+      if (mode == 2) {
+        _partialLine = "";
+        _lineCursor = 0;
+      } else if (mode == 1) {
+        int upto = min(_lineCursor + 1, (int)_partialLine.length());
+        for (int i = 0; i < upto; i++) _partialLine.setCharAt(i, ' ');
+      } else {
+        if (_lineCursor < (int)_partialLine.length())
+          _partialLine.remove(_lineCursor);
+      }
+      break;
+    }
+
+    // J/A/B/H/f and other screen/cursor operations are intentionally ignored:
+    // the TO is a scrollable transcript, not a VT100 screen emulator.
+    default:
+      break;
+  }
+}
+
 void TelnetClientScreen::_commitPartial() {
   _pushOutputLine(_partialLine);
   _partialLine = "";
+  _lineCursor = 0;
 }
 
 void TelnetClientScreen::_pushOutputLine(const String& line) {
@@ -364,6 +505,8 @@ void TelnetClientScreen::_trimTranscript() {
 void TelnetClientScreen::_clearOutput() {
   _transcript = "";
   _partialLine = "";
+  _lineCursor = 0;
+  _ansiParams = "";
   _followOutput = true;
   _outputView.setContent("");
 }
