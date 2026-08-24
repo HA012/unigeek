@@ -11,6 +11,7 @@
 #include "screens/wifi/network/NetworkPranksScreen.h"
 #include "screens/wifi/network/NetworkServicesScreen.h"
 #include "screens/wifi/network/NetworkInternetScreen.h"
+#include "screens/wifi/network/remote/RemoteAccessScreen.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/ShowQRCodeAction.h"
 #include <WiFi.h>
@@ -61,6 +62,7 @@ void NetworkMenuScreen::onItemSelected(uint8_t index) {
       case 4: Screen.push(new NetworkPranksScreen());   break;
       case 5: Screen.push(new NetworkServicesScreen()); break;
       case 6: Screen.push(new NetworkInternetScreen()); break;
+      case 7: Screen.push(new RemoteAccessScreen());    break;
     }
   } else if (_state == STATE_INFORMATION) {
     _showMenu();
