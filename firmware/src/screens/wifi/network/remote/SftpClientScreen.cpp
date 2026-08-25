@@ -520,9 +520,10 @@ void SftpClientScreen::_openKeyPicker() {
 
   Uni.Storage->makeDir("/unigeek");
   Uni.Storage->makeDir("/unigeek/wifi");
-  Uni.Storage->makeDir("/unigeek/wifi/ssh");
+  Uni.Storage->makeDir("/unigeek/wifi/remote");
+  Uni.Storage->makeDir("/unigeek/wifi/remote/ssh");
 
-  _localBrowsePath = "/unigeek/wifi/ssh";
+  _localBrowsePath = "/unigeek/wifi/remote/ssh";
   _localBrowser.root = "/";
   _state = STATE_SELECT_KEY;
   _loadKeyDir(_localBrowsePath);
@@ -1170,7 +1171,8 @@ void SftpClientScreen::_requestDownload(const String& remotePath, bool directory
 
   Uni.Storage->makeDir("/unigeek");
   Uni.Storage->makeDir("/unigeek/wifi");
-  Uni.Storage->makeDir("/unigeek/wifi/sftp");
+  Uni.Storage->makeDir("/unigeek/wifi/remote");
+  Uni.Storage->makeDir("/unigeek/wifi/remote/sftp");
   Uni.Storage->makeDir(DOWNLOAD_DIR);
 
   if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {

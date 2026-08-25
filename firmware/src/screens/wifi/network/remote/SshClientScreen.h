@@ -61,7 +61,7 @@ private:
   char _keyLabel[32] = {};
   ListItem _items[6];
   BrowseFileView _browser;
-  String _browsePath = "/unigeek/wifi/ssh";
+  String _browsePath = "/unigeek/wifi/remote/ssh";
   ListItem _authItems[2] = {
     {"Password", nullptr},
     {"Private Key", nullptr},

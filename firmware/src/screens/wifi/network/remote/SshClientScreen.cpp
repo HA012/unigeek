@@ -364,9 +364,10 @@ void SshClientScreen::_openKeyPicker() {
   // explicitly because not every storage backend creates parent directories.
   Uni.Storage->makeDir("/unigeek");
   Uni.Storage->makeDir("/unigeek/wifi");
-  Uni.Storage->makeDir("/unigeek/wifi/ssh");
+  Uni.Storage->makeDir("/unigeek/wifi/remote");
+  Uni.Storage->makeDir("/unigeek/wifi/remote/ssh");
 
-  _browsePath = "/unigeek/wifi/ssh";
+  _browsePath = "/unigeek/wifi/remote/ssh";
   _browser.root = "/";
   _state = STATE_SELECT_KEY;
   _loadKeyDir(_browsePath);
