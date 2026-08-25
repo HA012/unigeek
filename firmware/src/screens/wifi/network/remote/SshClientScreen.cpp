@@ -34,12 +34,42 @@ void SshClientScreen::onInit() {
 }
 
 void SshClientScreen::onUpdate() {
+  if (_state == STATE_HOSTKEY_CONFIRM) {
+    if (!Uni.Nav->wasPressed()) return;
+
+    auto dir = Uni.Nav->readDirection();
+    if (dir == INavigation::DIR_BACK) {
+      _acceptHostKey(false);
+      return;
+    }
+
+    if (dir == INavigation::DIR_UP || dir == INavigation::DIR_DOWN ||
+        dir == INavigation::DIR_LEFT || dir == INavigation::DIR_RIGHT) {
+      _hostKeySelection = (_hostKeySelection == 0) ? 1 : 0;
+      render();
+      return;
+    }
+
+    if (dir == INavigation::DIR_PRESS) {
+      _acceptHostKey(_hostKeySelection == 0);
+      return;
+    }
+    return;
+  }
+
   if (_state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
     ListScreen::onUpdate();
     return;
   }
 
   if (_state == STATE_CONNECTING) {
+    if (_workerState == WORKER_WAIT_HOSTKEY) {
+      _hostKeySelection = 0;
+      _state = STATE_HOSTKEY_CONFIRM;
+      render();
+      return;
+    }
+
     if (_workerState == WORKER_RUNNING) {
       _password = "";
       _keyData = "";
@@ -137,6 +167,10 @@ void SshClientScreen::onRender() {
     _renderConnecting();
     return;
   }
+  if (_state == STATE_HOSTKEY_CONFIRM) {
+    _renderHostKeyConfirm();
+    return;
+  }
   _renderOutput();
 }
 
@@ -157,8 +191,9 @@ void SshClientScreen::onItemSelected(uint8_t index) {
     case 2: _configUsername(); break;
     case 3: _auth();           break;
     case 4:
-      if (_authMode == AUTH_PRIVATE_KEY) _openKeyPicker();
-      else                               _connect();
+      if (_authMode == AUTH_PASSWORD)          _configPassword();
+      else if (_authMode == AUTH_PRIVATE_KEY)  _openKeyPicker();
+      else                                     _connect();
       break;
     case 5: _connect();        break;
     default: break;
@@ -166,6 +201,11 @@ void SshClientScreen::onItemSelected(uint8_t index) {
 }
 
 void SshClientScreen::onBack() {
+  if (_state == STATE_HOSTKEY_CONFIRM) {
+    _acceptHostKey(false);
+    return;
+  }
+
   if (_state == STATE_CONNECTING) {
     _stopRequested = true;
     return;
@@ -191,11 +231,15 @@ void SshClientScreen::_updateLabels() {
   else                         _username.toCharArray(_userLabel, sizeof(_userLabel));
 
   if (_authMode == AUTH_PASSWORD) {
-    snprintf(_authLabel, sizeof(_authLabel), "%s",
-             _password.length() > 0 ? "Password *" : "Password");
-  } else {
+    snprintf(_authLabel, sizeof(_authLabel), "Password");
+  } else if (_authMode == AUTH_PRIVATE_KEY) {
     snprintf(_authLabel, sizeof(_authLabel), "Private Key");
+  } else {
+    snprintf(_authLabel, sizeof(_authLabel), "-");
   }
+
+  snprintf(_passwordLabel, sizeof(_passwordLabel), "%s",
+           _password.length() > 0 ? "********" : "-");
 
   if (_keyPath.length() == 0) {
     snprintf(_keyLabel, sizeof(_keyLabel), "-");
@@ -213,9 +257,13 @@ void SshClientScreen::_rebuildItems() {
   _items[0] = {"Host", _hostLabel};
   _items[1] = {"Port", _portLabel};
   _items[2] = {"Username", _userLabel};
-  _items[3] = {"Auth", _authLabel};
+  _items[3] = {"Auth Method", _authLabel};
 
-  if (_authMode == AUTH_PRIVATE_KEY) {
+  if (_authMode == AUTH_PASSWORD) {
+    _items[4] = {"Password", _passwordLabel};
+    _items[5] = {"Connect", nullptr};
+    setItems(_items, 6, min<uint8_t>(sel, 5));
+  } else if (_authMode == AUTH_PRIVATE_KEY) {
     _items[4] = {"Key File", _keyLabel};
     _items[5] = {"Connect", nullptr};
     setItems(_items, 6, min<uint8_t>(sel, 5));
@@ -261,9 +309,27 @@ void SshClientScreen::_configUsername() {
   render();
 }
 
+void SshClientScreen::_configPassword() {
+  String value = InputTextAction::popup(
+    "Password", "", InputTextAction::INPUT_TEXT);
+
+  if (!InputTextAction::wasCancelled()) {
+    _password = value;
+  }
+
+  _selectedIndex = 4;
+  _updateLabels();
+  _rebuildItems();
+  render();
+}
+
 void SshClientScreen::_auth() {
   _state = STATE_SELECT_AUTH;
-  setItems(_authItems, 2, _authMode == AUTH_PRIVATE_KEY ? 1 : 0);
+
+  // If no method has been chosen yet, start on Password without making it the
+  // active method until the user actually confirms the selection.
+  uint8_t selected = (_authMode == AUTH_PRIVATE_KEY) ? 1 : 0;
+  setItems(_authItems, 2, selected);
   render();
 }
 
@@ -278,6 +344,9 @@ void SshClientScreen::_selectAuth(uint8_t index) {
     _password = "";
   }
 
+  // Return to CONFIG with Auth still selected. The submenu index (0/1) must not
+  // leak into the main menu selection, otherwise CONFIG jumps to Host/Port.
+  _selectedIndex = 3;
   _state = STATE_CONFIG;
   _updateLabels();
   _rebuildItems();
@@ -348,6 +417,12 @@ void SshClientScreen::_connect() {
     return;
   }
 
+  if (_authMode == AUTH_NONE) {
+    ShowStatusAction::show("Auth method required", 1500);
+    render();
+    return;
+  }
+
   if (_authMode == AUTH_PASSWORD) {
     if (_password.length() == 0) {
       String value = InputTextAction::popup("Password", "", InputTextAction::INPUT_TEXT);
@@ -399,11 +474,13 @@ bool SshClientScreen::_startSshWorker() {
 
   _stopRequested = false;
   _workerState = WORKER_CONNECTING;
+  _hostKeyDecision = 0;
 
   if (xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     _workerRx = "";
     _workerTx = "";
     _workerError = "";
+    _hostFingerprint = "";
     xSemaphoreGive(_ioMutex);
   }
 
@@ -469,6 +546,60 @@ void SshClientScreen::_sshWorker() {
   if (ssh_connect(session) != SSH_OK) {
     _setWorkerError("SSH connect failed");
     goto cleanup;
+  }
+
+  if (_stopRequested) goto cleanup;
+
+  // Present the server identity before sending any user credential.
+  {
+    ssh_key serverKey = nullptr;
+    unsigned char* hash = nullptr;
+    size_t hashLen = 0;
+
+    if (ssh_get_server_publickey(session, &serverKey) != SSH_OK || !serverKey) {
+      if (serverKey) ssh_key_free(serverKey);
+      _setWorkerError("SSH host key failed");
+      goto cleanup;
+    }
+
+    int rc = ssh_get_publickey_hash(
+      serverKey, SSH_PUBLICKEY_HASH_SHA256, &hash, &hashLen);
+    ssh_key_free(serverKey);
+
+    if (rc != SSH_OK || !hash || hashLen == 0) {
+      if (hash) ssh_clean_pubkey_hash(&hash);
+      _setWorkerError("SSH fingerprint failed");
+      goto cleanup;
+    }
+
+    char* hex = ssh_get_hexa(hash, hashLen);
+    ssh_clean_pubkey_hash(&hash);
+
+    if (!hex) {
+      _setWorkerError("SSH fingerprint failed");
+      goto cleanup;
+    }
+
+    if (_ioMutex && xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      _hostFingerprint = "SHA256 ";
+      _hostFingerprint += hex;
+      xSemaphoreGive(_ioMutex);
+    }
+    ssh_string_free_char(hex);
+
+    _hostKeyDecision = 0;
+    _workerState = WORKER_WAIT_HOSTKEY;
+
+    while (!_stopRequested && _hostKeyDecision == 0) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    if (_stopRequested || _hostKeyDecision < 0) {
+      _workerState = WORKER_CLOSED;
+      goto cleanup;
+    }
+
+    _workerState = WORKER_CONNECTING;
   }
 
   if (_stopRequested) goto cleanup;
@@ -620,6 +751,7 @@ cleanup:
 
 void SshClientScreen::_closeConnection(bool returnToConfig) {
   _stopRequested = true;
+  _hostKeyDecision = -1;
 
   // When the session is already running, the worker is non-blocking and should
   // exit promptly. Avoid deleting it from the UI task because libssh objects
@@ -870,6 +1002,80 @@ void SshClientScreen::_renderConnecting() {
   String msg = "Connecting to " + _host + ":" + String(_port) + "...";
   lcd.drawString(msg.c_str(), x + w / 2, y + h / 2);
   lcd.setTextDatum(TL_DATUM);
+}
+
+void SshClientScreen::_acceptHostKey(bool trust) {
+  _hostKeyDecision = trust ? 1 : -1;
+
+  if (trust) {
+    _state = STATE_CONNECTING;
+    render();
+  } else {
+    _stopRequested = true;
+    _state = STATE_CONNECTING;
+    render();
+  }
+}
+
+void SshClientScreen::_renderHostKeyConfirm() {
+  auto& lcd = Uni.Lcd;
+  const int x = bodyX();
+  const int y = bodyY();
+  const int w = bodyW();
+  const int h = bodyH();
+
+  lcd.fillRect(x, y, w, h, TFT_BLACK);
+  lcd.setTextFont(1);
+  lcd.setTextSize(1);
+  lcd.setTextDatum(TL_DATUM);
+
+  int cy = y + PAD;
+
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("SSH Host Key", x + PAD, cy);
+  cy += 12;
+
+  lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  String hostLine = _host + ":" + String(_port);
+  lcd.drawString(hostLine.c_str(), x + PAD, cy);
+  cy += 12;
+
+  lcd.drawFastHLine(x + PAD, cy, w - PAD * 2, TFT_DARKGREY);
+  cy += 5;
+
+  String fingerprint;
+  if (_ioMutex && xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    fingerprint = _hostFingerprint;
+    xSemaphoreGive(_ioMutex);
+  }
+
+  // 6 px per character with font 1. Wrap the SHA-256 fingerprint so the entire
+  // server identity remains visible even on narrow screens.
+  const int charsPerLine = max(8, (w - PAD * 2) / 6);
+  int pos = 0;
+  while (pos < (int)fingerprint.length() && cy < y + h - 34) {
+    String line = fingerprint.substring(pos, min(pos + charsPerLine,
+                                                 (int)fingerprint.length()));
+    lcd.drawString(line.c_str(), x + PAD, cy);
+    pos += charsPerLine;
+    cy += 10;
+  }
+
+  const int buttonY = y + h - 27;
+  const int buttonW = (w - PAD * 3) / 2;
+
+  auto drawButton = [&](int bx, const char* label, bool selected) {
+    uint16_t border = selected ? TFT_YELLOW : TFT_DARKGREY;
+    uint16_t text   = selected ? TFT_WHITE  : TFT_LIGHTGREY;
+    lcd.drawRoundRect(bx, buttonY, buttonW, 20, 3, border);
+    lcd.setTextDatum(MC_DATUM);
+    lcd.setTextColor(text, TFT_BLACK);
+    lcd.drawString(label, bx + buttonW / 2, buttonY + 10);
+    lcd.setTextDatum(TL_DATUM);
+  };
+
+  drawButton(x + PAD, "Trust", _hostKeySelection == 0);
+  drawButton(x + PAD * 2 + buttonW, "Cancel", _hostKeySelection == 1);
 }
 
 void SshClientScreen::_renderOutput() {

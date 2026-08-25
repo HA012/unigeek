@@ -22,12 +22,14 @@ private:
     STATE_SELECT_AUTH,
     STATE_SELECT_KEY,
     STATE_CONNECTING,
+    STATE_HOSTKEY_CONFIRM,
     STATE_OUTPUT
   };
-  enum AuthMode : uint8_t { AUTH_PASSWORD, AUTH_PRIVATE_KEY };
+  enum AuthMode : uint8_t { AUTH_NONE, AUTH_PASSWORD, AUTH_PRIVATE_KEY };
   enum WorkerState : uint8_t {
     WORKER_IDLE,
     WORKER_CONNECTING,
+    WORKER_WAIT_HOSTKEY,
     WORKER_RUNNING,
     WORKER_FAILED,
     WORKER_CLOSED
@@ -48,13 +50,14 @@ private:
   String _password;
   String _keyPath;
   String _keyData;
-  AuthMode _authMode = AUTH_PASSWORD;
+  AuthMode _authMode = AUTH_NONE;
   int    _port = 22;
 
   char _hostLabel[40] = {};
   char _portLabel[16] = {};
   char _userLabel[32] = {};
-  char _authLabel[20] = "Password";
+  char _authLabel[20] = "-";
+  char _passwordLabel[16] = "-";
   char _keyLabel[32] = {};
   ListItem _items[6];
   BrowseFileView _browser;
@@ -71,6 +74,9 @@ private:
   String _workerRx;
   String _workerTx;
   String _workerError;
+  String _hostFingerprint;
+  volatile int8_t _hostKeyDecision = 0; // 0=pending, 1=trust, -1=cancel
+  uint8_t _hostKeySelection = 0;        // 0=Trust, 1=Cancel
 
   TextScrollView _outputView;
   String _transcript;
@@ -86,6 +92,7 @@ private:
   void _configHost();
   void _configPort();
   void _configUsername();
+  void _configPassword();
   void _auth();
   void _selectAuth(uint8_t index);
   void _openKeyPicker();
@@ -114,5 +121,7 @@ private:
   int _terminalCols();
   int _terminalRows();
   void _renderConnecting();
+  void _renderHostKeyConfirm();
+  void _acceptHostKey(bool trust);
   void _renderOutput();
 };
