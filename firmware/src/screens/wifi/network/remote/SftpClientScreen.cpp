@@ -25,8 +25,11 @@ const char* SftpClientScreen::title() {
       return "SFTP Client";
     case STATE_REMOTE_LOADING:
     case STATE_REMOTE_BROWSER:
+      return _remoteMode == REMOTE_UPLOAD_DEST ? "SFTP Upload" : "SFTP Download";
+    case STATE_LOCAL_BROWSER:
+      return "SFTP Upload";
     case STATE_TRANSFER:
-      return "SFTP Download";
+      return _transferIsUpload ? "SFTP Upload" : "SFTP Download";
     case STATE_ACTION:
     default:
       return "SFTP Client";
@@ -140,7 +143,8 @@ void SftpClientScreen::onUpdate() {
           xSemaphoreGive(_mutex);
         }
         ShowStatusAction::show(err.c_str(), 1500);
-        _state = STATE_REMOTE_BROWSER;
+        _state = (_remoteMode == REMOTE_UPLOAD_DEST)
+               ? STATE_LOCAL_BROWSER : STATE_REMOTE_BROWSER;
         render();
         return;
       }
@@ -152,7 +156,12 @@ void SftpClientScreen::onUpdate() {
 
     if (Uni.Nav->wasPressed() &&
         Uni.Nav->readDirection() == INavigation::DIR_BACK) {
-      _closeConnection(true);
+      if (_remoteMode == REMOTE_UPLOAD_DEST) {
+        _state = STATE_LOCAL_BROWSER;
+        render();
+      } else {
+        _showActions();
+      }
     }
     return;
   }
@@ -169,12 +178,20 @@ void SftpClientScreen::onUpdate() {
       }
       _commandDone = false;
       ProgressView::finish();
-      _state = STATE_REMOTE_BROWSER;
+
+      const bool upload = _transferIsUpload;
+      _state = upload ? STATE_LOCAL_BROWSER : STATE_REMOTE_BROWSER;
       render();
 
-      if (ok) ShowStatusAction::show("Download complete", 1400);
-      else if (err == "Cancelled") ShowStatusAction::show("Download cancelled", 1200);
-      else ShowStatusAction::show(err.length() ? err.c_str() : "Download failed", 1600);
+      if (ok) {
+        ShowStatusAction::show(upload ? "Upload complete" : "Download complete", 1400);
+      } else if (err == "Cancelled") {
+        ShowStatusAction::show(upload ? "Upload cancelled" : "Download cancelled", 1200);
+      } else {
+        ShowStatusAction::show(
+          err.length() ? err.c_str() : (upload ? "Upload failed" : "Download failed"),
+          1600);
+      }
       render();
       return;
     }
@@ -183,6 +200,20 @@ void SftpClientScreen::onUpdate() {
         Uni.Nav->readDirection() == INavigation::DIR_BACK) {
       _cancelTransfer = true;
     }
+    return;
+  }
+
+  if (_state == STATE_LOCAL_BROWSER) {
+    if (Uni.Nav->isPressed() && !_holdHandled &&
+        Uni.Nav->heldDuration() >= HOLD_MS) {
+      _holdHandled = true;
+      Uni.Nav->suppressCurrentPress();
+      _holdLocalUpload(_selectedIndex);
+      return;
+    }
+
+    if (!Uni.Nav->isPressed()) _holdHandled = false;
+    ListScreen::onUpdate();
     return;
   }
 
@@ -220,17 +251,21 @@ void SftpClientScreen::onRender() {
     _renderRemoteBrowser();
     return;
   }
+  if (_state == STATE_LOCAL_BROWSER) {
+    _renderLocalBrowser();
+    return;
+  }
   ListScreen::onRender();
 }
 
 void SftpClientScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_ACTION) {
     if (index == 0) {
+      _remoteMode = REMOTE_DOWNLOAD;
       if (_workerState == WORKER_READY) _requestList(".");
       else                              _beginDownload();
     } else if (index == 1) {
-      ShowStatusAction::show("Upload coming soon", 1300);
-      render();
+      _beginUpload();
     }
     return;
   }
@@ -247,6 +282,11 @@ void SftpClientScreen::onItemSelected(uint8_t index) {
 
   if (_state == STATE_REMOTE_BROWSER) {
     _selectRemote(index);
+    return;
+  }
+
+  if (_state == STATE_LOCAL_BROWSER) {
+    _selectLocalUpload(index);
     return;
   }
 
@@ -300,8 +340,18 @@ void SftpClientScreen::onBack() {
   }
 
   if (_state == STATE_REMOTE_BROWSER) {
-    // BACK from the remote browser returns to the action hub but deliberately
-    // keeps the SSH/SFTP worker and session alive for a subsequent transfer.
+    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+      // Cancel destination selection and return to the local upload browser.
+      _state = STATE_LOCAL_BROWSER;
+      render();
+    } else {
+      // BACK from Download returns to the action hub while keeping the session.
+      _showActions();
+    }
+    return;
+  }
+
+  if (_state == STATE_LOCAL_BROWSER) {
     _showActions();
     return;
   }
@@ -317,11 +367,35 @@ void SftpClientScreen::_showActions() {
 }
 
 void SftpClientScreen::_beginDownload() {
+  _remoteMode = REMOTE_DOWNLOAD;
+
   // Used only when no live SFTP session exists yet.
   _state = STATE_CONFIG;
   _updateLabels();
   _rebuildConfig();
   render();
+}
+
+void SftpClientScreen::_beginUpload() {
+  if (_workerState != WORKER_READY) {
+    _state = STATE_CONFIG;
+    _updateLabels();
+    _rebuildConfig();
+    render();
+    return;
+  }
+
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage not available", 1500);
+    render();
+    return;
+  }
+
+  _uploadLocalPath = "";
+  _uploadName = "";
+  _uploadIsDir = false;
+  _localBrowser.root = "/";
+  _loadLocalUploadDir("/");
 }
 
 void SftpClientScreen::_updateLabels() {
@@ -476,6 +550,69 @@ void SftpClientScreen::_selectKey(uint8_t index) {
   _updateLabels();
   _rebuildConfig();
   render();
+}
+
+
+void SftpClientScreen::_loadLocalUploadDir(const String& path) {
+  _localBrowsePath = path;
+  uint8_t n = _localBrowser.load(this, path, {}, "SD");
+  _state = STATE_LOCAL_BROWSER;
+  setItems(_localBrowser.items(), n);
+  render();
+}
+
+void SftpClientScreen::_selectLocalUpload(uint8_t index) {
+  if (index >= _localBrowser.count()) return;
+  const auto& e = _localBrowser.entry(index);
+
+  if (e.isDir) {
+    _loadLocalUploadDir(e.path);
+    return;
+  }
+
+  _chooseUploadSource(e.path, e.name, false);
+}
+
+void SftpClientScreen::_holdLocalUpload(uint8_t index) {
+  if (index >= _localBrowser.count()) return;
+  const auto& e = _localBrowser.entry(index);
+  if (!e.isDir || e.name == "..") return;
+
+  _chooseUploadSource(e.path, e.name, true);
+}
+
+void SftpClientScreen::_chooseUploadSource(const String& path,
+                                           const String& name,
+                                           bool isDir) {
+  _uploadLocalPath = path;
+  _uploadName = name;
+  _uploadIsDir = isDir;
+  _chooseUploadDestinationMode();
+}
+
+void SftpClientScreen::_chooseUploadDestinationMode() {
+  static const InputSelectAction::Option opts[] = {
+    {"Downloads", "downloads"},
+    {"Browse", "browse"},
+  };
+
+  const char* result = InputSelectAction::popup(
+    "Upload Destination", opts, 2, "downloads");
+
+  if (!result) {
+    _state = STATE_LOCAL_BROWSER;
+    render();
+    return;
+  }
+
+  if (strcmp(result, "downloads") == 0) {
+    // Relative SFTP paths resolve from the connected user's home directory.
+    _chooseUploadDestination("Downloads");
+    return;
+  }
+
+  _remoteMode = REMOTE_UPLOAD_DEST;
+  _requestList(".");
 }
 
 void SftpClientScreen::_connect() {
@@ -702,8 +839,10 @@ void SftpClientScreen::_worker() {
     }
 
     String path;
+    String path2;
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
       path = _commandPath;
+      path2 = _commandPath2;
       _commandError = "";
       xSemaphoreGive(_mutex);
     }
@@ -725,6 +864,35 @@ void SftpClientScreen::_worker() {
     } else if (cmd == CMD_DOWNLOAD_DIR) {
       String local = String(DOWNLOAD_DIR) + "/" + _baseName(path);
       ok = _workerDownloadDir((void*)sftp, path, local);
+    } else if (cmd == CMD_UPLOAD_FILE) {
+      if (!_workerEnsureRemoteDir((void*)sftp, path2)) {
+        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+          _commandError = "Remote directory not found";
+          xSemaphoreGive(_mutex);
+        }
+        ok = false;
+      } else {
+        String remote = path2;
+        if (!remote.endsWith("/")) remote += "/";
+        remote += _baseName(path);
+        fs::File f = Uni.Storage->open(path.c_str(), "r");
+        uint64_t size = f ? (uint64_t)f.size() : 0;
+        if (f) f.close();
+        ok = _workerUploadFile((void*)sftp, path, remote, size);
+      }
+    } else if (cmd == CMD_UPLOAD_DIR) {
+      if (!_workerEnsureRemoteDir((void*)sftp, path2)) {
+        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+          _commandError = "Remote directory not found";
+          xSemaphoreGive(_mutex);
+        }
+        ok = false;
+      } else {
+        String remote = path2;
+        if (!remote.endsWith("/")) remote += "/";
+        remote += _baseName(path);
+        ok = _workerUploadDir((void*)sftp, path, remote);
+      }
     }
 
     if (_cancelTransfer && cmd != CMD_LIST) {
@@ -865,6 +1033,17 @@ void SftpClientScreen::_copyRemoteListing() {
   }
 
   uint8_t out = 0;
+
+  if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    _remoteNames[out] = ".";
+    _remoteSubs[out] = "UPLOAD HERE";
+    _remotePaths[out] = _remotePath;
+    _remoteIsDir[out] = true;
+    _remoteSizes[out] = 0;
+    _remoteItems[out] = {_remoteNames[out].c_str(), _remoteSubs[out].c_str()};
+    out++;
+  }
+
   if (_remotePath != ".") {
     _remoteNames[out] = "..";
     _remoteSubs[out] = "DIR";
@@ -875,7 +1054,7 @@ void SftpClientScreen::_copyRemoteListing() {
     out++;
   }
 
-  for (uint8_t i = 0; i < count && out < MAX_REMOTE_ENTRIES + 1; ++i, ++out) {
+  for (uint8_t i = 0; i < count && out < MAX_REMOTE_ENTRIES + 2; ++i, ++out) {
     _remoteNames[out] = temp[i].name;
     _remotePaths[out] = temp[i].path;
     _remoteIsDir[out] = temp[i].isDir;
@@ -906,6 +1085,17 @@ void SftpClientScreen::_copyRemoteListing() {
 void SftpClientScreen::_selectRemote(uint8_t index) {
   if (index >= _remoteCount) return;
 
+  if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    // "." is the synthetic UPLOAD HERE action for the current directory.
+    // PRESS executes it directly; PRESS on a real directory still navigates.
+    if (_remoteNames[index] == ".") {
+      _chooseUploadDestination(_remotePaths[index]);
+    } else if (_remoteIsDir[index]) {
+      _requestList(_remotePaths[index]);
+    }
+    return;
+  }
+
   if (_remoteIsDir[index]) {
     _requestList(_remotePaths[index]);
     return;
@@ -921,6 +1111,13 @@ void SftpClientScreen::_selectRemote(uint8_t index) {
 
 void SftpClientScreen::_holdRemote(uint8_t index) {
   if (index >= _remoteCount || !_remoteIsDir[index]) return;
+
+  if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remoteNames[index] == "..") return;
+    _chooseUploadDestination(_remotePaths[index]);
+    return;
+  }
+
   if (_remoteNames[index] == "..") return;
 
   if (!_confirmTransfer("Download directory?", _remoteNames[index])) {
@@ -929,6 +1126,16 @@ void SftpClientScreen::_holdRemote(uint8_t index) {
   }
 
   _requestDownload(_remotePaths[index], true);
+}
+
+void SftpClientScreen::_chooseUploadDestination(const String& remoteDir) {
+  if (!_confirmTransfer(_uploadIsDir ? "Upload directory?" : "Upload file?",
+                        _uploadName)) {
+    render();
+    return;
+  }
+
+  _requestUpload(remoteDir);
 }
 
 bool SftpClientScreen::_confirmTransfer(const char* title, const String& name) {
@@ -942,12 +1149,19 @@ bool SftpClientScreen::_confirmTransfer(const char* title, const String& name) {
   // InputSelectAction renders its title as a single-line overlay heading.
   // Do not embed the selected filename/directory with a newline here; doing so
   // produces visual artifacts on the UG display.
+  // File-browser screens may leave a different LCD font selected. Normalize it
+  // before opening the popup so its title/options render consistently.
+  Uni.Lcd.setTextFont(1);
+  Uni.Lcd.setTextSize(1);
+  Uni.Lcd.setTextDatum(TL_DATUM);
+
   const char* result = InputSelectAction::popup(
-    title, opts, 2, "no");
+    title, opts, 2, "yes");
   return result && strcmp(result, "yes") == 0;
 }
 
 void SftpClientScreen::_requestDownload(const String& remotePath, bool directory) {
+  _transferIsUpload = false;
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage not available", 1500);
     render();
@@ -979,6 +1193,38 @@ void SftpClientScreen::_requestDownload(const String& remotePath, bool directory
   ProgressView::init();
   ProgressView::progress(
     directory ? "Preparing directory..." : _progressName.c_str(), 0);
+}
+
+
+void SftpClientScreen::_requestUpload(const String& remoteDir) {
+  if (!_uploadLocalPath.length()) {
+    ShowStatusAction::show("Upload source missing", 1200);
+    render();
+    return;
+  }
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    _commandPath = _uploadLocalPath;
+    _commandPath2 = remoteDir;
+    _commandError = "";
+    _progressDone = 0;
+    _progressTotal = 0;
+    _progressFilesDone = 0;
+    _progressFilesTotal = 0;
+    _progressName = _uploadName;
+    xSemaphoreGive(_mutex);
+  }
+
+  _transferIsUpload = true;
+  _cancelTransfer = false;
+  _commandDone = false;
+  _commandOk = false;
+  _command = _uploadIsDir ? CMD_UPLOAD_DIR : CMD_UPLOAD_FILE;
+  _state = STATE_TRANSFER;
+
+  ProgressView::init();
+  ProgressView::progress(
+    _uploadIsDir ? "Preparing directory..." : _uploadName.c_str(), 0);
 }
 
 void SftpClientScreen::_updateTransferProgress() {
@@ -1191,6 +1437,221 @@ bool SftpClientScreen::_workerDownloadDir(void* sftpOpaque,
   return _workerDownloadTree(sftpOpaque, remotePath, localPath, 0);
 }
 
+
+bool SftpClientScreen::_workerEnsureRemoteDir(void* sftpOpaque,
+                                               const String& remotePath) {
+  sftp_session sftp = (sftp_session)sftpOpaque;
+  sftp_attributes a = sftp_stat(sftp, remotePath.c_str());
+  if (a) {
+    bool isDir = (a->type == SSH_FILEXFER_TYPE_DIRECTORY);
+    sftp_attributes_free(a);
+    return isDir;
+  }
+
+  if (sftp_mkdir(sftp, remotePath.c_str(), 0755) == SSH_OK) return true;
+
+  // Some servers return failure when the path appeared concurrently. Recheck.
+  a = sftp_stat(sftp, remotePath.c_str());
+  if (!a) return false;
+  bool isDir = (a->type == SSH_FILEXFER_TYPE_DIRECTORY);
+  sftp_attributes_free(a);
+  return isDir;
+}
+
+bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
+                                         const String& localPath,
+                                         const String& remotePath,
+                                         uint64_t knownSize) {
+  sftp_session sftp = (sftp_session)sftpOpaque;
+
+  fs::File local = Uni.Storage->open(localPath.c_str(), "r");
+  if (!local) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Local file open failed";
+      xSemaphoreGive(_mutex);
+    }
+    return false;
+  }
+
+  sftp_file remote = sftp_open(
+    sftp, remotePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (!remote) {
+    local.close();
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Remote file open failed";
+      xSemaphoreGive(_mutex);
+    }
+    return false;
+  }
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    if (_progressTotal == 0) _progressTotal = knownSize;
+    _progressName = _baseName(localPath);
+    xSemaphoreGive(_mutex);
+  }
+
+  uint8_t buf[4096];
+  bool ok = true;
+
+  while (!_stopRequested && !_cancelTransfer) {
+    size_t n = local.read(buf, sizeof(buf));
+    if (n == 0) break;
+
+    size_t sent = 0;
+    while (sent < n && !_stopRequested && !_cancelTransfer) {
+      ssize_t w = sftp_write(remote, buf + sent, n - sent);
+      if (w <= 0) {
+        ok = false;
+        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+          _commandError = "SFTP write failed";
+          xSemaphoreGive(_mutex);
+        }
+        break;
+      }
+      sent += (size_t)w;
+
+      if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        _progressDone += (uint64_t)w;
+        xSemaphoreGive(_mutex);
+      }
+    }
+
+    if (!ok) break;
+  }
+
+  sftp_close(remote);
+  local.close();
+
+  if (_cancelTransfer || _stopRequested) return false;
+
+  if (ok && _mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+    _progressFilesDone++;
+    xSemaphoreGive(_mutex);
+  }
+  return ok;
+}
+
+bool SftpClientScreen::_workerCalcLocalDir(const String& localPath,
+                                            uint64_t& bytes,
+                                            uint32_t& files,
+                                            int depth) {
+  if (depth > 12 || _cancelTransfer || _stopRequested) return false;
+
+  fs::File dir = Uni.Storage->open(localPath.c_str(), "r");
+  if (!dir || !dir.isDirectory()) {
+    if (dir) dir.close();
+    return false;
+  }
+
+  bool ok = true;
+  fs::File child = dir.openNextFile();
+  while (child && !_cancelTransfer && !_stopRequested) {
+    String name = _baseName(String(child.name()));
+    String childPath = localPath;
+    if (!childPath.endsWith("/")) childPath += "/";
+    childPath += name;
+
+    if (child.isDirectory()) {
+      child.close();
+      if (!_workerCalcLocalDir(childPath, bytes, files, depth + 1)) {
+        ok = false;
+        break;
+      }
+    } else {
+      bytes += (uint64_t)child.size();
+      files++;
+      child.close();
+    }
+    child = dir.openNextFile();
+  }
+  if (child) child.close();
+  dir.close();
+
+  return ok && !_cancelTransfer && !_stopRequested;
+}
+
+bool SftpClientScreen::_workerUploadTree(void* sftpOpaque,
+                                         const String& localPath,
+                                         const String& remotePath,
+                                         int depth) {
+  if (depth > 12 || _cancelTransfer || _stopRequested) return false;
+  if (!_workerEnsureRemoteDir(sftpOpaque, remotePath)) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Remote mkdir failed";
+      xSemaphoreGive(_mutex);
+    }
+    return false;
+  }
+
+  fs::File dir = Uni.Storage->open(localPath.c_str(), "r");
+  if (!dir || !dir.isDirectory()) {
+    if (dir) dir.close();
+    return false;
+  }
+
+  bool ok = true;
+  fs::File child = dir.openNextFile();
+  while (child && !_cancelTransfer && !_stopRequested) {
+    String name = _baseName(String(child.name()));
+    String localChild = localPath;
+    if (!localChild.endsWith("/")) localChild += "/";
+    localChild += name;
+
+    String remoteChild = remotePath;
+    if (!remoteChild.endsWith("/")) remoteChild += "/";
+    remoteChild += name;
+
+    if (child.isDirectory()) {
+      child.close();
+      if (!_workerUploadTree(
+            sftpOpaque, localChild, remoteChild, depth + 1)) {
+        ok = false;
+        break;
+      }
+    } else {
+      uint64_t size = (uint64_t)child.size();
+      child.close();
+      if (!_workerUploadFile(
+            sftpOpaque, localChild, remoteChild, size)) {
+        ok = false;
+        break;
+      }
+    }
+    child = dir.openNextFile();
+  }
+  if (child) child.close();
+  dir.close();
+
+  return ok && !_cancelTransfer && !_stopRequested;
+}
+
+bool SftpClientScreen::_workerUploadDir(void* sftpOpaque,
+                                        const String& localPath,
+                                        const String& remotePath) {
+  uint64_t totalBytes = 0;
+  uint32_t totalFiles = 0;
+
+  if (!_workerCalcLocalDir(localPath, totalBytes, totalFiles, 0)) {
+    if (!_cancelTransfer && _mutex &&
+        xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Directory scan failed";
+      xSemaphoreGive(_mutex);
+    }
+    return false;
+  }
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    _progressTotal = totalBytes;
+    _progressFilesTotal = totalFiles;
+    _progressDone = 0;
+    _progressFilesDone = 0;
+    _progressName = _baseName(localPath);
+    xSemaphoreGive(_mutex);
+  }
+
+  return _workerUploadTree(sftpOpaque, localPath, remotePath, 0);
+}
+
 String SftpClientScreen::_parentRemotePath(const String& path) const {
   if (path == "." || path.length() == 0) return ".";
   int slash = path.lastIndexOf('/');
@@ -1210,6 +1671,9 @@ String SftpClientScreen::_baseName(const String& path) const {
 
 void SftpClientScreen::_acceptHostKey(bool trust) {
   _hostKeyDecision = trust ? 1 : -1;
+  // Leave WAIT_HOSTKEY immediately on the UI side. Otherwise onUpdate() can
+  // re-open the Trust prompt before the worker observes the decision.
+  _workerState = WORKER_CONNECTING;
   if (trust) {
     _state = STATE_CONNECTING;
   } else {
@@ -1286,22 +1750,11 @@ void SftpClientScreen::_renderHostKeyConfirm() {
 }
 
 void SftpClientScreen::_renderRemoteBrowser() {
+  // Let ListScreen use the full browser body. A manually painted footer here
+  // obscures the last visible rows.
   ListScreen::onRender();
+}
 
-  auto& lcd = Uni.Lcd;
-  const int x = bodyX();
-  const int y = bodyY();
-  const int w = bodyW();
-  const int h = bodyH();
-  const int footerH = 23;
-  const int fy = y + h - footerH;
-
-  lcd.fillRect(x, fy, w, footerH, TFT_BLACK);
-  lcd.drawFastHLine(x + 3, fy, w - 6, TFT_DARKGREY);
-  lcd.setTextFont(1);
-  lcd.setTextSize(1);
-  lcd.setTextDatum(TL_DATUM);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString("Press Open dir / Download file", x + 4, fy + 3);
-  lcd.drawString("Hold  Download directory", x + 4, fy + 13);
+void SftpClientScreen::_renderLocalBrowser() {
+  ListScreen::onRender();
 }

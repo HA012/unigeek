@@ -1006,6 +1006,9 @@ void SshClientScreen::_renderConnecting() {
 
 void SshClientScreen::_acceptHostKey(bool trust) {
   _hostKeyDecision = trust ? 1 : -1;
+  // Leave WAIT_HOSTKEY immediately on the UI side. Otherwise onUpdate() can
+  // re-open the Trust prompt before the worker observes the decision.
+  _workerState = WORKER_CONNECTING;
 
   if (trust) {
     _state = STATE_CONNECTING;
