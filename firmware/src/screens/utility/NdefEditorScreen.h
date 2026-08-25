@@ -20,6 +20,7 @@ private:
     STATE_FILE_SELECT,
     STATE_PREVIEW_INITIAL,
     STATE_PREVIEW_FINAL,
+    STATE_VCARD_FORM,
   };
 
   enum RecordType {
@@ -64,6 +65,15 @@ private:
   String _vcardPhone;
   String _vcardEmail;
   String _website;
+
+  String _vcardDisplay[6];
+  ListItem _vcardItems[7];
+
+  void _openVcardForm();
+  void _refreshVcardForm(uint8_t selected = 0);
+  void _editVcardField(uint8_t index);
+  void _finishVcardEdit();
+  bool _confirmVcardSave();
 
   void _openFiles();
   void _selectFile(uint8_t index);

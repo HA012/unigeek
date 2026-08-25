@@ -26,6 +26,7 @@ private:
   enum State {
     STATE_TYPE_SELECT,
     STATE_PREVIEW,
+    STATE_VCARD_FORM,
   };
 
   static constexpr const char* _nfcPath  = "/unigeek/nfc";
@@ -47,6 +48,21 @@ private:
   String _rowLabels[MAX_ROWS];
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
+
+  String _vcardContact;
+  String _vcardCompany;
+  String _vcardAddress;
+  String _vcardPhone;
+  String _vcardEmail;
+  String _vcardWebsite;
+  String _vcardDisplay[6];
+  ListItem _vcardItems[7];
+
+  void _openVcardForm();
+  void _refreshVcardForm(uint8_t selected = 0);
+  void _editVcardField(uint8_t index);
+  void _saveVcardFromForm();
+  bool _confirmVcardSave();
 
   uint8_t _previewNdef[MAX_NDEF_BYTES] = {};
   size_t _previewNdefLen = 0;

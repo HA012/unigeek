@@ -94,9 +94,11 @@ static String _vcardValue(const String& card, const char* key) {
 }
 
 const char* NdefEditorScreen::title() {
-  return (_state == STATE_PREVIEW_INITIAL || _state == STATE_PREVIEW_FINAL)
-           ? "NDEF Preview"
-           : "Edit NDEF Record";
+  if (_state == STATE_PREVIEW_INITIAL || _state == STATE_PREVIEW_FINAL)
+    return "NDEF Preview";
+  if (_state == STATE_VCARD_FORM)
+    return "Edit vCard";
+  return "Edit NDEF Record";
 }
 
 void NdefEditorScreen::onInit() {
@@ -122,8 +124,13 @@ void NdefEditorScreen::onUpdate() {
         }
 
         if (_state == STATE_PREVIEW_INITIAL) {
-          // Initial preview: PRESS enters the editor.
-          // EXIT from the keyboard cancels the whole Edit NDEF operation.
+          // Keep the initial preview so the user can verify the selected file.
+          // vCard then enters its field form and skips the redundant final preview.
+          if (_recordType == REC_VCARD) {
+            _openVcardForm();
+            return;
+          }
+
           if (!_editRecord()) {
             _openFiles();
             return;
@@ -168,6 +175,12 @@ void NdefEditorScreen::onRender() {
 }
 
 void NdefEditorScreen::onBack() {
+  if (_state == STATE_VCARD_FORM) {
+    _state = STATE_PREVIEW_INITIAL;
+    _showPreview();
+    return;
+  }
+
   if (_state == STATE_PREVIEW_INITIAL || _state == STATE_PREVIEW_FINAL) {
     _openFiles();
     return;
@@ -186,6 +199,12 @@ void NdefEditorScreen::onBack() {
 }
 
 void NdefEditorScreen::onItemSelected(uint8_t index) {
+  if (_state == STATE_VCARD_FORM) {
+    if (index < 6) _editVcardField(index);
+    else if (index == 6) _finishVcardEdit();
+    return;
+  }
+
   if (_state == STATE_FILE_SELECT) _selectFile(index);
 }
 
@@ -445,6 +464,75 @@ void NdefEditorScreen::_showPreview() {
   }
   _scrollView.setRows(_rows, _rowCount);
   render();
+}
+
+
+void NdefEditorScreen::_openVcardForm() {
+  _state = STATE_VCARD_FORM;
+  _refreshVcardForm(0);
+}
+
+void NdefEditorScreen::_refreshVcardForm(uint8_t selected) {
+  String* values[] = {
+    &_contact, &_company, &_address, &_vcardPhone, &_vcardEmail, &_website
+  };
+  const char* labels[] = {"Name", "Company", "Address", "Phone", "Email", "Website"};
+
+  for (uint8_t i = 0; i < 6; ++i) {
+    _vcardDisplay[i] = values[i]->length() ? *values[i] : "-";
+    _vcardItems[i] = {labels[i], _vcardDisplay[i].c_str()};
+  }
+  _vcardItems[6] = {"Save", nullptr};
+  setItems(_vcardItems, 7, selected);
+  render();
+}
+
+void NdefEditorScreen::_editVcardField(uint8_t index) {
+  String* values[] = {
+    &_contact, &_company, &_address, &_vcardPhone, &_vcardEmail, &_website
+  };
+  const char* titles[] = {"Name", "Company", "Address", "Phone", "Email", "Website"};
+
+  String value;
+  if (index == 3)
+    value = InputTextAction::popup(titles[index], values[index]->c_str(),
+                                   InputTextAction::INPUT_PHONE);
+  else
+    value = InputTextAction::popup(titles[index], values[index]->c_str());
+
+  if (!InputTextAction::wasCancelled()) *values[index] = value;
+  _refreshVcardForm(index);
+}
+
+bool NdefEditorScreen::_confirmVcardSave() {
+  static constexpr InputSelectAction::Option opts[] = {
+    {"Yes", "yes"},
+    {"No", "no"},
+  };
+  const char* choice = InputSelectAction::popup("Save vCard?", opts, 2, "yes");
+  return choice && !strcmp(choice, "yes");
+}
+
+void NdefEditorScreen::_finishVcardEdit() {
+  if (!_confirmVcardSave()) {
+    _refreshVcardForm(6);
+    return;
+  }
+
+  uint8_t edited[MAX_NDEF_BYTES] = {};
+  size_t editedLen = 0;
+  if (!_rebuildRecord(edited, editedLen)) {
+    _refreshVcardForm(6);
+    return;
+  }
+
+  // The form is already the final vCard content view, so save directly.
+  if (_saveEdited(edited, editedLen)) {
+    _openFiles();
+    return;
+  }
+
+  _refreshVcardForm(6);
 }
 
 bool NdefEditorScreen::_editRecord() {

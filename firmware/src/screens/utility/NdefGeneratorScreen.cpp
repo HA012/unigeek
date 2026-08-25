@@ -2,6 +2,7 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "utils/nfc/NdefBuilder.h"
 #include "utils/nfc/NdefParser.h"
@@ -30,7 +31,9 @@ static String _sanitizeNdefName(String name) {
 
 
 const char* NdefGeneratorScreen::title() {
-  return (_state == STATE_PREVIEW) ? "NDEF Preview" : "New NDEF Record";
+  if (_state == STATE_PREVIEW) return "NDEF Preview";
+  if (_state == STATE_VCARD_FORM) return "vCard";
+  return "New NDEF Record";
 }
 
 void NdefGeneratorScreen::onInit() {
@@ -80,6 +83,12 @@ void NdefGeneratorScreen::onRender() {
 }
 
 void NdefGeneratorScreen::onBack() {
+  if (_state == STATE_VCARD_FORM) {
+    _state = STATE_TYPE_SELECT;
+    setItems(_items);
+    render();
+    return;
+  }
   if (_state == STATE_PREVIEW) {
     _previewNdefLen = 0;
     _previewSuggestedName = "";
@@ -88,6 +97,17 @@ void NdefGeneratorScreen::onBack() {
 }
 
 void NdefGeneratorScreen::onItemSelected(uint8_t index) {
+  if (_state == STATE_VCARD_FORM) {
+    if (index < 6) _editVcardField(index);
+    else if (index == 6) _saveVcardFromForm();
+    return;
+  }
+
+  if (index == 4) {
+    _openVcardForm();
+    return;
+  }
+
   uint8_t ndef[MAX_NDEF_BYTES] = {};
   size_t ndefLen = 0;
   String suggestedName;
@@ -101,6 +121,92 @@ void NdefGeneratorScreen::onItemSelected(uint8_t index) {
   _previewNdefLen = ndefLen;
   _previewSuggestedName = suggestedName;
   _showPreview(_previewNdef, _previewNdefLen);
+}
+
+
+void NdefGeneratorScreen::_openVcardForm() {
+  _vcardContact = "";
+  _vcardCompany = "";
+  _vcardAddress = "";
+  _vcardPhone = "";
+  _vcardEmail = "";
+  _vcardWebsite = "";
+  _state = STATE_VCARD_FORM;
+  _refreshVcardForm(0);
+}
+
+void NdefGeneratorScreen::_refreshVcardForm(uint8_t selected) {
+  String* values[] = {
+    &_vcardContact, &_vcardCompany, &_vcardAddress,
+    &_vcardPhone, &_vcardEmail, &_vcardWebsite
+  };
+  const char* labels[] = {"Name", "Company", "Address", "Phone", "Email", "Website"};
+
+  for (uint8_t i = 0; i < 6; ++i) {
+    _vcardDisplay[i] = values[i]->length() ? *values[i] : "-";
+    _vcardItems[i] = {labels[i], _vcardDisplay[i].c_str()};
+  }
+  _vcardItems[6] = {"Save", nullptr};
+  setItems(_vcardItems, 7, selected);
+  render();
+}
+
+void NdefGeneratorScreen::_editVcardField(uint8_t index) {
+  String* values[] = {
+    &_vcardContact, &_vcardCompany, &_vcardAddress,
+    &_vcardPhone, &_vcardEmail, &_vcardWebsite
+  };
+  const char* titles[] = {"Name", "Company", "Address", "Phone", "Email", "Website"};
+
+  String value;
+  if (index == 3)
+    value = InputTextAction::popup(titles[index], values[index]->c_str(),
+                                   InputTextAction::INPUT_PHONE);
+  else
+    value = InputTextAction::popup(titles[index], values[index]->c_str());
+
+  if (!InputTextAction::wasCancelled()) *values[index] = value;
+  _refreshVcardForm(index);
+}
+
+bool NdefGeneratorScreen::_confirmVcardSave() {
+  static constexpr InputSelectAction::Option opts[] = {
+    {"Yes", "yes"},
+    {"No", "no"},
+  };
+  const char* choice = InputSelectAction::popup("Save vCard?", opts, 2, "yes");
+  return choice && !strcmp(choice, "yes");
+}
+
+void NdefGeneratorScreen::_saveVcardFromForm() {
+  if (!_confirmVcardSave()) {
+    _refreshVcardForm(6);
+    return;
+  }
+
+  uint8_t ndef[MAX_NDEF_BYTES] = {};
+  size_t ndefLen = 0;
+  if (!NdefBuilder::buildVcard(_vcardContact, _vcardCompany, _vcardAddress,
+                               _vcardPhone, _vcardEmail, _vcardWebsite,
+                               ndef, ndefLen, sizeof(ndef))) {
+    ShowStatusAction::show("vCard too large");
+    _refreshVcardForm(6);
+    return;
+  }
+
+  String name = InputTextAction::popup("File name", "vcard");
+  if (InputTextAction::wasCancelled()) {
+    _refreshVcardForm(6);
+    return;
+  }
+
+  if (_saveNdef(ndef, ndefLen, name)) {
+    _state = STATE_TYPE_SELECT;
+    setItems(_items);
+  } else {
+    _refreshVcardForm(6);
+  }
+  render();
 }
 
 void NdefGeneratorScreen::_resetRows() { _rowCount = 0; }
