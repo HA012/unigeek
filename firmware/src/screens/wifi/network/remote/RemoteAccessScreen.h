@@ -12,11 +12,12 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[5] = {
+  ListItem _items[6] = {
     {"TCP Client"},
     {"Telnet Client"},
     {"SSH Client"},
     {"FTP Client"},
     {"SFTP Client"},
+    {"WebDAV Client"},
   };
 };
