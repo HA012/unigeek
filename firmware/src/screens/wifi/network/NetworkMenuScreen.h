@@ -48,11 +48,11 @@ private:
     {"Information"},
     {"WiFi QRCode"},
     {"Scanners"},
+    {"Remote Access"},
     {"Attacks"},
     {"Pranks"},
     {"Services"},
     {"Internet"},
-    {"Remote Access"},
   };
 
   void   _showMenu();
