@@ -89,7 +89,7 @@ public:
     if (_available) return;
     if (n == '\0') return;
 
-    _key       = _shift ? _ADV_KB_MAP[row][col].s : n;
+    _key       = (_fn && n == '`') ? '\x1b' : (_shift ? _ADV_KB_MAP[row][col].s : n);
     _available = true;
     _keyHeld   = true;
   }

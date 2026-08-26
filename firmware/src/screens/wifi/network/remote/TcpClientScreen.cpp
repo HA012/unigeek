@@ -8,6 +8,9 @@
 #include "ui/actions/ShowStatusAction.h"
 
 TcpClientScreen::~TcpClientScreen() {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (Uni.Nav) Uni.Nav->setSuppressKeys(false);
+#endif
   _closeConnection(false);
 }
 
@@ -35,6 +38,11 @@ void TcpClientScreen::onUpdate() {
   }
 
 
+#ifdef DEVICE_HAS_KEYBOARD
+  _handleTerminalInput();
+  if (_state != STATE_OUTPUT) return;
+#endif
+
   if (!Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
 
@@ -44,7 +52,9 @@ void TcpClientScreen::onUpdate() {
   }
 
   if (dir == INavigation::DIR_PRESS && !_remoteClosed) {
+#ifndef DEVICE_HAS_KEYBOARD
     _openCommandInput();
+#endif
     return;
   }
 
@@ -160,10 +170,18 @@ void TcpClientScreen::_connect() {
   _remoteClosed = false;
   _state = STATE_OUTPUT;
   _followOutput = true;
+  _inputLine.clear();
+#ifdef DEVICE_HAS_KEYBOARD
+  if (Uni.Nav) Uni.Nav->setSuppressKeys(true);
+#endif
   render();
 }
 
 void TcpClientScreen::_closeConnection(bool returnToConfig) {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (Uni.Nav) Uni.Nav->setSuppressKeys(false);
+#endif
+  _inputLine.clear();
   if (_client) _client.stop();
   _remoteClosed = false;
 
@@ -176,17 +194,60 @@ void TcpClientScreen::_closeConnection(bool returnToConfig) {
 }
 
 void TcpClientScreen::_openCommandInput() {
-  // Always begin with an empty command. EXIT cancels and returns to OUTPUT;
-  // BACK remains owned by InputTextAction (ABC <-> 123 in text mode).
-  String command = InputTextAction::popup("Command", "", InputTextAction::INPUT_TEXT);
+#ifdef DEVICE_HAS_KEYBOARD
+  return;
+#else
+  String command = InputTextAction::popup(
+    "Command", _inputLine.text(), InputTextAction::INPUT_TEXT);
 
   if (!InputTextAction::wasCancelled()) {
+    _inputLine.clear();
     _sendCommand(command);
   }
 
   // Data may have arrived while the modal keyboard was open.
   _drainSocket();
   render();
+#endif
+}
+
+void TcpClientScreen::_handleTerminalInput() {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (!Uni.Keyboard) return;
+
+  auto action = _inputLine.consume(Uni.Keyboard);
+  switch (action) {
+    case TerminalCommandLine::ACTION_EXIT:
+      _closeConnection(true);
+      return;
+    case TerminalCommandLine::ACTION_SUBMIT:
+      if (!_remoteClosed) {
+        String command = _inputLine.text();
+        _inputLine.clear();
+        _sendCommand(command);
+        _followOutput = true;
+      }
+      render();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_UP:
+      if (_outputView.onNav(INavigation::DIR_UP)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_DOWN:
+      if (_outputView.onNav(INavigation::DIR_DOWN)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_LEFT:
+      if (_outputView.onNav(INavigation::DIR_LEFT)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_RIGHT:
+      if (_outputView.onNav(INavigation::DIR_RIGHT)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_CHANGED:
+      render();
+      return;
+    default:
+      return;
+  }
+#endif
 }
 
 void TcpClientScreen::_sendCommand(const String& command) {
@@ -328,8 +389,8 @@ void TcpClientScreen::_renderOutput() {
   lcd.drawFastHLine(x + PAD, cy, w - PAD * 2, TFT_DARKGREY);
   cy += 4;
 
-  const int footerY = y + h - FOOTER_H;
-  const int outputBottom = footerY - 2;
+  const int inputY = y + h - INPUT_H;
+  const int outputBottom = inputY - 2;
 
   String display = _transcript;
   if (_partialLine.length() > 0) display += _partialLine;
@@ -338,10 +399,11 @@ void TcpClientScreen::_renderOutput() {
   _outputView.updateContent(display, _followOutput);
   _outputView.render(x, cy, w, max(1, outputBottom - cy));
 
-  lcd.drawFastHLine(x + PAD, footerY - 2, w - PAD * 2, TFT_DARKGREY);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString(_remoteClosed ? "BACK: Exit" : "PRESS: Cmd | BACK: Exit",
-                 x + w / 2, footerY + FOOTER_H / 2 - 1);
-  lcd.setTextDatum(TL_DATUM);
+  lcd.drawFastHLine(x + PAD, inputY - 2, w - PAD * 2, TFT_DARKGREY);
+#ifdef DEVICE_HAS_KEYBOARD
+  constexpr bool keyboardDevice = true;
+#else
+  constexpr bool keyboardDevice = false;
+#endif
+  _inputLine.render(x, inputY, w, INPUT_H, _remoteClosed, keyboardDevice);
 }

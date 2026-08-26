@@ -97,7 +97,7 @@ public:
         uint8_t x = x1 ? _KB_X1[j] : _KB_X2[j];
         char n = _KB_MAP[yf][x].n;
         if (n == '\0') continue; // modifier key
-        char c = _shift ? _KB_MAP[yf][x].s : n;
+        char c = (_fn && n == '`') ? '\x1b' : (_shift ? _KB_MAP[yf][x].s : n);
         _key       = c;
         _available = true;
         _setOutput(0); // restore

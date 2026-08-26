@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/TextScrollView.h"
+#include "ui/views/TerminalCommandLine.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 
@@ -26,7 +27,7 @@ private:
   static constexpr int MAX_PARTIAL_LEN     = 160;
   static constexpr int MAX_TRANSCRIPT_CHARS = 4096;
   static constexpr int PAD                 = 4;
-  static constexpr int FOOTER_H            = 12;
+  static constexpr int INPUT_H             = 14;
   static constexpr size_t MAX_RX_PER_UPDATE  = 1024;
   static constexpr uint32_t WRITE_TIMEOUT_MS  = 2000;
 
@@ -41,6 +42,7 @@ private:
   ListItem _items[3];
 
   TextScrollView _outputView;
+  TerminalCommandLine _inputLine;
   String _transcript;
   String _partialLine;
   bool   _remoteClosed = false;
@@ -54,6 +56,7 @@ private:
   void _closeConnection(bool returnToConfig = true);
 
   void _openCommandInput();
+  void _handleTerminalInput();
   void _sendCommand(const String& command);
   bool _writeAll(const uint8_t* data, size_t len);
 

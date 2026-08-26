@@ -11,6 +11,9 @@
 #include <libssh/libssh.h>
 
 SshClientScreen::~SshClientScreen() {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (Uni.Nav) Uni.Nav->setSuppressKeys(false);
+#endif
   _closeConnection(false);
 
   // The worker owns libssh objects. Do not destroy synchronization primitives
@@ -77,6 +80,10 @@ void SshClientScreen::onUpdate() {
       _remoteClosed = false;
       _state = STATE_OUTPUT;
       _followOutput = true;
+      _inputLine.clear();
+#ifdef DEVICE_HAS_KEYBOARD
+      if (Uni.Nav) Uni.Nav->setSuppressKeys(true);
+#endif
       render();
       return;
     }
@@ -139,6 +146,11 @@ void SshClientScreen::onUpdate() {
     render();
   }
 
+#ifdef DEVICE_HAS_KEYBOARD
+  _handleTerminalInput();
+  if (_state != STATE_OUTPUT) return;
+#endif
+
   if (!Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
 
@@ -148,7 +160,9 @@ void SshClientScreen::onUpdate() {
   }
 
   if (dir == INavigation::DIR_PRESS && !_remoteClosed) {
+#ifndef DEVICE_HAS_KEYBOARD
     _openCommandInput();
+#endif
     return;
   }
 
@@ -774,6 +788,10 @@ cleanup:
 }
 
 void SshClientScreen::_closeConnection(bool returnToConfig) {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (Uni.Nav) Uni.Nav->setSuppressKeys(false);
+#endif
+  _inputLine.clear();
   _stopRequested = true;
   _hostKeyDecision = -1;
 
@@ -798,12 +816,59 @@ void SshClientScreen::_closeConnection(bool returnToConfig) {
 }
 
 void SshClientScreen::_openCommandInput() {
-  String command = InputTextAction::popup("Command", "", InputTextAction::INPUT_TEXT);
+#ifdef DEVICE_HAS_KEYBOARD
+  return;
+#else
+  String command = InputTextAction::popup(
+    "Command", _inputLine.text(), InputTextAction::INPUT_TEXT);
 
-  if (!InputTextAction::wasCancelled()) _sendCommand(command);
+  if (!InputTextAction::wasCancelled()) {
+    _inputLine.clear();
+    _sendCommand(command);
+  }
 
   _drainWorkerRx();
   render();
+#endif
+}
+
+void SshClientScreen::_handleTerminalInput() {
+#ifdef DEVICE_HAS_KEYBOARD
+  if (!Uni.Keyboard) return;
+
+  auto action = _inputLine.consume(Uni.Keyboard);
+  switch (action) {
+    case TerminalCommandLine::ACTION_EXIT:
+      _closeConnection(true);
+      return;
+    case TerminalCommandLine::ACTION_SUBMIT:
+      if (!_remoteClosed) {
+        String command = _inputLine.text();
+        _inputLine.clear();
+        _sendCommand(command);
+        _followOutput = true;
+      }
+      render();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_UP:
+      if (_outputView.onNav(INavigation::DIR_UP)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_DOWN:
+      if (_outputView.onNav(INavigation::DIR_DOWN)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_LEFT:
+      if (_outputView.onNav(INavigation::DIR_LEFT)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_SCROLL_RIGHT:
+      if (_outputView.onNav(INavigation::DIR_RIGHT)) _followOutput = _outputView.isAtBottom();
+      return;
+    case TerminalCommandLine::ACTION_CHANGED:
+      render();
+      return;
+    default:
+      return;
+  }
+#endif
 }
 
 void SshClientScreen::_sendCommand(const String& command) {
@@ -1019,7 +1084,7 @@ int SshClientScreen::_terminalCols() {
 }
 
 int SshClientScreen::_terminalRows() {
-  const int outputH = max(1, bodyH() - PAD - 11 - 4 - FOOTER_H - 2);
+  const int outputH = max(1, bodyH() - PAD - 11 - 4 - INPUT_H - 2);
   return max(1, outputH / 11);
 }
 
@@ -1140,8 +1205,8 @@ void SshClientScreen::_renderOutput() {
   lcd.drawFastHLine(x + PAD, cy, w - PAD * 2, TFT_DARKGREY);
   cy += 4;
 
-  const int footerY = y + h - FOOTER_H;
-  const int outputBottom = footerY - 2;
+  const int inputY = y + h - INPUT_H;
+  const int outputBottom = inputY - 2;
 
   String display = _transcript;
   if (_partialLine.length() > 0) display += _partialLine;
@@ -1150,10 +1215,11 @@ void SshClientScreen::_renderOutput() {
   _outputView.updateContent(display, _followOutput);
   _outputView.render(x, cy, w, max(1, outputBottom - cy));
 
-  lcd.drawFastHLine(x + PAD, footerY - 2, w - PAD * 2, TFT_DARKGREY);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString(_remoteClosed ? "BACK: Exit" : "PRESS: Cmd | BACK: Exit",
-                 x + w / 2, footerY + FOOTER_H / 2 - 1);
-  lcd.setTextDatum(TL_DATUM);
+  lcd.drawFastHLine(x + PAD, inputY - 2, w - PAD * 2, TFT_DARKGREY);
+#ifdef DEVICE_HAS_KEYBOARD
+  constexpr bool keyboardDevice = true;
+#else
+  constexpr bool keyboardDevice = false;
+#endif
+  _inputLine.render(x, inputY, w, INPUT_H, _remoteClosed, keyboardDevice);
 }

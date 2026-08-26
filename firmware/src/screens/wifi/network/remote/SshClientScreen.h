@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/TextScrollView.h"
+#include "ui/views/TerminalCommandLine.h"
 #include "ui/views/BrowseFileView.h"
 
 class SshClientScreen : public ListScreen
@@ -43,7 +44,7 @@ private:
   static constexpr int MAX_RX_PER_WORKER_LOOP = 2048;
   static constexpr uint32_t WRITE_STALL_TIMEOUT_MS = 2000;
   static constexpr int PAD                   = 4;
-  static constexpr int FOOTER_H              = 12;
+  static constexpr int INPUT_H               = 14;
   static constexpr uint32_t SSH_TASK_STACK_SIZE = 24576;
 
   State _state = STATE_CONFIG;
@@ -82,6 +83,7 @@ private:
   uint8_t _hostKeySelection = 0;        // 0=Trust, 1=Cancel
 
   TextScrollView _outputView;
+  TerminalCommandLine _inputLine;
   String _transcript;
   String _partialLine;
   int    _lineCursor = 0;
@@ -110,6 +112,7 @@ private:
   void _setWorkerError(const char* message);
   void _drainWorkerRx();
   void _openCommandInput();
+  void _handleTerminalInput();
   void _sendCommand(const String& command);
 
   void _appendByte(uint8_t c);
