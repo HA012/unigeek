@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <FS.h>
+#include <new>
 
 const char* FtpClientScreen::title() {
   switch (_state) {
@@ -888,6 +889,37 @@ bool FtpClientScreen::_parseListLine(const String& raw,
   return true;
 }
 
+static bool _ftpReadDataPayload(WiFiClient& data,
+                                String& payload,
+                                volatile bool& stopRequested,
+                                size_t maxBytes,
+                                uint32_t timeoutMs) {
+  payload = "";
+  payload.reserve(min<size_t>(4096, maxBytes));
+
+  uint8_t buf[512];
+  uint32_t lastData = millis();
+
+  while (!stopRequested && (data.connected() || data.available())) {
+    int avail = data.available();
+    if (avail > 0) {
+      int n = data.read(buf, min<int>(avail, sizeof(buf)));
+      if (n < 0) return false;
+      if (n == 0) continue;
+
+      if (payload.length() + (size_t)n > maxBytes) return false;
+      payload.concat(reinterpret_cast<const char*>(buf), (unsigned int)n);
+      lastData = millis();
+      continue;
+    }
+
+    if (millis() - lastData > timeoutMs) return false;
+    delay(2);
+  }
+
+  return !stopRequested;
+}
+
 bool FtpClientScreen::_ftpList(void* controlOpaque, const String& path,
                                SharedRemoteEntry* out, uint8_t& count) {
   WiFiClient data;
@@ -916,16 +948,10 @@ bool FtpClientScreen::_ftpList(void* controlOpaque, const String& path,
     }
 
     String payload;
-    uint32_t lastData = millis();
-    while (!_stopRequested && (data.connected() || data.available())) {
-      while (data.available()) {
-        payload += (char)data.read();
-        lastData = millis();
-      }
-      if (millis() - lastData > REPLY_TIMEOUT_MS) break;
-      delay(2);
-    }
+    bool dataOk = _ftpReadDataPayload(
+      data, payload, _stopRequested, MAX_LIST_PAYLOAD_BYTES, DATA_STALL_TIMEOUT_MS);
     data.stop();
+    if (!dataOk) return false;
 
     count = 0;
     int pos = 0;
@@ -939,21 +965,17 @@ bool FtpClientScreen::_ftpList(void* controlOpaque, const String& path,
       pos = nl + 1;
     }
 
-    _ftpReadReply(controlOpaque, code, reply);
+    if (!_ftpReadReply(controlOpaque, code, reply) ||
+        (code != 226 && code != 250))
+      return false;
     return true;
   }
 
   String payload;
-  uint32_t lastData = millis();
-  while (!_stopRequested && (data.connected() || data.available())) {
-    while (data.available()) {
-      payload += (char)data.read();
-      lastData = millis();
-    }
-    if (millis() - lastData > REPLY_TIMEOUT_MS) break;
-    delay(2);
-  }
+  bool dataOk = _ftpReadDataPayload(
+    data, payload, _stopRequested, MAX_LIST_PAYLOAD_BYTES, DATA_STALL_TIMEOUT_MS);
   data.stop();
+  if (!dataOk) return false;
 
   count = 0;
   int pos = 0;
@@ -967,7 +989,9 @@ bool FtpClientScreen::_ftpList(void* controlOpaque, const String& path,
     pos = nl + 1;
   }
 
-  _ftpReadReply(controlOpaque, code, reply);
+  if (!_ftpReadReply(controlOpaque, code, reply) ||
+      (code != 226 && code != 250))
+    return false;
 
   // dirs first, alphabetical
   for (uint8_t i = 1; i < count; ++i) {
@@ -1017,15 +1041,18 @@ bool FtpClientScreen::_workerDownloadFile(void* controlOpaque,
   String reply;
 
   uint64_t size = knownSize;
-  if (!size && _ftpCommand(controlOpaque, "SIZE " + remotePath, code, reply) && code == 213) {
+  if (!size && _ftpCommand(controlOpaque, "SIZE " + remotePath, code, reply) &&
+      code == 213) {
     int nl = reply.lastIndexOf('\n');
     String last = nl >= 0 ? reply.substring(nl + 1) : reply;
-    if (last.length() > 4) size = strtoull(last.substring(4).c_str(), nullptr, 10);
+    if (last.length() > 4)
+      size = strtoull(last.substring(4).c_str(), nullptr, 10);
   }
 
   if (!_ftpOpenPassive(controlOpaque, &data)) return false;
   control.print("RETR " + remotePath + "\r\n");
-  if (!_ftpReadReply(controlOpaque, code, reply) || (code != 125 && code != 150)) {
+  if (!_ftpReadReply(controlOpaque, code, reply) ||
+      (code != 125 && code != 150)) {
     data.stop();
     return false;
   }
@@ -1044,6 +1071,7 @@ bool FtpClientScreen::_workerDownloadFile(void* controlOpaque,
 
   uint8_t buf[4096];
   bool ok = true;
+  uint64_t received = 0;
   uint32_t lastData = millis();
 
   while (!_stopRequested && !_cancelTransfer &&
@@ -1051,31 +1079,54 @@ bool FtpClientScreen::_workerDownloadFile(void* controlOpaque,
     int avail = data.available();
     if (avail > 0) {
       int n = data.read(buf, min<int>(avail, sizeof(buf)));
-      if (n < 0) { ok = false; break; }
+      if (n < 0) {
+        ok = false;
+        break;
+      }
+
       if (n > 0) {
-        if (local.write(buf, n) != (size_t)n) { ok = false; break; }
+        if (local.write(buf, n) != (size_t)n) {
+          ok = false;
+          break;
+        }
+
+        received += (uint64_t)n;
         lastData = millis();
+
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
           _progressDone += n;
           xSemaphoreGive(_mutex);
         }
       }
     } else {
-      if (millis() - lastData > REPLY_TIMEOUT_MS) { ok = false; break; }
+      if (millis() - lastData > DATA_STALL_TIMEOUT_MS) {
+        ok = false;
+        break;
+      }
       delay(2);
     }
   }
 
   local.close();
   data.stop();
-  _ftpReadReply(controlOpaque, code, reply);
 
-  if (_cancelTransfer || _stopRequested) return false;
-  if (ok && _mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+  bool completed = _ftpReadReply(controlOpaque, code, reply) &&
+                   (code == 226 || code == 250);
+
+  if (_cancelTransfer || _stopRequested) ok = false;
+  if (!completed) ok = false;
+  if (size && received != size) ok = false;
+
+  if (!ok) {
+    Uni.Storage->deleteFile(localPath.c_str());
+    return false;
+  }
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
     _progressFilesDone++;
     xSemaphoreGive(_mutex);
   }
-  return ok;
+  return true;
 }
 
 bool FtpClientScreen::_workerCalcRemoteDir(void* controlOpaque,
@@ -1084,20 +1135,36 @@ bool FtpClientScreen::_workerCalcRemoteDir(void* controlOpaque,
                                            uint32_t& files,
                                            int depth) {
   if (depth > 12 || _cancelTransfer || _stopRequested) return false;
-  SharedRemoteEntry entries[MAX_REMOTE_ENTRIES];
+  SharedRemoteEntry* entries =
+      new (std::nothrow) SharedRemoteEntry[MAX_REMOTE_ENTRIES];
+  if (!entries) return false;
+
   uint8_t count = 0;
-  if (!_ftpList(controlOpaque, remotePath, entries, count)) return false;
+  if (!_ftpList(controlOpaque, remotePath, entries, count)) {
+    delete[] entries;
+    return false;
+  }
 
   for (uint8_t i = 0; i < count; ++i) {
+    if (_cancelTransfer || _stopRequested) {
+      delete[] entries;
+      return false;
+    }
+
     if (entries[i].isDir) {
-      if (!_workerCalcRemoteDir(controlOpaque, entries[i].path,
-                                bytes, files, depth + 1))
+      String child = entries[i].path;
+      if (!_workerCalcRemoteDir(controlOpaque, child,
+                                bytes, files, depth + 1)) {
+        delete[] entries;
         return false;
+      }
     } else {
       bytes += entries[i].size;
       files++;
     }
   }
+
+  delete[] entries;
   return !_cancelTransfer && !_stopRequested;
 }
 
@@ -1108,22 +1175,43 @@ bool FtpClientScreen::_workerDownloadTree(void* controlOpaque,
   if (depth > 12 || _cancelTransfer || _stopRequested) return false;
   Uni.Storage->makeDir(localPath.c_str());
 
-  SharedRemoteEntry entries[MAX_REMOTE_ENTRIES];
+  SharedRemoteEntry* entries =
+      new (std::nothrow) SharedRemoteEntry[MAX_REMOTE_ENTRIES];
+  if (!entries) return false;
+
   uint8_t count = 0;
-  if (!_ftpList(controlOpaque, remotePath, entries, count)) return false;
+  if (!_ftpList(controlOpaque, remotePath, entries, count)) {
+    delete[] entries;
+    return false;
+  }
 
   for (uint8_t i = 0; i < count; ++i) {
+    if (_cancelTransfer || _stopRequested) {
+      delete[] entries;
+      return false;
+    }
+
     String localChild = localPath + "/" + entries[i].name;
-    if (entries[i].isDir) {
-      if (!_workerDownloadTree(controlOpaque, entries[i].path,
-                               localChild, depth + 1))
+    String remoteChild = entries[i].path;
+    bool isDir = entries[i].isDir;
+    uint64_t childSize = entries[i].size;
+
+    if (isDir) {
+      if (!_workerDownloadTree(controlOpaque, remoteChild,
+                               localChild, depth + 1)) {
+        delete[] entries;
         return false;
+      }
     } else {
-      if (!_workerDownloadFile(controlOpaque, entries[i].path,
-                               localChild, entries[i].size))
+      if (!_workerDownloadFile(controlOpaque, remoteChild,
+                               localChild, childSize)) {
+        delete[] entries;
         return false;
+      }
     }
   }
+
+  delete[] entries;
   return !_cancelTransfer && !_stopRequested;
 }
 
@@ -1193,7 +1281,8 @@ bool FtpClientScreen::_workerUploadFile(void* controlOpaque,
   }
 
   control.print("STOR " + remotePath + "\r\n");
-  if (!_ftpReadReply(controlOpaque, code, reply) || (code != 125 && code != 150)) {
+  if (!_ftpReadReply(controlOpaque, code, reply) ||
+      (code != 125 && code != 150)) {
     data.stop();
     local.close();
     return false;
@@ -1207,33 +1296,55 @@ bool FtpClientScreen::_workerUploadFile(void* controlOpaque,
 
   uint8_t buf[4096];
   bool ok = true;
+  uint64_t sentTotal = 0;
+  uint32_t lastProgress = millis();
 
   while (!_stopRequested && !_cancelTransfer && local.available()) {
     size_t n = local.read(buf, sizeof(buf));
     if (!n) break;
+
     size_t sent = 0;
     while (sent < n && !_stopRequested && !_cancelTransfer) {
       size_t w = data.write(buf + sent, n - sent);
-      if (w == 0) { ok = false; break; }
-      sent += w;
-      if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        _progressDone += w;
-        xSemaphoreGive(_mutex);
+
+      if (w > 0) {
+        sent += w;
+        sentTotal += w;
+        lastProgress = millis();
+
+        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+          _progressDone += w;
+          xSemaphoreGive(_mutex);
+        }
+        continue;
       }
+
+      if (!data.connected() ||
+          millis() - lastProgress > DATA_STALL_TIMEOUT_MS) {
+        ok = false;
+        break;
+      }
+      delay(2);
     }
+
     if (!ok) break;
   }
 
   data.stop();
   local.close();
-  _ftpReadReply(controlOpaque, code, reply);
+
+  bool completed = _ftpReadReply(controlOpaque, code, reply) &&
+                   (code == 226 || code == 250);
 
   if (_cancelTransfer || _stopRequested) return false;
-  if (ok && _mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+  if (!ok || !completed) return false;
+  if (knownSize && sentTotal != knownSize) return false;
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
     _progressFilesDone++;
     xSemaphoreGive(_mutex);
   }
-  return ok;
+  return true;
 }
 
 bool FtpClientScreen::_workerCalcLocalDir(const String& localPath,

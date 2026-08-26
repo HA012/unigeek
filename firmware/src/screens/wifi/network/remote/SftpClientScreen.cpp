@@ -1287,6 +1287,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
 
   uint8_t buf[4096];
   bool ok = true;
+  uint64_t received = 0;
 
   while (!_stopRequested && !_cancelTransfer) {
     ssize_t n = sftp_read(remote, buf, sizeof(buf));
@@ -1310,6 +1311,8 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
       break;
     }
 
+    received += written;
+
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
       _progressDone += written;
       xSemaphoreGive(_mutex);
@@ -1319,13 +1322,26 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
   local.close();
   sftp_close(remote);
 
-  if (_cancelTransfer || _stopRequested) return false;
+  if (_cancelTransfer || _stopRequested) ok = false;
 
-  if (ok && _mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+  if (ok && knownSize && received != knownSize) {
+    ok = false;
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Incomplete download";
+      xSemaphoreGive(_mutex);
+    }
+  }
+
+  if (!ok) {
+    Uni.Storage->deleteFile(localPath.c_str());
+    return false;
+  }
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
     _progressFilesDone++;
     xSemaphoreGive(_mutex);
   }
-  return ok;
+  return true;
 }
 
 bool SftpClientScreen::_workerCalcDir(void* sftpOpaque,
@@ -1494,6 +1510,8 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
 
   uint8_t buf[4096];
   bool ok = true;
+  uint64_t sentTotal = 0;
+  uint32_t lastProgress = millis();
 
   while (!_stopRequested && !_cancelTransfer) {
     size_t n = local.read(buf, sizeof(buf));
@@ -1502,7 +1520,8 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
     size_t sent = 0;
     while (sent < n && !_stopRequested && !_cancelTransfer) {
       ssize_t w = sftp_write(remote, buf + sent, n - sent);
-      if (w <= 0) {
+
+      if (w < 0) {
         ok = false;
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
           _commandError = "SFTP write failed";
@@ -1510,7 +1529,23 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
         }
         break;
       }
+
+      if (w == 0) {
+        if (millis() - lastProgress >= WRITE_STALL_TIMEOUT_MS) {
+          ok = false;
+          if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            _commandError = "SFTP write timed out";
+            xSemaphoreGive(_mutex);
+          }
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+        continue;
+      }
+
       sent += (size_t)w;
+      sentTotal += (uint64_t)w;
+      lastProgress = millis();
 
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         _progressDone += (uint64_t)w;
@@ -1526,11 +1561,21 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
 
   if (_cancelTransfer || _stopRequested) return false;
 
-  if (ok && _mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+  if (ok && knownSize && sentTotal != knownSize) {
+    ok = false;
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+      _commandError = "Incomplete upload";
+      xSemaphoreGive(_mutex);
+    }
+  }
+
+  if (!ok) return false;
+
+  if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
     _progressFilesDone++;
     xSemaphoreGive(_mutex);
   }
-  return ok;
+  return true;
 }
 
 bool SftpClientScreen::_workerCalcLocalDir(const String& localPath,

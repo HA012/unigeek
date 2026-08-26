@@ -39,6 +39,9 @@ private:
   static constexpr int MAX_PARTIAL_LEN       = 160;
   static constexpr int MAX_TRANSCRIPT_CHARS  = 4096;
   static constexpr int MAX_SHARED_RX_CHARS   = 4096;
+  static constexpr int MAX_SHARED_TX_CHARS   = 4096;
+  static constexpr int MAX_RX_PER_WORKER_LOOP = 2048;
+  static constexpr uint32_t WRITE_STALL_TIMEOUT_MS = 2000;
   static constexpr int PAD                   = 4;
   static constexpr int FOOTER_H              = 12;
   static constexpr uint32_t SSH_TASK_STACK_SIZE = 24576;

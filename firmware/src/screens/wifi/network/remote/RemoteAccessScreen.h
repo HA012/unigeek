@@ -13,11 +13,11 @@ public:
 
 private:
   ListItem _items[6] = {
-    {"TCP Client"},
-    {"Telnet Client"},
-    {"SSH Client"},
-    {"FTP Client"},
-    {"SFTP Client"},
-    {"WebDAV Client"},
+    {"TCP"},
+    {"Telnet"},
+    {"SSH"},
+    {"FTP"},
+    {"SFTP"},
+    {"WebDAV"},
   };
 };

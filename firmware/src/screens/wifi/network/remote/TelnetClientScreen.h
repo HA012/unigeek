@@ -26,6 +26,8 @@ private:
   static constexpr int MAX_TRANSCRIPT_CHARS = 4096;
   static constexpr int PAD                  = 4;
   static constexpr int FOOTER_H             = 12;
+  static constexpr size_t MAX_RX_PER_UPDATE   = 1024;
+  static constexpr uint32_t WRITE_TIMEOUT_MS   = 2000;
 
   static constexpr uint8_t IAC  = 255;
   static constexpr uint8_t DONT = 254;
@@ -71,6 +73,8 @@ private:
 
   void _openCommandInput();
   void _sendCommand(const String& command);
+  bool _writeAll(const uint8_t* data, size_t len);
+  void _handleSendFailure();
   void _sendTelnetReply(uint8_t command, uint8_t option);
   void _sendNaws();
   void _handleNegotiation(uint8_t command, uint8_t option);

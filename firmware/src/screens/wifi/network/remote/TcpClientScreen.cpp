@@ -186,27 +186,62 @@ void TcpClientScreen::_openCommandInput() {
 void TcpClientScreen::_sendCommand(const String& command) {
   if (_remoteClosed || !_client.connected()) return;
 
-  // v1 command mode uses conventional CRLF line termination. Keep this in one
-  // function so a future TCP setting can expose None/CR/LF/CRLF without
-  // touching the rest of the session code.
+  // Command mode uses conventional CRLF line termination.
   _pushOutputLine(String("> ") + command);
   _followOutput = true;
 
+  bool ok = true;
   if (command.length() > 0) {
-    _client.write(reinterpret_cast<const uint8_t*>(command.c_str()), command.length());
+    ok = _writeAll(reinterpret_cast<const uint8_t*>(command.c_str()),
+                   command.length());
   }
-  _client.write((uint8_t)'\r');
-  _client.write((uint8_t)'\n');
+
+  static const uint8_t CRLF[] = {'\r', '\n'};
+  if (ok) ok = _writeAll(CRLF, sizeof(CRLF));
+
+  if (!ok) {
+    _pushOutputLine("[Send failed]");
+    _remoteClosed = true;
+    _client.stop();
+  }
+}
+
+bool TcpClientScreen::_writeAll(const uint8_t* data, size_t len) {
+  if (!data || len == 0) return true;
+
+  size_t sent = 0;
+  uint32_t lastProgress = millis();
+
+  while (sent < len) {
+    if (!_client.connected()) return false;
+
+    size_t n = _client.write(data + sent, len - sent);
+    if (n > 0) {
+      sent += n;
+      lastProgress = millis();
+      continue;
+    }
+
+    if (millis() - lastProgress >= WRITE_TIMEOUT_MS) return false;
+    delay(1);
+  }
+
+  return true;
 }
 
 void TcpClientScreen::_drainSocket() {
   bool gotData = false;
+  size_t processed = 0;
+  uint8_t buf[128];
 
-  while (_client.available()) {
-    uint8_t buf[128];
-    int n = _client.read(buf, sizeof(buf));
+  // Bound work per UI update so a continuously streaming endpoint cannot
+  // starve navigation/rendering.
+  while (_client.available() && processed < MAX_RX_PER_UPDATE) {
+    size_t room = min<size_t>(sizeof(buf), MAX_RX_PER_UPDATE - processed);
+    int n = _client.read(buf, room);
     if (n <= 0) break;
 
+    processed += (size_t)n;
     gotData = true;
     for (int i = 0; i < n; i++) _appendByte(buf[i]);
   }

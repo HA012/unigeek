@@ -197,20 +197,58 @@ void TelnetClientScreen::_sendCommand(const String& command) {
   if (_remoteClosed || !_client.connected()) return;
 
   // Telnet server controls echo; do not duplicate commands in the local transcript.
+  bool ok = true;
   if (command.length() > 0) {
-    _client.write(reinterpret_cast<const uint8_t*>(command.c_str()), command.length());
+    ok = _writeAll(reinterpret_cast<const uint8_t*>(command.c_str()),
+                   command.length());
   }
-  _client.write((uint8_t)'\r');
-  _client.write((uint8_t)'\n');
+
+  static const uint8_t CRLF[] = {'\r', '\n'};
+  if (ok) ok = _writeAll(CRLF, sizeof(CRLF));
+
+  if (!ok) _handleSendFailure();
+}
+
+bool TelnetClientScreen::_writeAll(const uint8_t* data, size_t len) {
+  if (!data || len == 0) return true;
+
+  size_t sent = 0;
+  uint32_t lastProgress = millis();
+
+  while (sent < len) {
+    if (!_client.connected()) return false;
+
+    size_t n = _client.write(data + sent, len - sent);
+    if (n > 0) {
+      sent += n;
+      lastProgress = millis();
+      continue;
+    }
+
+    if (millis() - lastProgress >= WRITE_TIMEOUT_MS) return false;
+    delay(1);
+  }
+
+  return true;
+}
+
+void TelnetClientScreen::_handleSendFailure() {
+  if (_remoteClosed) return;
+  _remoteClosed = true;
+  _client.stop();
+  if (_partialLine.length() > 0) _commitPartial();
+  _pushOutputLine("[Send failed]");
 }
 
 void TelnetClientScreen::_sendTelnetReply(uint8_t command, uint8_t option) {
+  if (_remoteClosed || !_client.connected()) return;
+
   uint8_t reply[3] = {IAC, command, option};
-  _client.write(reply, sizeof(reply));
+  if (!_writeAll(reply, sizeof(reply))) _handleSendFailure();
 }
 
 void TelnetClientScreen::_sendNaws() {
-  if (!_client.connected()) return;
+  if (_remoteClosed || !_client.connected()) return;
 
   // Match TextScrollView's actual terminal geometry. Font 1 is 6 px wide and
   // the view reserves 3 px for the scrollbar plus 8 px horizontal padding.
@@ -224,21 +262,27 @@ void TelnetClientScreen::_sendNaws() {
 
   // RFC 1073: IAC SB NAWS <16-bit width> <16-bit height> IAC SE.
   // Width/height bytes equal to IAC must be escaped by doubling them.
-  uint8_t header[3] = {IAC, SB, OPT_NAWS};
-  _client.write(header, sizeof(header));
+  uint8_t packet[3 + 8 + 2] = {};
+  size_t len = 0;
 
-  auto writeEscaped = [this](uint8_t b) {
-    _client.write(b);
-    if (b == IAC) _client.write(b);
+  packet[len++] = IAC;
+  packet[len++] = SB;
+  packet[len++] = OPT_NAWS;
+
+  auto appendEscaped = [&](uint8_t b) {
+    packet[len++] = b;
+    if (b == IAC) packet[len++] = b;
   };
 
-  writeEscaped((uint8_t)((cols >> 8) & 0xff));
-  writeEscaped((uint8_t)(cols & 0xff));
-  writeEscaped((uint8_t)((rows >> 8) & 0xff));
-  writeEscaped((uint8_t)(rows & 0xff));
+  appendEscaped((uint8_t)((cols >> 8) & 0xff));
+  appendEscaped((uint8_t)(cols & 0xff));
+  appendEscaped((uint8_t)((rows >> 8) & 0xff));
+  appendEscaped((uint8_t)(rows & 0xff));
 
-  uint8_t trailer[2] = {IAC, SE};
-  _client.write(trailer, sizeof(trailer));
+  packet[len++] = IAC;
+  packet[len++] = SE;
+
+  if (!_writeAll(packet, len)) _handleSendFailure();
 }
 
 void TelnetClientScreen::_handleNegotiation(uint8_t command, uint8_t option) {
@@ -316,14 +360,21 @@ void TelnetClientScreen::_processTelnetByte(uint8_t c) {
 
 void TelnetClientScreen::_drainSocket() {
   bool gotData = false;
+  size_t processed = 0;
+  uint8_t buf[128];
 
-  while (_client.available()) {
-    uint8_t buf[128];
-    int n = _client.read(buf, sizeof(buf));
+  // Bound work per UI update so a busy Telnet session cannot starve input and
+  // rendering. The remaining bytes stay queued for the next update.
+  while (_client.available() && processed < MAX_RX_PER_UPDATE) {
+    size_t room = min<size_t>(sizeof(buf), MAX_RX_PER_UPDATE - processed);
+    int n = _client.read(buf, room);
     if (n <= 0) break;
 
+    processed += (size_t)n;
     gotData = true;
     for (int i = 0; i < n; i++) _processTelnetByte(buf[i]);
+
+    if (_remoteClosed) break;
   }
 
   if (gotData) render();

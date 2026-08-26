@@ -60,6 +60,8 @@ private:
   static constexpr uint32_t FTP_TASK_STACK_SIZE = 24576;
   static constexpr uint32_t HOLD_MS = 900;
   static constexpr uint32_t REPLY_TIMEOUT_MS = 12000;
+  static constexpr uint32_t DATA_STALL_TIMEOUT_MS = 12000;
+  static constexpr size_t MAX_LIST_PAYLOAD_BYTES = 65536;
   static constexpr const char* DOWNLOAD_DIR = "/unigeek/wifi/remote/ftp/downloads";
 
   State _state = STATE_CONFIG;

@@ -674,8 +674,9 @@ void SshClientScreen::_sshWorker() {
     bool activity = false;
     char buf[256];
 
-    // TX queue: UI only appends complete commands, so moving the whole String is
-    // enough and keeps libssh calls entirely inside this worker.
+    // TX queue: move complete commands out of the shared String, then keep
+    // retrying a temporarily non-writable channel. A zero-byte write is not an
+    // error in non-blocking mode and must not silently discard the tail.
     String tx;
     if (_ioMutex && xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
       if (_workerTx.length() > 0) {
@@ -687,21 +688,35 @@ void SshClientScreen::_sshWorker() {
 
     if (tx.length() > 0) {
       int sent = 0;
+      uint32_t lastProgress = millis();
+
       while (sent < (int)tx.length() && !_stopRequested) {
         int n = ssh_channel_write(channel, tx.c_str() + sent, tx.length() - sent);
         if (n == SSH_ERROR) {
           _setWorkerError("SSH write failed");
           goto cleanup;
         }
-        if (n <= 0) break;
-        sent += n;
+
+        if (n > 0) {
+          sent += n;
+          lastProgress = millis();
+          activity = true;
+          continue;
+        }
+
+        if (millis() - lastProgress >= WRITE_STALL_TIMEOUT_MS) {
+          _setWorkerError("SSH write timed out");
+          goto cleanup;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
       }
-      activity = true;
     }
 
-    for (int stream = 0; stream <= 1; ++stream) {
-      while (!_stopRequested) {
-        int n = ssh_channel_read_nonblocking(channel, buf, sizeof(buf), stream);
+    int rxThisLoop = 0;
+    for (int stream = 0; stream <= 1 && rxThisLoop < MAX_RX_PER_WORKER_LOOP; ++stream) {
+      while (!_stopRequested && rxThisLoop < MAX_RX_PER_WORKER_LOOP) {
+        int room = min<int>(sizeof(buf), MAX_RX_PER_WORKER_LOOP - rxThisLoop);
+        int n = ssh_channel_read_nonblocking(channel, buf, room, stream);
         if (n == SSH_ERROR) {
           _setWorkerError("SSH read failed");
           goto cleanup;
@@ -716,6 +731,8 @@ void SshClientScreen::_sshWorker() {
           _workerRx.concat(buf, n);
           xSemaphoreGive(_ioMutex);
         }
+
+        rxThisLoop += n;
         activity = true;
       }
     }
@@ -789,9 +806,22 @@ void SshClientScreen::_sendCommand(const String& command) {
   String outgoing = command;
   outgoing += "\r\n";
 
+  bool queued = false;
+  bool queueFull = false;
+
   if (xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-    _workerTx += outgoing;
+    if ((int)_workerTx.length() + (int)outgoing.length() <= MAX_SHARED_TX_CHARS) {
+      _workerTx += outgoing;
+      queued = true;
+    } else {
+      queueFull = true;
+    }
     xSemaphoreGive(_ioMutex);
+  }
+
+  if (!queued) {
+    _pushOutputLine(queueFull ? "[Send queue full]" : "[Send queue busy]");
+    render();
   }
 }
 
