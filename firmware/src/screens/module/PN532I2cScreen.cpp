@@ -361,11 +361,12 @@ bool PN532I2cScreen::_initModule() {
 
   // Fall back to InI2C
   if (Uni.InI2C) {
-    Uni.InI2C->end();      // tear down first — Adafruit_I2CDevice::begin() below calls
-                          // _wire->begin() unconditionally; without end(), that's a
-                          // double-init on an already-running bus → crash on this ESP32-S3 core
-    Uni.InI2C->begin();    // no explicit pins needed — this board's pins_arduino.h aliases the
-                          // global SDA/SCL constants to GROVE_SDA/GROVE_SCL (8/18)
+#ifdef DEVICE_PN532_REINIT_IN_I2C
+    // This board requires a clean I2C restart before probing its on-board PN532.
+    // Do not do this generically: InI2C may be shared with internal peripherals.
+    Uni.InI2C->end();
+    Uni.InI2C->begin();
+#endif
 
     _nfc = new Adafruit_PN532(255, 255, Uni.InI2C);
     _nfc->begin();
