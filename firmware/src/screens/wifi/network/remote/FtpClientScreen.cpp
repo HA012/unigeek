@@ -290,8 +290,14 @@ void FtpClientScreen::_configHost() {
     IPAddress ip = WiFi.localIP();
     initial = String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + ".";
   }
+#ifdef DEVICE_HAS_KEYBOARD
+  const auto hostInputMode = InputTextAction::INPUT_TEXT;
+#else
+  const auto hostInputMode = InputTextAction::INPUT_IP_ADDRESS;
+#endif
+
   String value = InputTextAction::popup(
-    "Host", initial, InputTextAction::INPUT_IP_ADDRESS);
+    "Host", initial, hostInputMode);
   if (!InputTextAction::wasCancelled() && value.length()) _host = value;
   _updateLabels();
   _rebuildConfig();
