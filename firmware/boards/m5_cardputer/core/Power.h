@@ -2,12 +2,15 @@
 
 #include "core/IPower.h"
 #include "pins_arduino.h"
+#include <esp_sleep.h>
+#include <driver/gpio.h>
 
 class PowerImpl : public IPower
 {
 public:
   void begin() override {
     pinMode(BAT_ADC_PIN, INPUT);
+    pinMode(BTN_BOOT, INPUT_PULLUP);
     analogReadMilliVolts(BAT_ADC_PIN);  // warm up ADC calibration (first call is slow)
   }
 
@@ -23,6 +26,25 @@ public:
   bool isCharging() override {
     // No charger IC — not detectable
     return false;
+  }
+
+  void lightSleep() override {
+    // Wake only from the shoulder / boot button (BTN_BOOT = GPIO0, active LOW).
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    gpio_wakeup_enable((gpio_num_t)BTN_BOOT, GPIO_INTR_LOW_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+
+    // Execution resumes here after GPIO0 is pressed.
+    esp_light_sleep_start();
+
+    // Wait for release so the wake press is not interpreted by the UI.
+    while (digitalRead(BTN_BOOT) == LOW) {
+      delay(10);
+    }
+    delay(50); // release debounce
+
+    gpio_wakeup_disable((gpio_num_t)BTN_BOOT);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
   }
 
   void powerOff() override {
