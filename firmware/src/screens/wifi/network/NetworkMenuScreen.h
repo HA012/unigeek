@@ -48,9 +48,9 @@ private:
     {"Information"},
     {"WiFi QRCode"},
     {"Scanners"},
-    {"Remote Access"},
     {"Attacks"},
     {"Pranks"},
+    {"Remote Access"},
     {"Services"},
     {"Internet"},
   };
