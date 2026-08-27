@@ -11,7 +11,7 @@
 
 // ─── BQ27220 Fuel Gauge ───────────────────────────────────
 #define BQ27220_ADDR        0x55
-#define BQ27220_REG_SOC     0x1C
+#define BQ27220_REG_SOC     0x2C
 
 // ─── BQ25896 Charger ─────────────────────────────────────
 #define BQ25896_ADDR        0x6B
