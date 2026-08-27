@@ -23,7 +23,17 @@ private:
     STATE_RESULT_PORT
   };
 
-  State   _state   = STATE_CONFIGURATION;
+  enum ScanMode {
+    MODE_TARGET,
+    MODE_RANGE
+  };
+
+  State    _state       = STATE_CONFIGURATION;
+  ScanMode _mode        = MODE_TARGET;
+  bool     _resolveName = true;
+
+  String  _targetIp;
+  String  _targetIpSub;
   int     _startIp = 1;
   int     _endIp   = 254;
   String  _startIpSub;
@@ -39,9 +49,10 @@ private:
   uint8_t              _openCount = 0;
   ListItem             _openItems[PortScanUtil::MAX_RESULTS];
 
-  ListItem _configItems[3];
+  ListItem _configItems[6];
 
   void _showConfiguration();
   void _scanIP();
   void _scanPort(const char* ip);
+  bool _validTargetIp() const;
 };
