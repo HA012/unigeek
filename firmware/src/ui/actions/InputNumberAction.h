@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <ctype.h>
+
 #include "core/Device.h"
 #include "utils/uart/UartFileManager.h"
 #include "core/ConfigManager.h"
@@ -17,6 +19,16 @@ public:
     _cancelledFlag() = action._cancelled;
     Uni.lastActiveMs = millis();
     return result;
+  }
+
+  static String popupList(const char* title, const char* defaultValue = "") {
+    InputNumberAction action(title, INT_MIN, INT_MAX, 0);
+    action._listMode = true;
+    action._input = defaultValue ? defaultValue : "";
+    action._run();
+    _cancelledFlag() = action._cancelled;
+    Uni.lastActiveMs = millis();
+    return action._cancelled ? String() : action._input;
   }
 
   static bool wasCancelled() { return _cancelledFlag(); }
@@ -48,6 +60,7 @@ private:
   bool        _done           = false;
   bool        _cancelled      = false;
   bool        _cursorVisible  = true;
+  bool        _listMode       = false;
   uint32_t    _lastBlinkTime  = 0;
 
   static bool& _cancelledFlag() { static bool v = false; return v; }
@@ -58,7 +71,7 @@ private:
   struct DigitSet {
     const char* label;
     bool        isAction;
-    enum Action { ACT_DEL, ACT_SAVE, ACT_CANCEL } action;
+    enum Action { ACT_DEL, ACT_SAVE, ACT_CANCEL, ACT_SPACE } action;
   };
 
   DigitSet _sets[DIGIT_COUNT];
@@ -79,7 +92,7 @@ private:
     _setCount = 0;
     for (int i = 0; i < 9; i++)
       _sets[_setCount++] = { d[i], false, DigitSet::ACT_DEL };
-    _sets[_setCount++] = { "",     false, DigitSet::ACT_DEL    };  // dummy
+    _sets[_setCount++] = _listMode ? DigitSet{"SPACE", true, DigitSet::ACT_SPACE} : DigitSet{"", false, DigitSet::ACT_DEL};
     _sets[_setCount++] = { "0",    false, DigitSet::ACT_DEL    };
     _sets[_setCount++] = { "",     false, DigitSet::ACT_DEL    };  // dummy
     _sets[_setCount++] = { "CNCL", true,  DigitSet::ACT_CANCEL };
@@ -88,6 +101,35 @@ private:
   }
 
   bool _validate() {
+    if (_listMode) {
+      String src = _input;
+      src.trim();
+      if (src.length() == 0) {
+        _error = "Enter one or more ports";
+        return false;
+      }
+
+      String normalized;
+      int pos = 0;
+      while (pos < (int)src.length()) {
+        while (pos < (int)src.length() && isspace((unsigned char)src[pos])) pos++;
+        if (pos >= (int)src.length()) break;
+        int start = pos;
+        while (pos < (int)src.length() && !isspace((unsigned char)src[pos])) pos++;
+        String token = src.substring(start, pos);
+        for (size_t i = 0; i < token.length(); i++) {
+          if (!isdigit((unsigned char)token[i])) { _error = "Invalid port list"; return false; }
+        }
+        long port = token.toInt();
+        if (port < 1 || port > 65535) { _error = "Ports: 1 - 65535"; return false; }
+        if (normalized.length() > 0) normalized += ' ';
+        normalized += String(port);
+      }
+      _input = normalized;
+      _error = "";
+      return true;
+    }
+
     if (_input.length() == 0) {
       _error = "Enter a number";
       return false;
@@ -236,6 +278,9 @@ private:
         case DigitSet::ACT_CANCEL:
           _cancelled = true;
           break;
+        case DigitSet::ACT_SPACE:
+          if (_listMode && _input.length() > 0 && _input[_input.length() - 1] != ' ') _input += ' ';
+          break;
       }
     } else {
       if (s.label && s.label[0] != '\0') _input += s.label;
@@ -374,6 +419,11 @@ private:
           cursorOn  = true;
           lastBlink = millis();
           _drawInput(true);
+        } else if (_listMode && isspace((unsigned char)c)) {
+          if (_input.length() > 0 && _input[_input.length() - 1] != ' ') _input += ' ';
+          cursorOn  = true;
+          lastBlink = millis();
+          _drawInput(true);
         }
         if (prevErr != _error) _drawError();
       }
@@ -430,7 +480,7 @@ private:
 
     lcd.setTextColor(TFT_DARKGREY);
     lcd.setCursor(x + PAD, y + _hintY());
-    lcd.print("Numbers only + ENTER to confirm");
+    lcd.print(_listMode ? "Ports separated by SPACE" : "Numbers only + ENTER to confirm");
   }
 
   void _drawInput(bool cursorOn) {
