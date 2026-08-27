@@ -28,8 +28,6 @@ public:
     uint8_t modifiers = keyboard->modifiers();
     char c = keyboard->getKey();
 
-    if (c == '\x1b') return ACTION_EXIT;
-
     // The Cardputer family uses Fn + ; . , / as the four arrow keys.
     if (modifiers & IKeyboard::MOD_FN) {
       if (c == ';') return ACTION_SCROLL_UP;
@@ -43,7 +41,7 @@ public:
         _text.remove(_text.length() - 1);
         return ACTION_CHANGED;
       }
-      return ACTION_NONE;
+      return ACTION_EXIT;
     }
 
     if (c == '\n' || c == '\r') return ACTION_SUBMIT;
@@ -66,7 +64,7 @@ public:
 
     String line;
     if (remoteClosed) {
-      line = keyboardDevice ? "ESC: Exit" : "BACK: Exit";
+      line = "BACK: Exit";
     } else if (keyboardDevice) {
       line = "> " + _text + "_";
     } else {
