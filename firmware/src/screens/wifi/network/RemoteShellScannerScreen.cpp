@@ -7,6 +7,8 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "screens/wifi/network/remote/SshClientScreen.h"
+#include "screens/wifi/network/remote/TelnetClientScreen.h"
 
 void RemoteShellScannerScreen::onInit()
 {
@@ -87,6 +89,19 @@ void RemoteShellScannerScreen::onItemSelected(uint8_t index)
 
   if (_state == STATE_RESULTS && index < _resultCount) {
     _showDetails(index);
+    return;
+  }
+
+  if (_state == STATE_DETAILS &&
+      _detailResultIndex < _resultCount &&
+      index == DETAIL_CONNECT_ROW) {
+    const auto& result = _results[_detailResultIndex];
+
+    if (result.protocol == RemoteShellScanUtil::PROTO_SSH) {
+      Screen.push(new SshClientScreen(result.ip, result.port));
+    } else if (result.protocol == RemoteShellScanUtil::PROTO_TELNET) {
+      Screen.push(new TelnetClientScreen(result.ip, result.port));
+    }
   }
 }
 
@@ -278,6 +293,7 @@ void RemoteShellScannerScreen::_showDetails(uint8_t index)
   if (index >= _resultCount) return;
 
   _state = STATE_DETAILS;
+  _detailResultIndex = index;
   const auto& result = _results[index];
 
   _detailSubs[0] = result.ip;
@@ -295,7 +311,14 @@ void RemoteShellScannerScreen::_showDetails(uint8_t index)
   _detailSubs[4] = result.banner[0] ? result.banner : "-";
   _detailItems[4] = {"Banner", _detailSubs[4].c_str()};
 
-  setItems(_detailItems, DETAIL_ROWS);
+  uint8_t detailCount = DETAIL_INFO_ROWS;
+  if (result.protocol == RemoteShellScanUtil::PROTO_SSH ||
+      result.protocol == RemoteShellScanUtil::PROTO_TELNET) {
+    _detailItems[DETAIL_CONNECT_ROW] = {"Connect", nullptr};
+    detailCount++;
+  }
+
+  setItems(_detailItems, detailCount);
 }
 
 void RemoteShellScannerScreen::_editTarget(

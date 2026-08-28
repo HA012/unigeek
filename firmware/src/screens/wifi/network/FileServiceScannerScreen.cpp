@@ -7,6 +7,9 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "screens/wifi/network/remote/FtpClientScreen.h"
+#include "screens/wifi/network/remote/SftpClientScreen.h"
+#include "screens/wifi/network/remote/WebDavClientScreen.h"
 
 void FileServiceScannerScreen::onInit()
 {
@@ -89,6 +92,40 @@ void FileServiceScannerScreen::onItemSelected(uint8_t index)
 
   if (_state == STATE_RESULTS && index < _resultCount) {
     _showDetails(index);
+    return;
+  }
+
+  if (_state == STATE_DETAILS &&
+      _detailResultIndex < _resultCount &&
+      index == DETAIL_CONNECT_ROW) {
+    const auto& result = _results[_detailResultIndex];
+
+    switch (result.service) {
+      case FileServiceScanUtil::SERVICE_FTP:
+        Screen.push(new FtpClientScreen(result.ip, result.port));
+        break;
+
+      case FileServiceScanUtil::SERVICE_SFTP_CANDIDATE:
+        Screen.push(new SftpClientScreen(result.ip, result.port));
+        break;
+
+      case FileServiceScanUtil::SERVICE_WEBDAV_HTTP:
+      case FileServiceScanUtil::SERVICE_WEBDAV_HTTPS: {
+        const bool secure =
+          result.service == FileServiceScanUtil::SERVICE_WEBDAV_HTTPS;
+        String baseUrl = secure ? "https://" : "http://";
+        baseUrl += result.ip;
+        baseUrl += ":";
+        baseUrl += String(result.port);
+        baseUrl += "/";
+        Screen.push(new WebDavClientScreen(baseUrl));
+        break;
+      }
+
+      case FileServiceScanUtil::SERVICE_SMB:
+      default:
+        break;
+    }
   }
 }
 
@@ -347,6 +384,7 @@ void FileServiceScannerScreen::_showDetails(uint8_t index)
   if (index >= _resultCount) return;
 
   _state = STATE_DETAILS;
+  _detailResultIndex = index;
   const auto& result = _results[index];
 
   _detailSubs[0] = result.ip;
@@ -373,7 +411,16 @@ void FileServiceScannerScreen::_showDetails(uint8_t index)
   _detailSubs[5] = result.info[0] ? result.info : "-";
   _detailItems[5] = {"Info", _detailSubs[5].c_str()};
 
-  setItems(_detailItems, DETAIL_ROWS);
+  uint8_t detailCount = DETAIL_INFO_ROWS;
+  if (result.service == FileServiceScanUtil::SERVICE_FTP ||
+      result.service == FileServiceScanUtil::SERVICE_SFTP_CANDIDATE ||
+      result.service == FileServiceScanUtil::SERVICE_WEBDAV_HTTP ||
+      result.service == FileServiceScanUtil::SERVICE_WEBDAV_HTTPS) {
+    _detailItems[DETAIL_CONNECT_ROW] = {"Connect", nullptr};
+    detailCount++;
+  }
+
+  setItems(_detailItems, detailCount);
 }
 
 void FileServiceScannerScreen::_editTarget(
