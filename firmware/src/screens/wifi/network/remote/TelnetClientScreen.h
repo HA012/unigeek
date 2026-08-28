@@ -9,6 +9,10 @@
 class TelnetClientScreen : public ListScreen
 {
 public:
+  TelnetClientScreen() = default;
+  TelnetClientScreen(const String& host, int port)
+    : _host(host), _port(port) {}
+
   const char* title() override { return "Telnet Client"; }
   ~TelnetClientScreen();
 

@@ -6,6 +6,10 @@
 class WebDavClientScreen : public ListScreen
 {
 public:
+  WebDavClientScreen() = default;
+  explicit WebDavClientScreen(const String& baseUrl)
+    : _baseUrl(baseUrl) {}
+
   const char* title() override;
   bool inhibitPowerOff() override { return _state == STATE_TRANSFER; }
 
