@@ -86,18 +86,27 @@ private:
   {}
 
   void _buildSets() {
-    // 3 cols × 5 rows = 15 items
-    // rows 0-2: 1-9  row 3: dummy 0 dummy  row 4: CNCL DEL SAVE
+    // Normal mode: 3 cols × 5 rows.
+    // List mode: 3 cols × 4 numeric rows + 4-button action footer.
     static constexpr const char* d[] = { "1","2","3","4","5","6","7","8","9" };
     _setCount = 0;
     for (int i = 0; i < 9; i++)
       _sets[_setCount++] = { d[i], false, DigitSet::ACT_DEL };
-    _sets[_setCount++] = _listMode ? DigitSet{"SPACE", true, DigitSet::ACT_SPACE} : DigitSet{"", false, DigitSet::ACT_DEL};
-    _sets[_setCount++] = { "0",    false, DigitSet::ACT_DEL    };
-    _sets[_setCount++] = { "",     false, DigitSet::ACT_DEL    };  // dummy
-    _sets[_setCount++] = { "CNCL", true,  DigitSet::ACT_CANCEL };
-    _sets[_setCount++] = { "DEL",  true,  DigitSet::ACT_DEL    };
-    _sets[_setCount++] = { "SAVE", true,  DigitSet::ACT_SAVE   };
+
+    _sets[_setCount++] = { "",  false, DigitSet::ACT_DEL };
+    _sets[_setCount++] = { "0", false, DigitSet::ACT_DEL };
+    _sets[_setCount++] = { "",  false, DigitSet::ACT_DEL };
+
+    if (_listMode) {
+      _sets[_setCount++] = { "SPACE", true, DigitSet::ACT_SPACE  };
+      _sets[_setCount++] = { "BKSP",  true, DigitSet::ACT_DEL    };
+      _sets[_setCount++] = { "SAVE",  true, DigitSet::ACT_SAVE   };
+      _sets[_setCount++] = { "EXIT",  true, DigitSet::ACT_CANCEL };
+    } else {
+      _sets[_setCount++] = { "BKSP", true, DigitSet::ACT_DEL    };
+      _sets[_setCount++] = { "SAVE", true, DigitSet::ACT_SAVE   };
+      _sets[_setCount++] = { "EXIT", true, DigitSet::ACT_CANCEL };
+    }
   }
 
   bool _validate() {
@@ -174,9 +183,10 @@ private:
 
   int _gridHdrH() const { return HDR_H; }
   int _gridCols()  const { return 3; }
-  int _gridRows()  const { return (_setCount + _gridCols() - 1) / _gridCols(); }
+  int _gridRows()  const { return _listMode ? 5 : (_setCount + _gridCols() - 1) / _gridCols(); }
   int _gridCellW() const { return Uni.Lcd.width() / _gridCols(); }
   int _gridCellH() const { return (Uni.Lcd.height() - _gridHdrH()) / _gridRows(); }
+  int _actionCellW() const { return Uni.Lcd.width() / 4; }
 
   int _runScroll() {
     _buildSets();
@@ -204,7 +214,15 @@ private:
         int16_t ty = Uni.Nav->lastTouchY();
         int hdr = _gridHdrH();
         if (tx >= 0 && ty >= hdr) {
-          int idx = (int)(ty - hdr) / _gridCellH() * _gridCols() + (int)tx / _gridCellW();
+          int row = (int)(ty - hdr) / _gridCellH();
+          int idx;
+          if (_listMode && row == 4) {
+            int action = (int)tx / _actionCellW();
+            if (action > 3) action = 3;
+            idx = 12 + action;
+          } else {
+            idx = row * _gridCols() + (int)tx / _gridCellW();
+          }
           if (idx >= 0 && idx < _setCount) {
             if (!_sets[idx].isAction && _sets[idx].label[0] == '\0') { delay(10); continue; }
             _scrollPos = idx;
@@ -224,7 +242,34 @@ private:
 
       auto _isDummy = [&](int i) { return !_sets[i].isAction && _sets[i].label[0] == '\0'; };
       const bool nav4 = Uni.Nav->is4Way();
-      if (nav4 && dir == INavigation::DIR_UP) {
+      if (_listMode && nav4 && (dir == INavigation::DIR_UP || dir == INavigation::DIR_DOWN)) {
+        if (_scrollPos >= 12) {
+          // Footer -> numeric bottom row. Map four action columns onto three numeric columns.
+          int action = _scrollPos - 12;
+          int col = (action * 3) / 4;
+          _scrollPos = 9 + col;
+          if (_isDummy(_scrollPos)) _scrollPos = 10;  // only 0 is active on this row
+        } else {
+          int row = _scrollPos / 3;
+          int col = _scrollPos % 3;
+          if (dir == INavigation::DIR_DOWN && row == 3) {
+            int action = (col * 4) / 3;
+            if (action > 3) action = 3;
+            _scrollPos = 12 + action;
+          } else if (dir == INavigation::DIR_UP && row == 0) {
+            int action = (col * 4) / 3;
+            if (action > 3) action = 3;
+            _scrollPos = 12 + action;
+          } else {
+            int delta = (dir == INavigation::DIR_UP) ? -3 : 3;
+            int next = _scrollPos + delta;
+            if (next >= 0 && next < 12) {
+              _scrollPos = next;
+              if (_isDummy(_scrollPos)) _scrollPos = 10;
+            }
+          }
+        }
+      } else if (nav4 && dir == INavigation::DIR_UP) {
         do { _scrollPos = (_scrollPos - _gridCols() + _setCount) % _setCount; } while (_isDummy(_scrollPos));
       } else if (nav4 && dir == INavigation::DIR_DOWN) {
         do { _scrollPos = (_scrollPos + _gridCols()) % _setCount; } while (_isDummy(_scrollPos));
@@ -345,8 +390,19 @@ private:
     auto&    lcd   = Uni.Lcd;
     uint16_t theme = Config.getThemeColor();
     int hdr = _gridHdrH();
-    int cW  = _gridCellW(), cH = _gridCellH();
-    int col = idx % _gridCols(), row = idx / _gridCols();
+    int cH  = _gridCellH();
+    int cW;
+    int col;
+    int row;
+    if (_listMode && idx >= 12) {
+      cW = _actionCellW();
+      col = idx - 12;
+      row = 4;
+    } else {
+      cW = _gridCellW();
+      col = idx % _gridCols();
+      row = idx / _gridCols();
+    }
     bool sel = (idx == _scrollPos);
     const DigitSet& s = _sets[idx];
 
@@ -369,7 +425,7 @@ private:
       sp.setTextColor(TFT_WHITE, theme);
     } else {
       sp.drawRoundRect(1, 1, cW - 2, cH - 2, 3, 0x2104);
-      sp.setTextColor(s.isAction ? TFT_CYAN : TFT_LIGHTGREY, TFT_BLACK);
+      sp.setTextColor(s.isAction ? TFT_WHITE : TFT_LIGHTGREY, TFT_BLACK);
     }
     sp.drawString(s.label, cW / 2, cH / 2);
     sp.pushSprite(col * cW, hdr + row * cH);
