@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 #include "screens/wifi/network/remote/FtpClientScreen.h"
 #include "screens/wifi/network/remote/SftpClientScreen.h"
 #include "screens/wifi/network/remote/WebDavClientScreen.h"
@@ -211,6 +212,7 @@ void FileServiceScannerScreen::_scan()
   memset(_results, 0, sizeof(_results));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   if (_scanMode == MODE_TARGETS) {
@@ -227,6 +229,7 @@ void FileServiceScannerScreen::_scan()
          _resultCount < FileServiceScanUtil::MAX_RESULTS;
          ++i) {
       if (_targets[i].length() == 0) continue;
+      if (ScanCancelUtil::poll()) break;
 
       _scanTarget(_targets[i].c_str());
       done++;
@@ -243,6 +246,11 @@ void FileServiceScannerScreen::_scan()
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfig();
+    return;
+  }
   _showResults();
 }
 
@@ -259,7 +267,8 @@ void FileServiceScannerScreen::_scanRange()
         "Scanning...",
         (uint8_t)((uint16_t)pct * 30 / 100)
       );
-    }
+    },
+    []() { return ScanCancelUtil::poll(); }
   );
 
   if (hostCount == 0) return;
@@ -268,6 +277,7 @@ void FileServiceScannerScreen::_scanRange()
        i < hostCount &&
        _resultCount < FileServiceScanUtil::MAX_RESULTS;
        ++i) {
+    if (ScanCancelUtil::poll()) break;
     _scanTarget(_hosts[i].ip);
 
     ProgressView::progress(

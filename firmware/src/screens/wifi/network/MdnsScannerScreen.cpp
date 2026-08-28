@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 const char* MdnsScannerScreen::SERVICE_TYPES[SERVICE_COUNT] = {
   "_services._dns-sd._udp.local",
@@ -48,6 +49,7 @@ void MdnsScannerScreen::_scan()
   memset(_results, 0, sizeof(_results));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   // Always discover all service classes currently supported by this scanner.
@@ -63,12 +65,18 @@ void MdnsScannerScreen::_scan()
       SERVICE_TYPES[i],
       &_results[_resultCount],
       remaining,
-      nullptr
+      [](uint8_t) { ScanCancelUtil::poll(); }
     );
     _resultCount += found;
+    if (ScanCancelUtil::wasCancelled()) break;
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    Screen.goBack();
+    return;
+  }
 
   if (_resultCount == 0) {
     ShowStatusAction::show("No mDNS services found", 1500);

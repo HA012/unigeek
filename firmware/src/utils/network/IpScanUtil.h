@@ -26,5 +26,6 @@ public:
   static uint8_t scan(uint8_t startOctet, uint8_t endOctet,
                       Host* out, uint8_t maxHosts,
                       bool resolveHostnames = false,
-                      void (*progressCb)(uint8_t) = nullptr);
+                      void (*progressCb)(uint8_t) = nullptr,
+                      bool (*cancelCb)() = nullptr);
 };

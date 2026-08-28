@@ -82,7 +82,8 @@ bool IpScanUtil::scanTarget(const char* targetIp, Host& out, bool resolveHostnam
 uint8_t IpScanUtil::scan(uint8_t startOctet, uint8_t endOctet,
                          Host* out, uint8_t maxHosts,
                          bool resolveHostnames,
-                         void (*progressCb)(uint8_t)) {
+                         void (*progressCb)(uint8_t),
+                         bool (*cancelCb)()) {
   if (!out || maxHosts == 0 || startOctet > endOctet) return 0;
 
   IPAddress localIP = WiFi.localIP();
@@ -95,6 +96,7 @@ uint8_t IpScanUtil::scan(uint8_t startOctet, uint8_t endOctet,
   uint8_t found = 0;
 
   for (int i = startOctet; i <= endOctet && found < maxHosts; i++) {
+    if (cancelCb && cancelCb()) break;
     if (progressCb) progressCb((uint8_t)((i - startOctet) * 100 / total));
     if (i == (int)localIP[3]) continue;  // skip self
 

@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 namespace {
 struct WebPort {
@@ -179,6 +180,7 @@ void WebServerScannerScreen::_scan()
   memset(_results, 0, sizeof(_results));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
   ProgressView::progress("Scanning...", 0);
 
@@ -193,6 +195,7 @@ void WebServerScannerScreen::_scan()
          i < MAX_TARGETS && _resultCount < WebScanUtil::MAX_RESULTS;
          ++i) {
       if (_targets[i].length() == 0) continue;
+      if (ScanCancelUtil::poll()) break;
 
       _scanTarget(_targets[i].c_str());
       done++;
@@ -209,6 +212,11 @@ void WebServerScannerScreen::_scan()
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfig();
+    return;
+  }
   _showResults();
 }
 
@@ -225,7 +233,8 @@ void WebServerScannerScreen::_scanRange()
         "Scanning...",
         (uint8_t)((uint16_t)pct * 35 / 100)
       );
-    }
+    },
+    []() { return ScanCancelUtil::poll(); }
   );
 
   if (hostCount == 0) return;
@@ -233,6 +242,7 @@ void WebServerScannerScreen::_scanRange()
   for (uint8_t i = 0;
        i < hostCount && _resultCount < WebScanUtil::MAX_RESULTS;
        ++i) {
+    if (ScanCancelUtil::poll()) break;
     _scanTarget(_hosts[i].ip);
 
     ProgressView::progress(

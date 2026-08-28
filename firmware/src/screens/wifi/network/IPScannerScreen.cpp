@@ -6,6 +6,7 @@
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 // ── screen methods ─────────────────────────────────────
 
@@ -95,15 +96,22 @@ void IPScannerScreen::_scanIP() {
   int nip = Achievement.inc("wifi_ip_scan_started");
   if (nip == 1) Achievement.unlock("wifi_ip_scan_started");
 
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   _foundCount = IpScanUtil::scan(
     (uint8_t)_startIp, (uint8_t)_endIp,
     _foundIPs, MAX_FOUND, _resolveName,
-    [](uint8_t pct) { ProgressView::progress("Scanning...", pct); }
+    [](uint8_t pct) { ProgressView::progress("Scanning...", pct); },
+    []() { return ScanCancelUtil::poll(); }
   );
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfiguration();
+    return;
+  }
 
   if (_foundCount == 0) {
     _foundItems[0] = {"No devices found"};
@@ -132,6 +140,7 @@ void IPScannerScreen::_scanPort(const char* ip) {
   int nps = Achievement.inc("wifi_port_scan_started");
   if (nps == 1) Achievement.unlock("wifi_port_scan_started");
 
+  ScanCancelUtil::begin();
   ProgressView::init();
   _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS, "Scanning...", false);
   ProgressView::finish();

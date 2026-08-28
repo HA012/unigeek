@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 void SsdpScannerScreen::onInit()
 {
@@ -40,6 +41,7 @@ void SsdpScannerScreen::_scan()
   memset(_devices, 0, sizeof(_devices));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
   _deviceCount = SsdpScanUtil::discover(
     "ssdp:all",
@@ -47,9 +49,15 @@ void SsdpScannerScreen::_scan()
     SsdpScanUtil::MAX_DEVICES,
     [](uint8_t pct) {
       ProgressView::progress("Scanning...", pct);
+      ScanCancelUtil::poll();
     }
   );
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    Screen.goBack();
+    return;
+  }
 
   if (_deviceCount == 0) {
     ShowStatusAction::show("No SSDP devices found", 1500);

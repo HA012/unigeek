@@ -9,6 +9,7 @@
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 void PortScannerScreen::onInit() {
   memset(_hosts,       0, sizeof(_hosts));
@@ -175,6 +176,7 @@ void PortScannerScreen::_scan() {
   int nps = Achievement.inc("wifi_port_scan_started");
   if (nps == 1) Achievement.unlock("wifi_port_scan_started");
 
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   if (_scanMode == MODE_TARGETS) {
@@ -188,6 +190,7 @@ void PortScannerScreen::_scan() {
          i < MAX_TARGETS && _resultCount < PortScanUtil::MAX_RESULTS;
          ++i) {
       if (_targets[i].length() == 0) continue;
+      if (ScanCancelUtil::poll()) break;
 
       _scanTarget(_targets[i].c_str(), _resultCount);
       done++;
@@ -200,8 +203,9 @@ void PortScannerScreen::_scan() {
     uint8_t hostCount = IpScanUtil::scan(
       (uint8_t)_startIp, (uint8_t)_endIp,
       _hosts, MAX_FOUND_HOSTS, false,
-      [](uint8_t pct) { ProgressView::progress("Scanning...", pct); }
-    );
+      [](uint8_t pct) { ProgressView::progress("Scanning...", pct); },
+    []() { return ScanCancelUtil::poll(); }
+  );
 
     for (uint8_t i = 0; i < hostCount && _resultCount < PortScanUtil::MAX_RESULTS; i++) {
       ProgressView::progress("Scanning...", 0);
@@ -210,6 +214,11 @@ void PortScannerScreen::_scan() {
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showInput();
+    return;
+  }
 
   if (_resultCount == 0) {
     _resultItems[0] = {"No ports open"};

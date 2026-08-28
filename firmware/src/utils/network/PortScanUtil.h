@@ -3,6 +3,7 @@
 #include <WiFiClient.h>
 #include <ctype.h>
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 // TCP port scanner for a target IP (local or internet).
 class PortScanUtil {
@@ -74,6 +75,7 @@ public:
     uint8_t lastPct = 255;
 
     for (uint32_t port = startPort; port <= endPort && found < maxResults; port++) {
+      if (ScanCancelUtil::poll()) break;
       uint8_t pct = (uint8_t)(((port - startPort) * 100UL) / total);
       if (pct != lastPct) {
         ProgressView::progress(msg, pct);
@@ -95,6 +97,7 @@ public:
     uint8_t found = 0;
     uint8_t lastPct = 255;
     for (uint16_t i = 0; i < portCount && found < maxResults; i++) {
+      if (ScanCancelUtil::poll()) break;
       uint8_t pct = (uint8_t)((uint32_t)i * 100UL / portCount);
       if (pct != lastPct) {
         ProgressView::progress(msg, pct);

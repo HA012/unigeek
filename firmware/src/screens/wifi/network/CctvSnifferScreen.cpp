@@ -5,6 +5,7 @@
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 #include <WiFi.h>
 #include <TJpg_Decoder.h>
 
@@ -231,6 +232,7 @@ void CctvSnifferScreen::_startScan()
   memset(_cameras,     0, sizeof(_cameras));
   memset(_cameraItems, 0, sizeof(_cameraItems));
 
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   if (_scanMode == MODE_TARGETS) {
@@ -242,6 +244,7 @@ void CctvSnifferScreen::_startScan()
     uint8_t done = 0;
     for (uint8_t i = 0; i < MAX_TARGETS && _cameraCount < MAX_FOUND; ++i) {
       if (_targets[i].length() == 0) continue;
+      if (ScanCancelUtil::poll()) break;
 
       _scanTarget(_targets[i].c_str());
       done++;
@@ -255,6 +258,11 @@ void CctvSnifferScreen::_startScan()
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfig();
+    return;
+  }
   _showCameraList();
 }
 
@@ -318,10 +326,12 @@ void CctvSnifferScreen::_scanRange()
     false,
     [](uint8_t pct) {
       ProgressView::progress("Scanning...", (uint8_t)(pct * 40 / 100));
-    }
+    },
+    []() { return ScanCancelUtil::poll(); }
   );
 
   for (uint8_t i = 0; i < hostCount && _cameraCount < MAX_FOUND; i++) {
+    if (ScanCancelUtil::poll()) break;
     _scanTarget(_hosts[i].ip);
     ProgressView::progress(
       "Scanning...",

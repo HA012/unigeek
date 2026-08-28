@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 #include "utils/network/MdnsScanUtil.h"
 #include "utils/network/SsdpScanUtil.h"
 #include "utils/network/WebScanUtil.h"
@@ -201,6 +202,7 @@ void IoTDeviceScannerScreen::_scan()
   memset(_devices, 0, sizeof(_devices));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
   ProgressView::progress("Scanning...", 1);
 
@@ -213,6 +215,11 @@ void IoTDeviceScannerScreen::_scan()
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfig();
+    return;
+  }
   _showResults();
 }
 
@@ -289,7 +296,8 @@ void IoTDeviceScannerScreen::_scanRange()
         "Scanning...",
         (uint8_t)(35 + ((uint16_t)pct * 20 / 100))
       );
-    }
+    },
+    []() { return ScanCancelUtil::poll(); }
   );
 
   for (uint8_t i = 0; i < hostCount; ++i) {

@@ -7,6 +7,7 @@
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/network/ScanCancelUtil.h"
 
 void PrinterScannerScreen::onInit()
 {
@@ -136,6 +137,7 @@ void PrinterScannerScreen::_scan()
   memset(_printers, 0, sizeof(_printers));
 
   render();
+  ScanCancelUtil::begin();
   ProgressView::init();
 
   static SsdpScanUtil::Device ssdp[SsdpScanUtil::MAX_DEVICES];
@@ -146,11 +148,18 @@ void PrinterScannerScreen::_scan()
     SsdpScanUtil::MAX_DEVICES,
     [](uint8_t pct) {
       ProgressView::progress("Scanning...", pct / 2);
+      ScanCancelUtil::poll();
     }
   );
 
   for (uint8_t i = 0; i < ssdpCount; ++i) {
     _mergeSsdp(ssdp[i]);
+  }
+
+  if (ScanCancelUtil::wasCancelled()) {
+    ProgressView::finish();
+    _showConfig();
+    return;
   }
 
   static MdnsScanUtil::Service mdns[MdnsScanUtil::MAX_RESULTS];
@@ -161,6 +170,7 @@ void PrinterScannerScreen::_scan()
     MdnsScanUtil::MAX_RESULTS,
     [](uint8_t pct) {
       ProgressView::progress("Scanning...", 50 + pct / 2);
+      ScanCancelUtil::poll();
     }
   );
 
@@ -169,6 +179,12 @@ void PrinterScannerScreen::_scan()
   }
 
   ProgressView::finish();
+
+  if (ScanCancelUtil::wasCancelled()) {
+    _showConfig();
+    return;
+  }
+
   _showResults();
 }
 
