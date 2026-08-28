@@ -301,10 +301,18 @@ void IoTDeviceScannerScreen::_scanRange()
   );
 
   for (uint8_t i = 0; i < hostCount; ++i) {
+    char label[48];
+    snprintf(
+      label, sizeof(label),
+      "Scanning %s/%u...",
+      _hosts[i].ip,
+      (unsigned)_endIp
+    );
+    ProgressView::progress(label, 0);
     _probeTarget(_hosts[i].ip);
 
     ProgressView::progress(
-      "Scanning...",
+      label,
       hostCount
         ? (uint8_t)(55 + ((uint16_t)(i + 1) * 45 / hostCount))
         : 100
@@ -325,11 +333,20 @@ void IoTDeviceScannerScreen::_scanTargets()
   for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
     if (!_targets[i].length()) continue;
 
+    char label[48];
+    snprintf(
+      label, sizeof(label),
+      "Scanning %s (%u/%u)...",
+      _targets[i].c_str(),
+      (unsigned)(done + 1),
+      (unsigned)count
+    );
+    ProgressView::progress(label, 0);
     _probeTarget(_targets[i].c_str());
     done++;
 
     ProgressView::progress(
-      "Scanning...",
+      label,
       count
         ? (uint8_t)(35 + ((uint16_t)done * 65 / count))
         : 100

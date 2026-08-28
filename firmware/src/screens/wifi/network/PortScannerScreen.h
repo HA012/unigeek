@@ -58,7 +58,7 @@ private:
 
   void _showInput(uint8_t selectedIndex = 0);
   void _scan();
-  bool _scanTarget(const char* ip, uint8_t& count);
+  bool _scanTarget(const char* ip, uint8_t& count, const char* progressLabel);
   bool _validIp(const String& ip) const;
   bool _hasTargets() const;
   void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);

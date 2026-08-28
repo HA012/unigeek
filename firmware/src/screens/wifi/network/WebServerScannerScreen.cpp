@@ -197,11 +197,20 @@ void WebServerScannerScreen::_scan()
       if (_targets[i].length() == 0) continue;
       if (ScanCancelUtil::poll()) break;
 
+      char label[48];
+      snprintf(
+        label, sizeof(label),
+        "Scanning %s (%u/%u)...",
+        _targets[i].c_str(),
+        (unsigned)(done + 1),
+        (unsigned)targetCount
+      );
+      ProgressView::progress(label, 0);
       _scanTarget(_targets[i].c_str());
       done++;
 
       ProgressView::progress(
-        "Scanning...",
+        label,
         targetCount
           ? (uint8_t)((uint16_t)done * 100 / targetCount)
           : 100
@@ -243,10 +252,18 @@ void WebServerScannerScreen::_scanRange()
        i < hostCount && _resultCount < WebScanUtil::MAX_RESULTS;
        ++i) {
     if (ScanCancelUtil::poll()) break;
+    char label[48];
+    snprintf(
+      label, sizeof(label),
+      "Scanning %s/%u...",
+      _hosts[i].ip,
+      (unsigned)_endIp
+    );
+    ProgressView::progress(label, 0);
     _scanTarget(_hosts[i].ip);
 
     ProgressView::progress(
-      "Scanning...",
+      label,
       (uint8_t)(35 + ((uint16_t)(i + 1) * 65 / hostCount))
     );
   }

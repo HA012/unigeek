@@ -192,10 +192,19 @@ void PortScannerScreen::_scan() {
       if (_targets[i].length() == 0) continue;
       if (ScanCancelUtil::poll()) break;
 
-      _scanTarget(_targets[i].c_str(), _resultCount);
+      char label[48];
+      snprintf(
+        label, sizeof(label),
+        "Scanning %s (%u/%u)...",
+        _targets[i].c_str(),
+        (unsigned)(done + 1),
+        (unsigned)targetCount
+      );
+      ProgressView::progress(label, 0);
+      _scanTarget(_targets[i].c_str(), _resultCount, label);
       done++;
       ProgressView::progress(
-        "Scanning...",
+        label,
         targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 100
       );
     }
@@ -208,8 +217,16 @@ void PortScannerScreen::_scan() {
   );
 
     for (uint8_t i = 0; i < hostCount && _resultCount < PortScanUtil::MAX_RESULTS; i++) {
-      ProgressView::progress("Scanning...", 0);
-      _scanTarget(_hosts[i].ip, _resultCount);
+      if (ScanCancelUtil::poll()) break;
+      char label[48];
+      snprintf(
+        label, sizeof(label),
+        "Scanning %s/%u...",
+        _hosts[i].ip,
+        (unsigned)_endIp
+      );
+      ProgressView::progress(label, 0);
+      _scanTarget(_hosts[i].ip, _resultCount, label);
     }
   }
 
@@ -278,7 +295,7 @@ void PortScannerScreen::_editTarget(uint8_t targetIndex, uint8_t selectedIndex) 
   _showInput(selectedIndex);
 }
 
-bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
+bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count, const char* progressLabel) {
   if (!ip || count >= PortScanUtil::MAX_RESULTS) return false;
 
   uint8_t remaining = PortScanUtil::MAX_RESULTS - count;
@@ -286,11 +303,11 @@ bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
   const bool patient = _scanMode == MODE_TARGETS;
 
   if (_portMode == PORTS_COMMON) {
-    found = PortScanUtil::scan(ip, &_results[count], remaining, "Scanning...", false, patient);
+    found = PortScanUtil::scan(ip, &_results[count], remaining, progressLabel, false, patient);
   } else if (_portMode == PORTS_ALL) {
     found = PortScanUtil::scanRange(
       ip, 1, 65535,
-      &_results[count], remaining, "Scanning...", false, patient
+      &_results[count], remaining, progressLabel, false, patient
     );
   } else {
     uint16_t ports[PortScanUtil::MAX_CUSTOM_PORTS];
@@ -298,7 +315,7 @@ bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
     if (!_parseCustomPorts(ports, portCount)) return false;
     found = PortScanUtil::scanPorts(
       ip, ports, portCount,
-      &_results[count], remaining, "Scanning...", false, patient
+      &_results[count], remaining, progressLabel, false, patient
     );
   }
 
