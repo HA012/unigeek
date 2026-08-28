@@ -4,14 +4,6 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 
-const char* MdnsScannerScreen::SERVICE_LABELS[SERVICE_COUNT] = {
-  "All Services",
-  "Printers",
-  "Google Cast",
-  "AirPlay",
-  "SMB",
-};
-
 const char* MdnsScannerScreen::SERVICE_TYPES[SERVICE_COUNT] = {
   "_services._dns-sd._udp.local",
   "_ipp._tcp.local",
@@ -29,7 +21,7 @@ void MdnsScannerScreen::onInit()
   }
 
   memset(_results, 0, sizeof(_results));
-  _showConfig();
+  _scan();
 }
 
 void MdnsScannerScreen::onBack()
@@ -39,39 +31,14 @@ void MdnsScannerScreen::onBack()
     return;
   }
 
-  if (_state == STATE_RESULTS) {
-    _showConfig();
-    return;
-  }
-
   Screen.goBack();
 }
 
 void MdnsScannerScreen::onItemSelected(uint8_t index)
 {
-  if (_state == STATE_CONFIG) {
-    if (index == 0) {
-      _serviceIndex = (_serviceIndex + 1) % SERVICE_COUNT;
-      _showConfig();
-    } else if (index == 1) {
-      _scan();
-    }
-    return;
-  }
-
   if (_state == STATE_RESULTS && index < _resultCount) {
     _showDetails(index);
   }
-}
-
-void MdnsScannerScreen::_showConfig()
-{
-  _state = STATE_CONFIG;
-  _serviceSub = SERVICE_LABELS[_serviceIndex];
-
-  _configItems[0] = {"Service", _serviceSub.c_str()};
-  _configItems[1] = {"Start Scan"};
-  setItems(_configItems, 2);
 }
 
 void MdnsScannerScreen::_scan()
@@ -82,42 +49,29 @@ void MdnsScannerScreen::_scan()
 
   ProgressView::init();
 
-  if (_serviceIndex == 0) {
-    // DNS-SD meta-query returns service types rather than instances. For the
-    // first version, enumerate the service types already used elsewhere in the
-    // firmware and merge their instances into one result list.
-    for (uint8_t i = 1; i < SERVICE_COUNT; ++i) {
-      if (_resultCount >= MdnsScanUtil::MAX_RESULTS) break;
+  // Always discover all service classes currently supported by this scanner.
+  for (uint8_t i = 1; i < SERVICE_COUNT; ++i) {
+    if (_resultCount >= MdnsScanUtil::MAX_RESULTS) break;
 
-      uint8_t remaining = MdnsScanUtil::MAX_RESULTS - _resultCount;
-      ProgressView::progress(
-        "Searching mDNS services...",
-        (uint8_t)((i - 1) * 100 / (SERVICE_COUNT - 1))
-      );
-      uint8_t found = MdnsScanUtil::discover(
-        SERVICE_TYPES[i],
-        &_results[_resultCount],
-        remaining,
-        nullptr
-      );
-      _resultCount += found;
-    }
-  } else {
-    _resultCount = MdnsScanUtil::discover(
-      SERVICE_TYPES[_serviceIndex],
-      _results,
-      MdnsScanUtil::MAX_RESULTS,
-      [](uint8_t pct) {
-        ProgressView::progress("Searching mDNS services...", pct);
-      }
+    uint8_t remaining = MdnsScanUtil::MAX_RESULTS - _resultCount;
+    ProgressView::progress(
+      "Searching mDNS services...",
+      (uint8_t)((i - 1) * 100 / (SERVICE_COUNT - 1))
     );
+    uint8_t found = MdnsScanUtil::discover(
+      SERVICE_TYPES[i],
+      &_results[_resultCount],
+      remaining,
+      nullptr
+    );
+    _resultCount += found;
   }
 
   ProgressView::finish();
 
   if (_resultCount == 0) {
     ShowStatusAction::show("No mDNS services found", 1500);
-    _showConfig();
+    Screen.goBack();
     return;
   }
 

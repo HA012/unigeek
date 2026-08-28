@@ -14,7 +14,7 @@ void PrinterScannerScreen::onInit()
   }
 
   memset(_printers, 0, sizeof(_printers));
-  _showIdle();
+  _scan();
 }
 
 void PrinterScannerScreen::onBack()
@@ -24,30 +24,14 @@ void PrinterScannerScreen::onBack()
     return;
   }
 
-  if (_state == STATE_RESULTS) {
-    _showIdle();
-    return;
-  }
-
   Screen.goBack();
 }
 
 void PrinterScannerScreen::onItemSelected(uint8_t index)
 {
-  if (_state == STATE_IDLE) {
-    if (index == 0) _scan();
-    return;
-  }
-
   if (_state == STATE_RESULTS && index < _printerCount) {
     _showDetails(index);
   }
-}
-
-void PrinterScannerScreen::_showIdle()
-{
-  _state = STATE_IDLE;
-  setItems(_idleItems, 1);
 }
 
 void PrinterScannerScreen::_scan()
@@ -58,7 +42,8 @@ void PrinterScannerScreen::_scan()
 
   ProgressView::init();
 
-  SsdpScanUtil::Device ssdp[SsdpScanUtil::MAX_DEVICES] = {};
+  static SsdpScanUtil::Device ssdp[SsdpScanUtil::MAX_DEVICES];
+  memset(ssdp, 0, sizeof(ssdp));
   uint8_t ssdpCount = SsdpScanUtil::discover(
     "urn:schemas-upnp-org:device:Printer:1",
     ssdp,
@@ -72,7 +57,8 @@ void PrinterScannerScreen::_scan()
     _mergeSsdp(ssdp[i]);
   }
 
-  MdnsScanUtil::Service mdns[MdnsScanUtil::MAX_RESULTS] = {};
+  static MdnsScanUtil::Service mdns[MdnsScanUtil::MAX_RESULTS];
+  memset(mdns, 0, sizeof(mdns));
   uint8_t mdnsCount = MdnsScanUtil::discover(
     "_ipp._tcp.local",
     mdns,
@@ -90,7 +76,7 @@ void PrinterScannerScreen::_scan()
 
   if (_printerCount == 0) {
     ShowStatusAction::show("No printers found", 1500);
-    _showIdle();
+    Screen.goBack();
     return;
   }
 

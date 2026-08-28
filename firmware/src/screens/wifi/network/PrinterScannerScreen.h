@@ -6,7 +6,7 @@
 class PrinterScannerScreen : public ListScreen
 {
 public:
-  const char* title() override { return "Printer Scanner"; }
+  const char* title() override { return "Printers"; }
   bool inhibitPowerOff() override { return _state == STATE_SCANNING; }
 
   void onInit() override;
@@ -15,7 +15,6 @@ public:
 
 private:
   enum State {
-    STATE_IDLE,
     STATE_SCANNING,
     STATE_RESULTS,
     STATE_DETAILS,
@@ -34,14 +33,11 @@ private:
 
   static constexpr uint8_t MAX_PRINTERS = 24;
 
-  State _state = STATE_IDLE;
+  State _state = STATE_SCANNING;
 
   Printer _printers[MAX_PRINTERS];
   uint8_t _printerCount = 0;
 
-  ListItem _idleItems[1] = {
-    {"Start Scan"},
-  };
 
   ListItem _resultItems[MAX_PRINTERS];
   String   _resultSubs[MAX_PRINTERS];
@@ -50,7 +46,6 @@ private:
   ListItem _detailItems[DETAIL_ROWS];
   String   _detailSubs[DETAIL_ROWS];
 
-  void _showIdle();
   void _scan();
   void _showResults();
   void _showDetails(uint8_t index);

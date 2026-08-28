@@ -13,7 +13,7 @@ void SsdpScannerScreen::onInit()
   }
 
   memset(_devices, 0, sizeof(_devices));
-  _showIdle();
+  _scan();
 }
 
 void SsdpScannerScreen::onBack()
@@ -23,30 +23,14 @@ void SsdpScannerScreen::onBack()
     return;
   }
 
-  if (_state == STATE_RESULTS) {
-    _showIdle();
-    return;
-  }
-
   Screen.goBack();
 }
 
 void SsdpScannerScreen::onItemSelected(uint8_t index)
 {
-  if (_state == STATE_IDLE) {
-    if (index == 0) _scan();
-    return;
-  }
-
   if (_state == STATE_RESULTS && index < _deviceCount) {
     _showDetails(index);
   }
-}
-
-void SsdpScannerScreen::_showIdle()
-{
-  _state = STATE_IDLE;
-  setItems(_idleItems, 1);
 }
 
 void SsdpScannerScreen::_scan()
@@ -68,7 +52,7 @@ void SsdpScannerScreen::_scan()
 
   if (_deviceCount == 0) {
     ShowStatusAction::show("No SSDP devices found", 1500);
-    _showIdle();
+    Screen.goBack();
     return;
   }
 
@@ -104,12 +88,12 @@ void SsdpScannerScreen::_showDetails(uint8_t index)
   _detailSubs[4] = dev.usn[0]      ? dev.usn      : "-";
   _detailSubs[5] = dev.location[0] ? dev.location : "-";
 
-  _detailItems[0] = {"Name",     _detailSubs[0].c_str()};
-  _detailItems[1] = {"IP",       _detailSubs[1].c_str()};
-  _detailItems[2] = {"ST",       _detailSubs[2].c_str()};
-  _detailItems[3] = {"Server",   _detailSubs[3].c_str()};
-  _detailItems[4] = {"USN",      _detailSubs[4].c_str()};
-  _detailItems[5] = {"Location", _detailSubs[5].c_str()};
+  _detailItems[0] = {"Name", _detailSubs[0].c_str()};
+  _detailItems[1] = {"IP",   _detailSubs[1].c_str()};
+  _detailItems[2] = {_detailSubs[2].c_str(), "ST"};
+  _detailItems[3] = {_detailSubs[3].c_str(), "Server"};
+  _detailItems[4] = {_detailSubs[4].c_str(), "USN"};
+  _detailItems[5] = {_detailSubs[5].c_str(), "Location"};
 
   setItems(_detailItems, DETAIL_ROWS);
 }

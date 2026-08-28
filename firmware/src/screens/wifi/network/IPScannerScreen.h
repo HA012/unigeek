@@ -7,7 +7,7 @@ class IPScannerScreen : public ListScreen {
 public:
   IPScannerScreen();
 
-  const char* title()         override { return "IP Scanner"; }
+  const char* title()         override { return "IP Hosts"; }
   bool inhibitPowerOff()      override { return _state == STATE_SCANNING_IP || _state == STATE_SCANNING_PORT; }
 
   void onInit() override;
@@ -23,17 +23,9 @@ private:
     STATE_RESULT_PORT
   };
 
-  enum ScanMode {
-    MODE_TARGET,
-    MODE_RANGE
-  };
+  State _state       = STATE_CONFIGURATION;
+  bool  _resolveName = true;
 
-  State    _state       = STATE_CONFIGURATION;
-  ScanMode _mode        = MODE_TARGET;
-  bool     _resolveName = true;
-
-  String  _targetIp;
-  String  _targetIpSub;
   int     _startIp = 1;
   int     _endIp   = 254;
   String  _startIpSub;
@@ -49,10 +41,9 @@ private:
   uint8_t              _openCount = 0;
   ListItem             _openItems[PortScanUtil::MAX_RESULTS];
 
-  ListItem _configItems[6];
+  ListItem _configItems[4];
 
-  void _showConfiguration();
+  void _showConfiguration(uint8_t selectedIndex = 0);
   void _scanIP();
   void _scanPort(const char* ip);
-  bool _validTargetIp() const;
 };

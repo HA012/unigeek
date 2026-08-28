@@ -6,6 +6,7 @@
 #include "screens/wifi/network/NetworkMenuScreen.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputNumberAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 
@@ -31,53 +32,52 @@ void PortScannerScreen::onItemSelected(uint8_t index) {
   switch (_configActions[index]) {
     case CFG_MODE:
       _scanMode = (_scanMode == MODE_TARGET) ? MODE_RANGE : MODE_TARGET;
-      _showInput();
+      _showInput(index);
       break;
 
     case CFG_TARGET_IP: {
       String initial = _targetIp.length() > 0 ? _targetIp : _networkPrefix();
       String ip = InputTextAction::popup("Target IP", initial.c_str(), InputTextAction::INPUT_IP_ADDRESS);
       if (!InputTextAction::wasCancelled()) _targetIp = ip;
-      _showInput();
+      _showInput(index);
       break;
     }
 
     case CFG_START_IP:
       _startIp = InputNumberAction::popup("Start IP", 1, _endIp, _startIp);
-      _showInput();
+      _showInput(index);
       break;
 
     case CFG_END_IP:
       _endIp = InputNumberAction::popup("End IP", _startIp, 254, _endIp);
-      _showInput();
+      _showInput(index);
       break;
 
-    case CFG_PORTS:
-      _portMode = (PortMode)((_portMode + 1) % 3);
-      _showInput();
+    case CFG_PORTS: {
+      static const InputSelectAction::Option options[] = {
+        {"Common", "common"},
+        {"Custom", "custom"},
+        {"All",    "all"},
+      };
+      const char* current = _portMode == PORTS_COMMON ? "common" :
+                            _portMode == PORTS_CUSTOM ? "custom" : "all";
+      const char* choice = InputSelectAction::popup("Ports", options, 3, current);
+      if (choice) {
+        if (strcmp(choice, "custom") == 0) _portMode = PORTS_CUSTOM;
+        else if (strcmp(choice, "all") == 0) _portMode = PORTS_ALL;
+        else _portMode = PORTS_COMMON;
+      }
+      _showInput(index);
       break;
-
-    case CFG_START_PORT:
-      _startPort = InputNumberAction::popup("Start Port", 1, _endPort, _startPort);
-      _showInput();
-      break;
-
-    case CFG_END_PORT:
-      _endPort = InputNumberAction::popup("End Port", _startPort, 65535, _endPort);
-      _showInput();
-      break;
+    }
 
     case CFG_CUSTOM_PORTS: {
       String ports = InputNumberAction::popupList("Custom Ports", _customPorts.c_str());
       if (!InputNumberAction::wasCancelled()) _customPorts = ports;
-      _showInput();
+      _showInput(index);
       break;
     }
 
-    case CFG_SERVICE_SCAN:
-      _serviceScan = !_serviceScan;
-      _showInput();
-      break;
 
     case CFG_START_SCAN:
       _scan();
@@ -87,7 +87,7 @@ void PortScannerScreen::onItemSelected(uint8_t index) {
 
 // ── private ──────────────────────────────────────────────────────────────────
 
-void PortScannerScreen::_showInput() {
+void PortScannerScreen::_showInput(uint8_t selectedIndex) {
   _state = STATE_INPUT;
   _configCount = 0;
 
@@ -109,23 +109,17 @@ void PortScannerScreen::_showInput() {
     add("End IP",   _endIpSub.c_str(),   CFG_END_IP);
   }
 
-  const char* portMode = _portMode == PORTS_COMMON ? "Common" :
-                         _portMode == PORTS_RANGE  ? "Range"  : "Custom";
-  add("Ports", portMode, CFG_PORTS);
+  const char* portModeLabel = _portMode == PORTS_COMMON ? "Common" :
+                              _portMode == PORTS_CUSTOM ? "Custom" : "All";
+  add("Ports", portModeLabel, CFG_PORTS);
 
-  if (_portMode == PORTS_RANGE) {
-    _startPortSub = String(_startPort);
-    _endPortSub   = String(_endPort);
-    add("Start Port", _startPortSub.c_str(), CFG_START_PORT);
-    add("End Port",   _endPortSub.c_str(),   CFG_END_PORT);
-  } else if (_portMode == PORTS_CUSTOM) {
+  if (_portMode == PORTS_CUSTOM) {
     _customPortsSub = _customPorts.length() > 0 ? _customPorts : "-";
     add("Custom Ports", _customPortsSub.c_str(), CFG_CUSTOM_PORTS);
   }
 
-  add("Service Scan", _serviceScan ? "On" : "Off", CFG_SERVICE_SCAN);
   add("Start Scan", nullptr, CFG_START_SCAN);
-  setItems(_configItems, _configCount);
+  setItems(_configItems, _configCount, selectedIndex);
 }
 
 void PortScannerScreen::_scan() {
@@ -213,16 +207,16 @@ bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
   uint8_t found = 0;
 
   if (_portMode == PORTS_COMMON) {
-    found = PortScanUtil::scan(ip, &_results[count], remaining, "Port scanning...", _serviceScan);
-  } else if (_portMode == PORTS_RANGE) {
-    found = PortScanUtil::scanRange(ip, (uint16_t)_startPort, (uint16_t)_endPort,
-                                    &_results[count], remaining, "Port scanning...", _serviceScan);
+    found = PortScanUtil::scan(ip, &_results[count], remaining, "Port scanning...", false);
+  } else if (_portMode == PORTS_ALL) {
+    found = PortScanUtil::scanRange(ip, 1, 65535,
+                                    &_results[count], remaining, "Port scanning...", false);
   } else {
     uint16_t ports[PortScanUtil::MAX_CUSTOM_PORTS];
     uint8_t portCount = 0;
     if (!_parseCustomPorts(ports, portCount)) return false;
     found = PortScanUtil::scanPorts(ip, ports, portCount,
-                                    &_results[count], remaining, "Port scanning...", _serviceScan);
+                                    &_results[count], remaining, "Port scanning...", false);
   }
 
   count += found;

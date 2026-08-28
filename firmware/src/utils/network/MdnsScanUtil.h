@@ -14,7 +14,7 @@ public:
     char txt[128];
   };
 
-  static constexpr uint8_t MAX_RESULTS = 32;
+  static constexpr uint8_t MAX_RESULTS = 16;
 
   // Queries a DNS-SD service type (for example "_ipp._tcp.local") over mDNS.
   // Parses PTR/SRV/TXT/A records from responses and returns discovered services.

@@ -186,15 +186,17 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
     bool seenSrv;
   };
 
-  static constexpr uint8_t MAX_PENDING = 40;
-  Pending pending[MAX_PENDING] = {};
+  static constexpr uint8_t MAX_PENDING = 16;
+  static Pending pending[MAX_PENDING];
+  memset(pending, 0, sizeof(pending));
   uint8_t pendingCount = 0;
 
   struct HostAddress {
     char host[96];
     char ip[16];
   };
-  HostAddress addresses[24] = {};
+  static HostAddress addresses[16];
+  memset(addresses, 0, sizeof(addresses));
   uint8_t addressCount = 0;
 
   auto findPending = [&](const char* instance, bool create) -> Pending* {
@@ -217,7 +219,7 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
         return;
       }
     }
-    if (addressCount >= 24) return;
+    if (addressCount >= 16) return;
     strncpy(addresses[addressCount].host, host, sizeof(addresses[addressCount].host) - 1);
     strncpy(addresses[addressCount].ip, ip, sizeof(addresses[addressCount].ip) - 1);
     addressCount++;
@@ -263,7 +265,7 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
       continue;
     }
 
-    uint8_t packet[1200];
+    static uint8_t packet[1200];
     int len = udp.read(packet, sizeof(packet));
     if (len < 12) continue;
 

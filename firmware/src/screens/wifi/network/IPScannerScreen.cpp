@@ -4,7 +4,6 @@
 #include "core/AchievementManager.h"
 #include "screens/wifi/network/NetworkMenuScreen.h"
 #include "ui/actions/InputNumberAction.h"
-#include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 
@@ -39,45 +38,26 @@ void IPScannerScreen::onBack() {
 
 void IPScannerScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_CONFIGURATION) {
-    uint8_t row = 0;
-
-    if (index == row++) {
-      _mode = (_mode == MODE_TARGET) ? MODE_RANGE : MODE_TARGET;
-      _showConfiguration();
-      return;
-    }
-
-    if (_mode == MODE_TARGET) {
-      if (index == row++) {
-        String ip = InputTextAction::popup("Target IP", _targetIp.c_str(), InputTextAction::INPUT_IP_ADDRESS);
-        if (!InputTextAction::wasCancelled()) _targetIp = ip;
-        _showConfiguration();
-        return;
-      }
-    } else {
-      if (index == row++) {
+    switch (index) {
+      case 0: {
         int value = InputNumberAction::popup("Start IP", 1, _endIp, _startIp);
         if (!InputNumberAction::wasCancelled()) _startIp = value;
-        _showConfiguration();
-        return;
+        _showConfiguration(index);
+        break;
       }
-      if (index == row++) {
+      case 1: {
         int value = InputNumberAction::popup("End IP", _startIp, 254, _endIp);
         if (!InputNumberAction::wasCancelled()) _endIp = value;
-        _showConfiguration();
-        return;
+        _showConfiguration(index);
+        break;
       }
-    }
-
-    if (index == row++) {
-      _resolveName = !_resolveName;
-      _showConfiguration();
-      return;
-    }
-
-    if (index == row) {
-      _scanIP();
-      return;
+      case 2:
+        _resolveName = !_resolveName;
+        _showConfiguration(index);
+        break;
+      case 3:
+        _scanIP();
+        break;
     }
   } else if (_state == STATE_RESULT_IP) {
     if (_foundCount == 0 || _foundIPs[index].ip[0] == '\0') {
@@ -90,52 +70,21 @@ void IPScannerScreen::onItemSelected(uint8_t index) {
 
 // ── private ────────────────────────────────────────────
 
-void IPScannerScreen::_showConfiguration() {
+void IPScannerScreen::_showConfiguration(uint8_t selectedIndex) {
   _state = STATE_CONFIGURATION;
-  uint8_t row = 0;
-
-  _configItems[row++] = {"Mode", _mode == MODE_TARGET ? "Target" : "Range"};
-
-  if (_mode == MODE_TARGET) {
-    _targetIpSub = _targetIp.length() > 0 ? _targetIp : "-";
-    _configItems[row++] = {"Target IP", _targetIpSub.c_str()};
-  } else {
-    _startIpSub = String(_startIp);
-    _endIpSub   = String(_endIp);
-    _configItems[row++] = {"Start IP", _startIpSub.c_str()};
-    _configItems[row++] = {"End IP",   _endIpSub.c_str()};
-  }
-
-  _configItems[row++] = {"Resolve Name", _resolveName ? "On" : "Off"};
-  _configItems[row++] = {"Start Scan"};
-  setItems(_configItems, row);
-}
-
-bool IPScannerScreen::_validTargetIp() const {
-  if (_targetIp.length() == 0) return false;
-
-  int a, b, c, d;
-  char tail;
-  return sscanf(_targetIp.c_str(), "%d.%d.%d.%d%c", &a, &b, &c, &d, &tail) == 4 &&
-         a >= 0 && a <= 255 && b >= 0 && b <= 255 &&
-         c >= 0 && c <= 255 && d >= 0 && d <= 255;
+  _startIpSub = String(_startIp);
+  _endIpSub   = String(_endIp);
+  _configItems[0] = {"Start IP", _startIpSub.c_str()};
+  _configItems[1] = {"End IP", _endIpSub.c_str()};
+  _configItems[2] = {"Resolve Name", _resolveName ? "On" : "Off"};
+  _configItems[3] = {"Start Scan"};
+  setItems(_configItems, 4, selectedIndex);
 }
 
 void IPScannerScreen::_scanIP() {
   if (WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
     ShowStatusAction::show("WiFi not connected");
     return;
-  }
-
-  if (_mode == MODE_TARGET) {
-    if (_targetIp.length() == 0) {
-      ShowStatusAction::show("Enter target IP first");
-      return;
-    }
-    if (!_validTargetIp()) {
-      ShowStatusAction::show("Invalid IP address");
-      return;
-    }
   }
 
   _state = STATE_SCANNING_IP;
@@ -148,19 +97,11 @@ void IPScannerScreen::_scanIP() {
 
   ProgressView::init();
 
-  if (_mode == MODE_TARGET) {
-    ProgressView::progress("IP scanning...", 0);
-    if (IpScanUtil::scanTarget(_targetIp.c_str(), _foundIPs[0], _resolveName)) {
-      _foundCount = 1;
-    }
-    ProgressView::progress("IP scanning...", 100);
-  } else {
-    _foundCount = IpScanUtil::scan(
-      (uint8_t)_startIp, (uint8_t)_endIp,
-      _foundIPs, MAX_FOUND, _resolveName,
-      [](uint8_t pct) { ProgressView::progress("IP scanning...", pct); }
-    );
-  }
+  _foundCount = IpScanUtil::scan(
+    (uint8_t)_startIp, (uint8_t)_endIp,
+    _foundIPs, MAX_FOUND, _resolveName,
+    [](uint8_t pct) { ProgressView::progress("IP scanning...", pct); }
+  );
 
   ProgressView::finish();
 

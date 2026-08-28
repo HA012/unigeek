@@ -15,11 +15,11 @@ public:
 
 private:
   ListItem _items[6] = {
-    {"IP Scanner"},     // live hosts on the subnet
-    {"Port Scanner"},   // open ports on one host
-    {"SSDP Scanner"},   // UPnP/SSDP devices and services
-    {"mDNS Scanner"},   // Bonjour / DNS-SD service discovery
-    {"Printer Scanner"},// printers via SSDP + IPP/mDNS
+    {"IP Hosts"},     // live hosts on the subnet
+    {"Port Scan"},   // open ports on one host
+    {"SSDP"},   // UPnP/SSDP devices and services
+    {"mDNS"},   // Bonjour / DNS-SD service discovery
+    {"Printers"},// printers via SSDP + IPP/mDNS
     {"CCTV Sniffer"},   // network cameras: brand, creds, live view
   };
 };

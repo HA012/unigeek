@@ -5,7 +5,7 @@
 class SsdpScannerScreen : public ListScreen
 {
 public:
-  const char* title() override { return "SSDP Scanner"; }
+  const char* title() override { return "SSDP"; }
   bool inhibitPowerOff() override { return _state == STATE_SCANNING; }
 
   void onInit() override;
@@ -14,20 +14,16 @@ public:
 
 private:
   enum State {
-    STATE_IDLE,
     STATE_SCANNING,
     STATE_RESULTS,
     STATE_DETAILS,
   };
 
-  State _state = STATE_IDLE;
+  State _state = STATE_SCANNING;
 
   SsdpScanUtil::Device _devices[SsdpScanUtil::MAX_DEVICES];
   uint8_t _deviceCount = 0;
 
-  ListItem _idleItems[1] = {
-    {"Start Scan"},
-  };
 
   ListItem _resultItems[SsdpScanUtil::MAX_DEVICES];
   String   _resultSubs[SsdpScanUtil::MAX_DEVICES];
@@ -36,7 +32,6 @@ private:
   ListItem _detailItems[DETAIL_ROWS];
   String   _detailSubs[DETAIL_ROWS];
 
-  void _showIdle();
   void _scan();
   void _showResults();
   void _showDetails(uint8_t index);
