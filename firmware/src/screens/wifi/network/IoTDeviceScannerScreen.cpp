@@ -350,7 +350,8 @@ void IoTDeviceScannerScreen::_probeTarget(const char* ip)
           ip,
           probe.port,
           probe.https,
-          web
+          web,
+          _scanMode == MODE_TARGETS
         )) {
       IoTScanUtil::Device evidence;
 
@@ -366,7 +367,8 @@ void IoTDeviceScannerScreen::_probeTarget(const char* ip)
     if (IoTScanUtil::addPortEvidence(
           ip,
           port,
-          evidence
+          evidence,
+          _scanMode == MODE_TARGETS
         )) {
       _mergeEvidence(evidence);
     }

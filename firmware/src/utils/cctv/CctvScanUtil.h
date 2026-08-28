@@ -33,13 +33,16 @@ public:
   static constexpr uint8_t kPortCount = sizeof(kPorts) / sizeof(kPorts[0]);
 
   // Scan camera ports on a single IP. Returns number of cameras found.
-  static uint8_t scanPorts(const char* ip, Camera results[], uint8_t maxResults);
+  static uint8_t scanPorts(const char* ip, Camera results[], uint8_t maxResults,
+                           bool patient = false);
 
   // Try to detect brand from HTTP response on ip:port
-  static bool detectBrand(const char* ip, uint16_t port, char* brandOut, size_t brandLen);
+  static bool detectBrand(const char* ip, uint16_t port, char* brandOut,
+                          size_t brandLen, bool patient = false);
 
   // Try RTSP OPTIONS to check if RTSP service is present
-  static bool probeRtsp(const char* ip, uint16_t port, char* brandOut, size_t brandLen);
+  static bool probeRtsp(const char* ip, uint16_t port, char* brandOut,
+                        size_t brandLen, bool patient = false);
 
   // Default credentials list
   struct Credential { const char* username; const char* password; };

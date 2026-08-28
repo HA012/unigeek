@@ -7,7 +7,7 @@ class IPScannerScreen : public ListScreen {
 public:
   IPScannerScreen();
 
-  const char* title()         override { return "IP Hosts"; }
+  const char* title()         override { return "IP Scan"; }
   bool inhibitPowerOff()      override { return _state == STATE_SCANNING_IP || _state == STATE_SCANNING_PORT; }
 
   void onInit() override;

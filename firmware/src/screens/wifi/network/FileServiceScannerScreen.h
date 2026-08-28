@@ -5,7 +5,7 @@
 
 class FileServiceScannerScreen : public ListScreen {
 public:
-  const char* title() override { return "File Services"; }
+  const char* title() override { return "File Servers"; }
   bool inhibitPowerOff() override { return _state == STATE_SCANNING; }
 
   void onInit() override;

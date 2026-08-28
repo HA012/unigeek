@@ -42,7 +42,11 @@ bool RemoteShellScanUtil::_readBanner(
   return pos > 0;
 }
 
-bool RemoteShellScanUtil::probeSsh(const char* ip, Result& out)
+bool RemoteShellScanUtil::probeSsh(
+  const char* ip,
+  Result& out,
+  bool patient
+)
 {
   if (!ip || !ip[0]) return false;
 
@@ -52,15 +56,15 @@ bool RemoteShellScanUtil::probeSsh(const char* ip, Result& out)
   out.protocol = PROTO_SSH;
 
   WiFiClient client;
-  client.setTimeout(800);
+  client.setTimeout(patient ? 1200 : 650);
 
-  if (!client.connect(ip, 22, 700)) return false;
+  if (!client.connect(ip, 22, patient ? 1000 : 450)) return false;
 
   bool gotBanner = _readBanner(
     client,
     out.banner,
     sizeof(out.banner),
-    900
+    patient ? 1350 : 700
   );
 
   client.stop();
@@ -70,7 +74,11 @@ bool RemoteShellScanUtil::probeSsh(const char* ip, Result& out)
   return strncmp(out.banner, "SSH-", 4) == 0;
 }
 
-bool RemoteShellScanUtil::probeTelnet(const char* ip, Result& out)
+bool RemoteShellScanUtil::probeTelnet(
+  const char* ip,
+  Result& out,
+  bool patient
+)
 {
   if (!ip || !ip[0]) return false;
 
@@ -80,11 +88,11 @@ bool RemoteShellScanUtil::probeTelnet(const char* ip, Result& out)
   out.protocol = PROTO_TELNET;
 
   WiFiClient client;
-  client.setTimeout(800);
+  client.setTimeout(patient ? 1200 : 650);
 
-  if (!client.connect(ip, 23, 700)) return false;
+  if (!client.connect(ip, 23, patient ? 1000 : 450)) return false;
 
-  unsigned long deadline = millis() + 900;
+  unsigned long deadline = millis() + (patient ? 1350 : 700);
   size_t pos = 0;
   bool sawTelnetNegotiation = false;
 
@@ -126,7 +134,8 @@ bool RemoteShellScanUtil::_probeWinRmClient(
   const char* ip,
   uint16_t port,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   client.printf(
@@ -138,7 +147,7 @@ bool RemoteShellScanUtil::_probeWinRmClient(
     port
   );
 
-  unsigned long deadline = millis() + 1200;
+  unsigned long deadline = millis() + (patient ? 1800 : 900);
   while (!client.available() && client.connected() && millis() < deadline) {
     delay(5);
   }
@@ -198,7 +207,8 @@ bool RemoteShellScanUtil::_probeWinRmClient(
 bool RemoteShellScanUtil::probeWinRm(
   const char* ip,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   if (!ip || !ip[0]) return false;
@@ -213,19 +223,19 @@ bool RemoteShellScanUtil::probeWinRm(
   if (https) {
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(1000);
+    client.setTimeout(patient ? 1500 : 800);
 
     if (!client.connect(ip, port)) return false;
-    bool ok = _probeWinRmClient(client, ip, port, https, out);
+    bool ok = _probeWinRmClient(client, ip, port, https, out, patient);
     client.stop();
     return ok;
   }
 
   WiFiClient client;
-  client.setTimeout(1000);
+  client.setTimeout(patient ? 1500 : 800);
 
-  if (!client.connect(ip, port, 700)) return false;
-  bool ok = _probeWinRmClient(client, ip, port, https, out);
+  if (!client.connect(ip, port, patient ? 1000 : 450)) return false;
+  bool ok = _probeWinRmClient(client, ip, port, https, out, patient);
   client.stop();
   return ok;
 }

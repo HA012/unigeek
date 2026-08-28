@@ -47,7 +47,8 @@ public:
   static bool addPortEvidence(
     const char* ip,
     uint16_t port,
-    Device& out
+    Device& out,
+    bool patient = false
   );
 
   static void merge(Device& dst, const Device& src);

@@ -18,7 +18,8 @@ public:
     const char* ip,
     uint16_t port,
     bool https,
-    Result& out
+    Result& out,
+    bool patient = false
   );
 
 private:
@@ -27,6 +28,7 @@ private:
     const char* ip,
     uint16_t port,
     bool https,
-    Result& out
+    Result& out,
+    bool patient
   );
 };

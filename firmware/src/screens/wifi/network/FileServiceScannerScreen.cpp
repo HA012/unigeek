@@ -294,20 +294,21 @@ void FileServiceScannerScreen::_append(
 void FileServiceScannerScreen::_scanTarget(const char* ip)
 {
   FileServiceScanUtil::Result result;
+  const bool patient = _scanMode == MODE_TARGETS;
 
-  if (FileServiceScanUtil::probeFtp(ip, result)) {
+  if (FileServiceScanUtil::probeFtp(ip, result, patient)) {
     _append(result);
   }
 
-  if (FileServiceScanUtil::probeSftpCandidate(ip, result)) {
+  if (FileServiceScanUtil::probeSftpCandidate(ip, result, patient)) {
     _append(result);
   }
 
-  if (FileServiceScanUtil::probeSmb(ip, 445, result)) {
+  if (FileServiceScanUtil::probeSmb(ip, 445, result, patient)) {
     _append(result);
   }
 
-  if (FileServiceScanUtil::probeSmb(ip, 139, result)) {
+  if (FileServiceScanUtil::probeSmb(ip, 139, result, patient)) {
     _append(result);
   }
 
@@ -325,7 +326,8 @@ void FileServiceScannerScreen::_scanTarget(const char* ip)
           ip,
           port,
           false,
-          result
+          result,
+          patient
         )) {
       _append(result);
     }
@@ -345,7 +347,8 @@ void FileServiceScannerScreen::_scanTarget(const char* ip)
           ip,
           port,
           true,
-          result
+          result,
+          patient
         )) {
       _append(result);
     }

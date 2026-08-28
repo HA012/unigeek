@@ -22,14 +22,24 @@ public:
 
   static constexpr uint8_t MAX_RESULTS = 40;
 
-  static bool probeFtp(const char* ip, Result& out);
-  static bool probeSftpCandidate(const char* ip, Result& out);
-  static bool probeSmb(const char* ip, uint16_t port, Result& out);
+  static bool probeFtp(const char* ip, Result& out, bool patient = false);
+  static bool probeSftpCandidate(
+    const char* ip,
+    Result& out,
+    bool patient = false
+  );
+  static bool probeSmb(
+    const char* ip,
+    uint16_t port,
+    Result& out,
+    bool patient = false
+  );
   static bool probeWebDav(
     const char* ip,
     uint16_t port,
     bool https,
-    Result& out
+    Result& out,
+    bool patient = false
   );
 
 private:
@@ -44,16 +54,18 @@ private:
     Client& client,
     const char* ip,
     uint16_t port,
-    Result& out
+    Result& out,
+    bool patient
   );
 
-  static bool _startNetbiosSession(Client& client);
+  static bool _startNetbiosSession(Client& client, bool patient);
 
   static bool _probeWebDavClient(
     Client& client,
     const char* ip,
     uint16_t port,
     bool https,
-    Result& out
+    Result& out,
+    bool patient
   );
 };

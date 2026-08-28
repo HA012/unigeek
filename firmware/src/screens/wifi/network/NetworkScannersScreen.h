@@ -15,13 +15,13 @@ public:
 
 private:
   ListItem _items[10] = {
-    {"IP Hosts"},
+    {"IP Scan"},
     {"Port Scan"},
     {"mDNS"},
     {"SSDP"},
     {"Web Servers"},
     {"Remote Shells"},
-    {"File Services"},
+    {"File Servers"},
     {"IoT Devices"},
     {"Printers"},
     {"CCTV"},

@@ -45,13 +45,14 @@ static const char* matchBrand(const String& text) {
 
 // ── Port scanning ─────────────────────────────────────────────────────────────
 
-uint8_t CctvScanUtil::scanPorts(const char* ip, Camera results[], uint8_t maxResults) {
+uint8_t CctvScanUtil::scanPorts(const char* ip, Camera results[],
+                                uint8_t maxResults, bool patient) {
   uint8_t count = 0;
 
   for (uint8_t i = 0; i < kPortCount && count < maxResults; i++) {
     yield();
     WiFiClient client;
-    if (client.connect(ip, kPorts[i].port, 300)) {
+    if (client.connect(ip, kPorts[i].port, patient ? 450 : 250)) {
       client.stop();
 
       strncpy(results[count].ip, ip, sizeof(results[0].ip) - 1);
@@ -68,13 +69,15 @@ uint8_t CctvScanUtil::scanPorts(const char* ip, Camera results[], uint8_t maxRes
 
 // ── HTTP brand detection ──────────────────────────────────────────────────────
 
-bool CctvScanUtil::detectBrand(const char* ip, uint16_t port, char* brandOut, size_t brandLen) {
+bool CctvScanUtil::detectBrand(const char* ip, uint16_t port,
+                               char* brandOut, size_t brandLen,
+                               bool patient) {
   HTTPClient http;
   WiFiClient client;
 
   String url = "http://" + String(ip) + ":" + String(port) + "/";
   http.begin(client, url);
-  http.setTimeout(3000);
+  http.setTimeout(patient ? 4500 : 2000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
   static const char* hdrKeys[] = {"Server"};
@@ -119,9 +122,11 @@ bool CctvScanUtil::detectBrand(const char* ip, uint16_t port, char* brandOut, si
 
 // ── RTSP probe ────────────────────────────────────────────────────────────────
 
-bool CctvScanUtil::probeRtsp(const char* ip, uint16_t port, char* brandOut, size_t brandLen) {
+bool CctvScanUtil::probeRtsp(const char* ip, uint16_t port,
+                             char* brandOut, size_t brandLen,
+                             bool patient) {
   WiFiClient client;
-  if (!client.connect(ip, port, 1000)) return false;
+  if (!client.connect(ip, port, patient ? 1500 : 700)) return false;
 
   client.printf(
     "OPTIONS * RTSP/1.0\r\n"
@@ -132,7 +137,7 @@ bool CctvScanUtil::probeRtsp(const char* ip, uint16_t port, char* brandOut, size
 
   unsigned long start = millis();
   String response;
-  while (client.connected() && millis() - start < 1500) {
+  while (client.connected() && millis() - start < (patient ? 2250 : 1000)) {
     while (client.available()) {
       response += (char)client.read();
     }

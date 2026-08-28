@@ -333,7 +333,8 @@ void CctvSnifferScreen::_scanRange()
 void CctvSnifferScreen::_scanHost(const char* ip)
 {
   CctvScanUtil::Camera tempCams[8];
-  uint8_t found = CctvScanUtil::scanPorts(ip, tempCams, 8);
+  const bool patient = _scanMode == MODE_TARGETS;
+  uint8_t found = CctvScanUtil::scanPorts(ip, tempCams, 8, patient);
 
   if (found == 0) return;
 
@@ -345,14 +346,16 @@ void CctvSnifferScreen::_scanHost(const char* ip)
         ip,
         tempCams[i].port,
         tempCams[i].brand,
-        sizeof(tempCams[i].brand)
+        sizeof(tempCams[i].brand),
+        patient
       );
     } else if (strcmp(tempCams[i].service, "RTMP") != 0) {
       detected = CctvScanUtil::detectBrand(
         ip,
         tempCams[i].port,
         tempCams[i].brand,
-        sizeof(tempCams[i].brand)
+        sizeof(tempCams[i].brand),
+        patient
       );
     }
 

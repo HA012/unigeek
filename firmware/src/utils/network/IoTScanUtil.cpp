@@ -432,10 +432,11 @@ bool IoTScanUtil::probeTcpPort(
 bool IoTScanUtil::addPortEvidence(
   const char* ip,
   uint16_t port,
-  Device& out
+  Device& out,
+  bool patient
 )
 {
-  if (!probeTcpPort(ip, port)) return false;
+  if (!probeTcpPort(ip, port, patient ? 750 : 350)) return false;
 
   switch (port) {
     case 1883:

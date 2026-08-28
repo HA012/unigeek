@@ -102,7 +102,11 @@ bool FileServiceScanUtil::_readLine(
   return pos > 0;
 }
 
-bool FileServiceScanUtil::probeFtp(const char* ip, Result& out)
+bool FileServiceScanUtil::probeFtp(
+  const char* ip,
+  Result& out,
+  bool patient
+)
 {
   if (!ip || !ip[0]) return false;
 
@@ -112,12 +116,17 @@ bool FileServiceScanUtil::probeFtp(const char* ip, Result& out)
   out.service = SERVICE_FTP;
 
   WiFiClient client;
-  client.setTimeout(900);
+  client.setTimeout(patient ? 1350 : 700);
 
-  if (!client.connect(ip, 21, 700)) return false;
+  if (!client.connect(ip, 21, patient ? 1000 : 450)) return false;
 
   char banner[96];
-  bool got = _readLine(client, banner, sizeof(banner), 1000);
+  bool got = _readLine(
+    client,
+    banner,
+    sizeof(banner),
+    patient ? 1500 : 750
+  );
   client.stop();
 
   if (!got || strncmp(banner, "220", 3) != 0) return false;
@@ -128,11 +137,12 @@ bool FileServiceScanUtil::probeFtp(const char* ip, Result& out)
 
 bool FileServiceScanUtil::probeSftpCandidate(
   const char* ip,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   RemoteShellScanUtil::Result ssh;
-  if (!RemoteShellScanUtil::probeSsh(ip, ssh)) return false;
+  if (!RemoteShellScanUtil::probeSsh(ip, ssh, patient)) return false;
 
   memset(&out, 0, sizeof(out));
   strlcpy(out.ip, ip, sizeof(out.ip));
@@ -142,7 +152,10 @@ bool FileServiceScanUtil::probeSftpCandidate(
   return true;
 }
 
-bool FileServiceScanUtil::_startNetbiosSession(Client& client)
+bool FileServiceScanUtil::_startNetbiosSession(
+  Client& client,
+  bool patient
+)
 {
   uint8_t packet[72];
   memset(packet, 0, sizeof(packet));
@@ -159,7 +172,7 @@ bool FileServiceScanUtil::_startNetbiosSession(Client& client)
     return false;
   }
 
-  unsigned long deadline = millis() + 900;
+  unsigned long deadline = millis() + (patient ? 1350 : 700);
   while (!client.available() && client.connected() && millis() < deadline) {
     delay(5);
   }
@@ -174,7 +187,8 @@ bool FileServiceScanUtil::_probeSmbDirect(
   Client& client,
   const char* ip,
   uint16_t port,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   if (client.write(
@@ -184,7 +198,7 @@ bool FileServiceScanUtil::_probeSmbDirect(
     return false;
   }
 
-  unsigned long deadline = millis() + 1100;
+  unsigned long deadline = millis() + (patient ? 1650 : 800);
   while (client.available() < 8 &&
          client.connected() &&
          millis() < deadline) {
@@ -220,7 +234,8 @@ bool FileServiceScanUtil::_probeSmbDirect(
 bool FileServiceScanUtil::probeSmb(
   const char* ip,
   uint16_t port,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   if (!ip || !ip[0] || (port != 445 && port != 139)) {
@@ -230,16 +245,16 @@ bool FileServiceScanUtil::probeSmb(
   memset(&out, 0, sizeof(out));
 
   WiFiClient client;
-  client.setTimeout(1100);
+  client.setTimeout(patient ? 1650 : 850);
 
-  if (!client.connect(ip, port, 800)) return false;
+  if (!client.connect(ip, port, patient ? 1200 : 500)) return false;
 
-  if (port == 139 && !_startNetbiosSession(client)) {
+  if (port == 139 && !_startNetbiosSession(client, patient)) {
     client.stop();
     return false;
   }
 
-  bool ok = _probeSmbDirect(client, ip, port, out);
+  bool ok = _probeSmbDirect(client, ip, port, out, patient);
   client.stop();
   return ok;
 }
@@ -249,7 +264,8 @@ bool FileServiceScanUtil::_probeWebDavClient(
   const char* ip,
   uint16_t port,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   client.printf(
@@ -262,7 +278,12 @@ bool FileServiceScanUtil::_probeWebDavClient(
   );
 
   char firstLine[96];
-  if (!_readLine(client, firstLine, sizeof(firstLine), 1200)) {
+  if (!_readLine(
+    client,
+    firstLine,
+    sizeof(firstLine),
+    patient ? 1800 : 900
+  )) {
     return false;
   }
 
@@ -274,12 +295,12 @@ bool FileServiceScanUtil::_probeWebDavClient(
   bool dav = false;
   char bestInfo[96] = {};
 
-  unsigned long deadline = millis() + 1200;
+  unsigned long deadline = millis() + (patient ? 1800 : 900);
 
   while ((client.connected() || client.available()) &&
          millis() < deadline) {
     char line[160];
-    if (!_readLine(client, line, sizeof(line), 250)) {
+    if (!_readLine(client, line, sizeof(line), patient ? 375 : 250)) {
       if (!client.connected()) break;
       continue;
     }
@@ -329,7 +350,8 @@ bool FileServiceScanUtil::probeWebDav(
   const char* ip,
   uint16_t port,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   if (!ip || !ip[0]) return false;
@@ -340,7 +362,7 @@ bool FileServiceScanUtil::probeWebDav(
   if (https) {
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(1100);
+    client.setTimeout(patient ? 1650 : 850);
 
     if (!client.connect(ip, port)) return false;
     bool ok = _probeWebDavClient(
@@ -348,22 +370,24 @@ bool FileServiceScanUtil::probeWebDav(
       ip,
       port,
       true,
-      out
+      out,
+      patient
     );
     client.stop();
     return ok;
   }
 
   WiFiClient client;
-  client.setTimeout(1100);
+  client.setTimeout(patient ? 1650 : 850);
 
-  if (!client.connect(ip, port, 800)) return false;
+  if (!client.connect(ip, port, patient ? 1200 : 500)) return false;
   bool ok = _probeWebDavClient(
     client,
     ip,
     port,
     false,
-    out
+    out,
+    patient
   );
   client.stop();
   return ok;

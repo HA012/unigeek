@@ -39,9 +39,8 @@ private:
   static constexpr uint8_t MAX_TARGETS = 4;
   static constexpr uint8_t MAX_CONFIG_ITEMS = 7;
   static constexpr uint8_t MAX_FOUND_HOSTS = 64;
-  static constexpr uint8_t DETAIL_INFO_ROWS = 5;
-  static constexpr uint8_t DETAIL_CONNECT_ROW = DETAIL_INFO_ROWS;
-  static constexpr uint8_t DETAIL_ROWS = DETAIL_INFO_ROWS + 1;
+  static constexpr uint8_t DETAIL_CONNECT_ROW = 4;
+  static constexpr uint8_t DETAIL_ROWS = 5;
 
   State _state = STATE_CONFIG;
   ScanMode _scanMode = MODE_RANGE;

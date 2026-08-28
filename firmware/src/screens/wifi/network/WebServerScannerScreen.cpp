@@ -180,6 +180,7 @@ void WebServerScannerScreen::_scan()
 
   render();
   ProgressView::init();
+  ProgressView::progress("Scanning...", 0);
 
   if (_scanMode == MODE_TARGETS) {
     uint8_t targetCount = 0;
@@ -252,7 +253,8 @@ void WebServerScannerScreen::_scanTarget(const char* ip)
           ip,
           WEB_PORTS[i].port,
           WEB_PORTS[i].https,
-          result
+          result,
+          _scanMode == MODE_TARGETS
         )) {
       _results[_resultCount++] = result;
     }

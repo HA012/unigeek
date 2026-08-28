@@ -7,7 +7,8 @@ bool WebScanUtil::probe(
   const char* ip,
   uint16_t port,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   if (!ip || !ip[0]) return false;
@@ -20,19 +21,19 @@ bool WebScanUtil::probe(
   if (https) {
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(1000);
+    client.setTimeout(patient ? 1500 : 800);
 
     if (!client.connect(ip, port)) return false;
-    bool ok = _readResponse(client, ip, port, https, out);
+    bool ok = _readResponse(client, ip, port, https, out, patient);
     client.stop();
     return ok;
   }
 
   WiFiClient client;
-  client.setTimeout(1000);
+  client.setTimeout(patient ? 1500 : 800);
 
-  if (!client.connect(ip, port, 700)) return false;
-  bool ok = _readResponse(client, ip, port, https, out);
+  if (!client.connect(ip, port, patient ? 1000 : 500)) return false;
+  bool ok = _readResponse(client, ip, port, https, out, patient);
   client.stop();
   return ok;
 }
@@ -42,7 +43,8 @@ bool WebScanUtil::_readResponse(
   const char* ip,
   uint16_t port,
   bool https,
-  Result& out
+  Result& out,
+  bool patient
 )
 {
   client.printf(
@@ -53,7 +55,7 @@ bool WebScanUtil::_readResponse(
     ip
   );
 
-  unsigned long deadline = millis() + 1200;
+  unsigned long deadline = millis() + (patient ? 1800 : 900);
   while (!client.available() && client.connected() && millis() < deadline) {
     delay(5);
   }
@@ -90,7 +92,7 @@ bool WebScanUtil::_readResponse(
   String body;
   body.reserve(2048);
 
-  deadline = millis() + 900;
+  deadline = millis() + (patient ? 1350 : 700);
   while (body.length() < 2048 && millis() < deadline) {
     while (client.available() && body.length() < 2048) {
       body += (char)client.read();
@@ -118,7 +120,13 @@ bool WebScanUtil::_readResponse(
         title.replace("  ", " ");
       }
 
-      strlcpy(out.title, title.c_str(), sizeof(out.title));
+      String normalizedTitle = title;
+      normalizedTitle.toLowerCase();
+      if (normalizedTitle != "opening..." &&
+          normalizedTitle != "redirecting..." &&
+          normalizedTitle != "loading...") {
+        strlcpy(out.title, title.c_str(), sizeof(out.title));
+      }
     }
   }
 

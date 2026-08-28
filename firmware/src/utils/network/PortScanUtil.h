@@ -55,18 +55,18 @@ public:
 
   // Backward-compatible common-port scan.
   static uint8_t scan(const char* targetIp, Result results[], uint8_t maxResults,
-                      const char* msg = "Port scanning...", bool serviceScan = false) {
+                      const char* msg = "Port scanning...", bool serviceScan = false, bool patient = false) {
     uint8_t count = 0;
     const PortEntry* ports = commonPorts(count);
     uint16_t list[MAX_CUSTOM_PORTS];
     uint8_t n = count > MAX_CUSTOM_PORTS ? MAX_CUSTOM_PORTS : count;
     for (uint8_t i = 0; i < n; i++) list[i] = ports[i].port;
-    return scanPorts(targetIp, list, n, results, maxResults, msg, serviceScan);
+    return scanPorts(targetIp, list, n, results, maxResults, msg, serviceScan, patient);
   }
 
   static uint8_t scanRange(const char* targetIp, uint16_t startPort, uint16_t endPort,
                            Result results[], uint8_t maxResults,
-                           const char* msg = "Port scanning...", bool serviceScan = false) {
+                           const char* msg = "Port scanning...", bool serviceScan = false, bool patient = false) {
     if (startPort == 0 || endPort == 0 || startPort > endPort) return 0;
 
     uint8_t found = 0;
@@ -80,7 +80,7 @@ public:
         lastPct = pct;
       }
       yield();
-      if (_scanOne(targetIp, (uint16_t)port, results[found], serviceScan)) found++;
+      if (_scanOne(targetIp, (uint16_t)port, results[found], serviceScan, patient)) found++;
     }
 
     ProgressView::progress(msg, 100);
@@ -89,7 +89,7 @@ public:
 
   static uint8_t scanPorts(const char* targetIp, const uint16_t ports[], uint16_t portCount,
                            Result results[], uint8_t maxResults,
-                           const char* msg = "Port scanning...", bool serviceScan = false) {
+                           const char* msg = "Port scanning...", bool serviceScan = false, bool patient = false) {
     if (!targetIp || !ports || !results || portCount == 0 || maxResults == 0) return 0;
 
     uint8_t found = 0;
@@ -101,7 +101,7 @@ public:
         lastPct = pct;
       }
       yield();
-      if (_scanOne(targetIp, ports[i], results[found], serviceScan)) found++;
+      if (_scanOne(targetIp, ports[i], results[found], serviceScan, patient)) found++;
     }
 
     ProgressView::progress(msg, 100);
@@ -109,9 +109,11 @@ public:
   }
 
 private:
-  static bool _scanOne(const char* targetIp, uint16_t port, Result& out, bool serviceScan) {
+  static bool _scanOne(const char* targetIp, uint16_t port, Result& out,
+                       bool serviceScan, bool patient) {
     WiFiClient client;
-    if (!client.connect(targetIp, port, 300)) return false;
+    const uint32_t connectTimeout = patient ? 450 : 300;
+    if (!client.connect(targetIp, port, connectTimeout)) return false;
 
     snprintf(out.label, sizeof(out.label), "%s:%u", targetIp, port);
     const char* fallback = serviceForPort(port);

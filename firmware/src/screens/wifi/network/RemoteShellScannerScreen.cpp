@@ -239,24 +239,25 @@ void RemoteShellScannerScreen::_scanRange()
 void RemoteShellScannerScreen::_scanTarget(const char* ip)
 {
   RemoteShellScanUtil::Result result;
+  const bool patient = _scanMode == MODE_TARGETS;
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
-      RemoteShellScanUtil::probeSsh(ip, result)) {
+      RemoteShellScanUtil::probeSsh(ip, result, patient)) {
     _results[_resultCount++] = result;
   }
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
-      RemoteShellScanUtil::probeTelnet(ip, result)) {
+      RemoteShellScanUtil::probeTelnet(ip, result, patient)) {
     _results[_resultCount++] = result;
   }
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
-      RemoteShellScanUtil::probeWinRm(ip, false, result)) {
+      RemoteShellScanUtil::probeWinRm(ip, false, result, patient)) {
     _results[_resultCount++] = result;
   }
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
-      RemoteShellScanUtil::probeWinRm(ip, true, result)) {
+      RemoteShellScanUtil::probeWinRm(ip, true, result, patient)) {
     _results[_resultCount++] = result;
   }
 }
@@ -305,20 +306,26 @@ void RemoteShellScannerScreen::_showDetails(uint8_t index)
   _detailSubs[2] = _protocolName(result.protocol);
   _detailItems[2] = {"Protocol", _detailSubs[2].c_str()};
 
-  _detailSubs[3] = result.status > 0 ? String(result.status) : "-";
-  _detailItems[3] = {"Status", _detailSubs[3].c_str()};
+  uint8_t row = 3;
 
-  _detailSubs[4] = result.banner[0] ? result.banner : "-";
-  _detailItems[4] = {"Banner", _detailSubs[4].c_str()};
-
-  uint8_t detailCount = DETAIL_INFO_ROWS;
-  if (result.protocol == RemoteShellScanUtil::PROTO_SSH ||
-      result.protocol == RemoteShellScanUtil::PROTO_TELNET) {
-    _detailItems[DETAIL_CONNECT_ROW] = {"Connect", nullptr};
-    detailCount++;
+  if (result.protocol == RemoteShellScanUtil::PROTO_WINRM_HTTP ||
+      result.protocol == RemoteShellScanUtil::PROTO_WINRM_HTTPS) {
+    _detailSubs[row] = result.status > 0 ? String(result.status) : "-";
+    _detailItems[row] = {"Status", _detailSubs[row].c_str()};
+    row++;
   }
 
-  setItems(_detailItems, detailCount);
+  _detailSubs[row] = result.banner[0] ? result.banner : "-";
+  _detailItems[row] = {"Banner", _detailSubs[row].c_str()};
+  row++;
+
+  if (result.protocol == RemoteShellScanUtil::PROTO_SSH ||
+      result.protocol == RemoteShellScanUtil::PROTO_TELNET) {
+    _detailItems[row] = {"Connect", nullptr};
+    row++;
+  }
+
+  setItems(_detailItems, row);
 }
 
 void RemoteShellScannerScreen::_editTarget(

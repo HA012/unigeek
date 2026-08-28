@@ -274,18 +274,23 @@ bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
 
   uint8_t remaining = PortScanUtil::MAX_RESULTS - count;
   uint8_t found = 0;
+  const bool patient = _scanMode == MODE_TARGETS;
 
   if (_portMode == PORTS_COMMON) {
-    found = PortScanUtil::scan(ip, &_results[count], remaining, "Scanning...", false);
+    found = PortScanUtil::scan(ip, &_results[count], remaining, "Scanning...", false, patient);
   } else if (_portMode == PORTS_ALL) {
-    found = PortScanUtil::scanRange(ip, 1, 65535,
-                                    &_results[count], remaining, "Scanning...", false);
+    found = PortScanUtil::scanRange(
+      ip, 1, 65535,
+      &_results[count], remaining, "Scanning...", false, patient
+    );
   } else {
     uint16_t ports[PortScanUtil::MAX_CUSTOM_PORTS];
     uint8_t portCount = 0;
     if (!_parseCustomPorts(ports, portCount)) return false;
-    found = PortScanUtil::scanPorts(ip, ports, portCount,
-                                    &_results[count], remaining, "Scanning...", false);
+    found = PortScanUtil::scanPorts(
+      ip, ports, portCount,
+      &_results[count], remaining, "Scanning...", false, patient
+    );
   }
 
   count += found;
