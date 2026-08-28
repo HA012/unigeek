@@ -9,6 +9,7 @@
 #include "WebServerScannerScreen.h"
 #include "RemoteShellScannerScreen.h"
 #include "FileServiceScannerScreen.h"
+#include "IoTDeviceScannerScreen.h"
 
 void NetworkScannersScreen::onInit() {
   setItems(_items);
@@ -23,8 +24,9 @@ void NetworkScannersScreen::onItemSelected(uint8_t index) {
     case 4: Screen.push(new WebServerScannerScreen()); break;
     case 5: Screen.push(new RemoteShellScannerScreen()); break;
     case 6: Screen.push(new FileServiceScannerScreen()); break;
-    case 7: Screen.push(new PrinterScannerScreen()); break;
-    case 8: Screen.push(new CctvSnifferScreen()); break;
+    case 7: Screen.push(new IoTDeviceScannerScreen()); break;
+    case 8: Screen.push(new PrinterScannerScreen()); break;
+    case 9: Screen.push(new CctvSnifferScreen()); break;
   }
 }
 

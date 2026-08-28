@@ -14,7 +14,7 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[9] = {
+  ListItem _items[10] = {
     {"IP Hosts"},
     {"Port Scan"},
     {"mDNS"},
@@ -22,6 +22,7 @@ private:
     {"Web Servers"},
     {"Remote Shells"},
     {"File Services"},
+    {"IoT Devices"},
     {"Printers"},
     {"CCTV"},
   };
