@@ -170,13 +170,11 @@ void PortScannerScreen::_scan() {
     uint8_t hostCount = IpScanUtil::scan(
       (uint8_t)_startIp, (uint8_t)_endIp,
       _hosts, MAX_FOUND_HOSTS, false,
-      [](uint8_t pct) { ProgressView::progress("Finding hosts...", pct); }
+      [](uint8_t pct) { ProgressView::progress("Scanning...", pct); }
     );
 
     for (uint8_t i = 0; i < hostCount && _resultCount < PortScanUtil::MAX_RESULTS; i++) {
-      char msg[32];
-      snprintf(msg, sizeof(msg), "Scanning %s", _hosts[i].ip);
-      ProgressView::progress(msg, 0);
+      ProgressView::progress("Scanning...", 0);
       _scanTarget(_hosts[i].ip, _resultCount);
     }
   }
@@ -207,16 +205,16 @@ bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {
   uint8_t found = 0;
 
   if (_portMode == PORTS_COMMON) {
-    found = PortScanUtil::scan(ip, &_results[count], remaining, "Port scanning...", false);
+    found = PortScanUtil::scan(ip, &_results[count], remaining, "Scanning...", false);
   } else if (_portMode == PORTS_ALL) {
     found = PortScanUtil::scanRange(ip, 1, 65535,
-                                    &_results[count], remaining, "Port scanning...", false);
+                                    &_results[count], remaining, "Scanning...", false);
   } else {
     uint16_t ports[PortScanUtil::MAX_CUSTOM_PORTS];
     uint8_t portCount = 0;
     if (!_parseCustomPorts(ports, portCount)) return false;
     found = PortScanUtil::scanPorts(ip, ports, portCount,
-                                    &_results[count], remaining, "Port scanning...", false);
+                                    &_results[count], remaining, "Scanning...", false);
   }
 
   count += found;

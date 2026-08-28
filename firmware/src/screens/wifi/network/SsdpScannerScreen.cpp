@@ -39,13 +39,14 @@ void SsdpScannerScreen::_scan()
   _deviceCount = 0;
   memset(_devices, 0, sizeof(_devices));
 
+  render();
   ProgressView::init();
   _deviceCount = SsdpScanUtil::discover(
     "ssdp:all",
     _devices,
     SsdpScanUtil::MAX_DEVICES,
     [](uint8_t pct) {
-      ProgressView::progress("Searching SSDP devices...", pct);
+      ProgressView::progress("Scanning...", pct);
     }
   );
   ProgressView::finish();

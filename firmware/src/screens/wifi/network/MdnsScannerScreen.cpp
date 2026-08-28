@@ -47,6 +47,7 @@ void MdnsScannerScreen::_scan()
   _resultCount = 0;
   memset(_results, 0, sizeof(_results));
 
+  render();
   ProgressView::init();
 
   // Always discover all service classes currently supported by this scanner.
@@ -55,7 +56,7 @@ void MdnsScannerScreen::_scan()
 
     uint8_t remaining = MdnsScanUtil::MAX_RESULTS - _resultCount;
     ProgressView::progress(
-      "Searching mDNS services...",
+      "Scanning...",
       (uint8_t)((i - 1) * 100 / (SERVICE_COUNT - 1))
     );
     uint8_t found = MdnsScanUtil::discover(

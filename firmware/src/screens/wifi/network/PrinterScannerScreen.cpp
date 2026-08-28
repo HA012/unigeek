@@ -40,6 +40,7 @@ void PrinterScannerScreen::_scan()
   _printerCount = 0;
   memset(_printers, 0, sizeof(_printers));
 
+  render();
   ProgressView::init();
 
   static SsdpScanUtil::Device ssdp[SsdpScanUtil::MAX_DEVICES];
@@ -49,7 +50,7 @@ void PrinterScannerScreen::_scan()
     ssdp,
     SsdpScanUtil::MAX_DEVICES,
     [](uint8_t pct) {
-      ProgressView::progress("Searching printers (SSDP)...", pct / 2);
+      ProgressView::progress("Scanning...", pct / 2);
     }
   );
 
@@ -64,7 +65,7 @@ void PrinterScannerScreen::_scan()
     mdns,
     MdnsScanUtil::MAX_RESULTS,
     [](uint8_t pct) {
-      ProgressView::progress("Searching printers (mDNS)...", 50 + pct / 2);
+      ProgressView::progress("Scanning...", 50 + pct / 2);
     }
   );
 

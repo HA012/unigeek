@@ -100,7 +100,7 @@ void IPScannerScreen::_scanIP() {
   _foundCount = IpScanUtil::scan(
     (uint8_t)_startIp, (uint8_t)_endIp,
     _foundIPs, MAX_FOUND, _resolveName,
-    [](uint8_t pct) { ProgressView::progress("IP scanning...", pct); }
+    [](uint8_t pct) { ProgressView::progress("Scanning...", pct); }
   );
 
   ProgressView::finish();
@@ -133,7 +133,7 @@ void IPScannerScreen::_scanPort(const char* ip) {
   if (nps == 1) Achievement.unlock("wifi_port_scan_started");
 
   ProgressView::init();
-  _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS);
+  _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS, "Scanning...", false);
   ProgressView::finish();
 
   if (_openCount == 0) {
