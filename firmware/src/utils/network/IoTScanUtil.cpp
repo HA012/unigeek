@@ -191,6 +191,21 @@ bool IoTScanUtil::addSsdpEvidence(
     String(dev.usn) + " " +
     String(dev.location);
 
+  if (_contains(all, "roku:ecp") ||
+      (_contains(all, "roku") &&
+       _contains(all, ":8060"))) {
+    _set(
+      out,
+      dev.ip,
+      dev.name,
+      "Media",
+      "Roku device",
+      CONFIDENCE_HIGH,
+      "SSDP Roku ECP"
+    );
+    return true;
+  }
+
   if (_contains(all, "digitalsecuritycamera") ||
       _contains(all, "networkcamera") ||
       _contains(all, "ip camera") ||
@@ -220,21 +235,34 @@ bool IoTScanUtil::addSsdpEvidence(
     return true;
   }
 
-  if (_contains(all, "mediarenderer") ||
-      _contains(all, "mediaserver")) {
+  if (_contains(all, "mediarenderer")) {
     _set(
       out,
       dev.ip,
       dev.name,
       "Media",
-      "UPnP media device",
+      "DLNA/UPnP Renderer",
       CONFIDENCE_HIGH,
-      "UPnP MediaRenderer/MediaServer"
+      "UPnP MediaRenderer"
     );
     return true;
   }
 
-  if (_contains(all, "sonos")) {
+  if (_contains(all, "mediaserver")) {
+    _set(
+      out,
+      dev.ip,
+      dev.name,
+      "Storage",
+      "DLNA/UPnP Media Server",
+      CONFIDENCE_HIGH,
+      "UPnP MediaServer"
+    );
+    return true;
+  }
+
+  if (_contains(all, "sonos") ||
+      _contains(all, "zoneplayer")) {
     _set(
       out,
       dev.ip,
@@ -242,7 +270,7 @@ bool IoTScanUtil::addSsdpEvidence(
       "Media",
       "Sonos device",
       CONFIDENCE_HIGH,
-      "SSDP Sonos fingerprint"
+      "SSDP Sonos/ZonePlayer"
     );
     return true;
   }
