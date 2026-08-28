@@ -8,6 +8,10 @@
 class SshClientScreen : public ListScreen
 {
 public:
+  SshClientScreen() = default;
+  SshClientScreen(const String& host, int port)
+    : _host(host), _port(port) {}
+
   const char* title() override { return "SSH Client"; }
   ~SshClientScreen();
 

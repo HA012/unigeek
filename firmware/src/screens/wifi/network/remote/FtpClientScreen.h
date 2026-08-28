@@ -6,6 +6,10 @@
 class FtpClientScreen : public ListScreen
 {
 public:
+  FtpClientScreen() = default;
+  FtpClientScreen(const String& host, int port)
+    : _host(host), _port(port) {}
+
   const char* title() override;
   bool inhibitPowerOff() override { return _state == STATE_TRANSFER; }
   ~FtpClientScreen();
