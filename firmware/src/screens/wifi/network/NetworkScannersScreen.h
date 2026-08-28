@@ -14,12 +14,15 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[6] = {
-    {"IP Hosts"},     // live hosts on the subnet
-    {"Port Scan"},   // open ports on one host
-    {"SSDP"},   // UPnP/SSDP devices and services
-    {"mDNS"},   // Bonjour / DNS-SD service discovery
-    {"Printers"},// printers via SSDP + IPP/mDNS
-    {"CCTV"},   // network cameras: brand, creds, live view
+  ListItem _items[9] = {
+    {"IP Hosts"},
+    {"Port Scan"},
+    {"mDNS"},
+    {"SSDP"},
+    {"Web Servers"},
+    {"Remote Shells"},
+    {"File Services"},
+    {"Printers"},
+    {"CCTV"},
   };
 };

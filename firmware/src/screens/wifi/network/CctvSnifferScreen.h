@@ -25,28 +25,32 @@ private:
     STATE_STREAMING,
   };
 
-  enum ScanMode { MODE_TARGET, MODE_RANGE };
+  enum ScanMode { MODE_RANGE, MODE_TARGETS };
 
   enum ConfigAction {
     CFG_MODE,
-    CFG_TARGET_IP,
+    CFG_TARGET_1,
+    CFG_TARGET_2,
+    CFG_TARGET_3,
+    CFG_TARGET_4,
     CFG_START_IP,
     CFG_END_IP,
     CFG_START_SCAN,
   };
 
   State    _state    = STATE_CONFIG;
-  ScanMode _scanMode = MODE_TARGET;
+  ScanMode _scanMode = MODE_RANGE;
 
-  String _targetIp;
+  static constexpr uint8_t MAX_TARGETS = 4;
+  String _targets[MAX_TARGETS];
   int    _startIp = 1;
   int    _endIp   = 254;
 
-  String _targetIpSub;
+  String _targetSubs[MAX_TARGETS];
   String _startIpSub;
   String _endIpSub;
 
-  static constexpr uint8_t MAX_CONFIG_ITEMS = 5;
+  static constexpr uint8_t MAX_CONFIG_ITEMS = 7;
   static constexpr uint8_t MAX_FOUND_HOSTS  = 64;
   static constexpr uint8_t MAX_FOUND        = 32;
 
@@ -77,6 +81,9 @@ private:
   void _showConfig(uint8_t selectedIndex = 0);
   void _startScan();
   void _scanTarget(const char* ip);
+  bool _validIp(const String& ip) const;
+  bool _hasTargets() const;
+  void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);
   void _scanRange();
   void _scanHost(const char* ip);
   void _showCameraList();

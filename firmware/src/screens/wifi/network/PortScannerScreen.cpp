@@ -31,17 +31,22 @@ void PortScannerScreen::onItemSelected(uint8_t index) {
 
   switch (_configActions[index]) {
     case CFG_MODE:
-      _scanMode = (_scanMode == MODE_TARGET) ? MODE_RANGE : MODE_TARGET;
+      _scanMode = (_scanMode == MODE_RANGE) ? MODE_TARGETS : MODE_RANGE;
       _showInput(index);
       break;
 
-    case CFG_TARGET_IP: {
-      String initial = _targetIp.length() > 0 ? _targetIp : _networkPrefix();
-      String ip = InputTextAction::popup("Target IP", initial.c_str(), InputTextAction::INPUT_IP_ADDRESS);
-      if (!InputTextAction::wasCancelled()) _targetIp = ip;
-      _showInput(index);
+    case CFG_TARGET_1:
+      _editTarget(0, index);
       break;
-    }
+    case CFG_TARGET_2:
+      _editTarget(1, index);
+      break;
+    case CFG_TARGET_3:
+      _editTarget(2, index);
+      break;
+    case CFG_TARGET_4:
+      _editTarget(3, index);
+      break;
 
     case CFG_START_IP:
       _startIp = InputNumberAction::popup("Start IP", 1, _endIp, _startIp);
@@ -97,11 +102,20 @@ void PortScannerScreen::_showInput(uint8_t selectedIndex) {
     _configCount++;
   };
 
-  add("Mode", _scanMode == MODE_TARGET ? "Target" : "Range", CFG_MODE);
+  add("Mode", _scanMode == MODE_RANGE ? "Range" : "Targets", CFG_MODE);
 
-  if (_scanMode == MODE_TARGET) {
-    _targetIpSub = _targetIp.length() > 0 ? _targetIp : "-";
-    add("Target IP", _targetIpSub.c_str(), CFG_TARGET_IP);
+  if (_scanMode == MODE_TARGETS) {
+    static const ConfigAction targetActions[MAX_TARGETS] = {
+      CFG_TARGET_1, CFG_TARGET_2, CFG_TARGET_3, CFG_TARGET_4
+    };
+    static const char* targetLabels[MAX_TARGETS] = {
+      "IP 1", "IP 2", "IP 3", "IP 4"
+    };
+
+    for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
+      _targetSubs[i] = _targets[i].length() > 0 ? _targets[i] : "-";
+      add(targetLabels[i], _targetSubs[i].c_str(), targetActions[i]);
+    }
   } else {
     _startIpSub = String(_startIp);
     _endIpSub   = String(_endIp);
@@ -129,18 +143,17 @@ void PortScannerScreen::_scan() {
     return;
   }
 
-  if (_scanMode == MODE_TARGET) {
-    if (_targetIp.length() == 0) {
-      ShowStatusAction::show("Enter target IP first");
+  if (_scanMode == MODE_TARGETS) {
+    if (!_hasTargets()) {
+      ShowStatusAction::show("Enter at least one IP");
       return;
     }
 
-    int a, b, c, d;
-    if (sscanf(_targetIp.c_str(), "%d.%d.%d.%d", &a, &b, &c, &d) != 4 ||
-        a < 0 || a > 255 || b < 0 || b > 255 ||
-        c < 0 || c > 255 || d < 0 || d > 255) {
-      ShowStatusAction::show("Invalid IP address");
-      return;
+    for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
+      if (_targets[i].length() > 0 && !_validIp(_targets[i])) {
+        ShowStatusAction::show("Invalid IP address");
+        return;
+      }
     }
   }
 
@@ -164,8 +177,25 @@ void PortScannerScreen::_scan() {
 
   ProgressView::init();
 
-  if (_scanMode == MODE_TARGET) {
-    _scanTarget(_targetIp.c_str(), _resultCount);
+  if (_scanMode == MODE_TARGETS) {
+    uint8_t targetCount = 0;
+    for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
+      if (_targets[i].length() > 0) targetCount++;
+    }
+
+    uint8_t done = 0;
+    for (uint8_t i = 0;
+         i < MAX_TARGETS && _resultCount < PortScanUtil::MAX_RESULTS;
+         ++i) {
+      if (_targets[i].length() == 0) continue;
+
+      _scanTarget(_targets[i].c_str(), _resultCount);
+      done++;
+      ProgressView::progress(
+        "Scanning...",
+        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 100
+      );
+    }
   } else {
     uint8_t hostCount = IpScanUtil::scan(
       (uint8_t)_startIp, (uint8_t)_endIp,
@@ -196,6 +226,47 @@ void PortScannerScreen::_scan() {
 
   _state = STATE_RESULTS;
   setItems(_resultItems, _resultCount);
+}
+
+bool PortScannerScreen::_validIp(const String& ip) const {
+  int a, b, c, d;
+  char tail;
+
+  return sscanf(ip.c_str(), "%d.%d.%d.%d%c", &a, &b, &c, &d, &tail) == 4 &&
+         a >= 0 && a <= 255 &&
+         b >= 0 && b <= 255 &&
+         c >= 0 && c <= 255 &&
+         d >= 0 && d <= 255;
+}
+
+bool PortScannerScreen::_hasTargets() const {
+  for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
+    if (_targets[i].length() > 0) return true;
+  }
+  return false;
+}
+
+void PortScannerScreen::_editTarget(uint8_t targetIndex, uint8_t selectedIndex) {
+  if (targetIndex >= MAX_TARGETS) return;
+
+  String initial = _targets[targetIndex].length() > 0
+    ? _targets[targetIndex]
+    : _networkPrefix();
+
+  char title[8];
+  snprintf(title, sizeof(title), "IP %u", (unsigned)(targetIndex + 1));
+
+  String ip = InputTextAction::popup(
+    title,
+    initial.c_str(),
+    InputTextAction::INPUT_IP_ADDRESS
+  );
+
+  if (!InputTextAction::wasCancelled()) {
+    _targets[targetIndex] = ip;
+  }
+
+  _showInput(selectedIndex);
 }
 
 bool PortScannerScreen::_scanTarget(const char* ip, uint8_t& count) {

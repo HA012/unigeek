@@ -14,11 +14,14 @@ public:
 
 private:
   enum State { STATE_INPUT, STATE_SCANNING, STATE_RESULTS };
-  enum ScanMode { MODE_TARGET, MODE_RANGE };
+  enum ScanMode { MODE_RANGE, MODE_TARGETS };
   enum PortMode { PORTS_COMMON, PORTS_CUSTOM, PORTS_ALL };
   enum ConfigAction {
     CFG_MODE,
-    CFG_TARGET_IP,
+    CFG_TARGET_1,
+    CFG_TARGET_2,
+    CFG_TARGET_3,
+    CFG_TARGET_4,
     CFG_START_IP,
     CFG_END_IP,
     CFG_PORTS,
@@ -27,20 +30,21 @@ private:
   };
 
   State    _state       = STATE_INPUT;
-  ScanMode _scanMode    = MODE_TARGET;
+  ScanMode _scanMode    = MODE_RANGE;
   PortMode _portMode    = PORTS_COMMON;
 
-  String   _targetIp;
+  static constexpr uint8_t MAX_TARGETS = 4;
+  String   _targets[MAX_TARGETS];
   int      _startIp     = 1;
   int      _endIp       = 254;
   String   _customPorts;
 
-  String _targetIpSub;
+  String _targetSubs[MAX_TARGETS];
   String _startIpSub;
   String _endIpSub;
   String _customPortsSub;
 
-  static constexpr uint8_t MAX_CONFIG_ITEMS = 10;
+  static constexpr uint8_t MAX_CONFIG_ITEMS = 12;
   static constexpr uint8_t MAX_FOUND_HOSTS  = 64;
 
   ListItem     _configItems[MAX_CONFIG_ITEMS];
@@ -55,6 +59,9 @@ private:
   void _showInput(uint8_t selectedIndex = 0);
   void _scan();
   bool _scanTarget(const char* ip, uint8_t& count);
+  bool _validIp(const String& ip) const;
+  bool _hasTargets() const;
+  void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);
   bool _parseCustomPorts(uint16_t out[], uint8_t& count);
   String _networkPrefix() const;
 };
