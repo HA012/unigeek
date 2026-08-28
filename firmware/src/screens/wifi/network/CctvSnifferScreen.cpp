@@ -1,4 +1,5 @@
 #include "CctvSnifferScreen.h"
+#include "utils/network/TargetResolveUtil.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
@@ -184,7 +185,7 @@ void CctvSnifferScreen::_showConfig(uint8_t selectedIndex)
       CFG_TARGET_1, CFG_TARGET_2, CFG_TARGET_3, CFG_TARGET_4
     };
     static const char* targetLabels[MAX_TARGETS] = {
-      "IP 1", "IP 2", "IP 3", "IP 4"
+      "Target 1", "Target 2", "Target 3", "Target 4"
     };
 
     for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
@@ -214,13 +215,13 @@ void CctvSnifferScreen::_startScan()
 
   if (_scanMode == MODE_TARGETS) {
     if (!_hasTargets()) {
-      ShowStatusAction::show("Enter at least one IP");
+      ShowStatusAction::show("Enter at least one target");
       return;
     }
 
     for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
-      if (_targets[i].length() > 0 && !_validIp(_targets[i])) {
-        ShowStatusAction::show("Invalid IP address");
+      if (_targets[i].length() > 0 && !TargetResolveUtil::isValidTarget(_targets[i])) {
+        ShowStatusAction::show("Invalid target");
         return;
       }
     }
@@ -255,7 +256,13 @@ void CctvSnifferScreen::_startScan()
         (unsigned)targetCount
       );
       ProgressView::progress(label, 0);
-      _scanTarget(_targets[i].c_str());
+      String resolved;
+      if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
+        ShowStatusAction::show("Could not resolve target", 900);
+        done++;
+        continue;
+      }
+      _scanTarget(resolved.c_str());
       done++;
       ProgressView::progress(
         label,
@@ -304,7 +311,7 @@ void CctvSnifferScreen::_editTarget(uint8_t targetIndex, uint8_t selectedIndex)
     : _networkPrefix();
 
   char title[8];
-  snprintf(title, sizeof(title), "IP %u", (unsigned)(targetIndex + 1));
+  snprintf(title, sizeof(title), "Target %u", (unsigned)(targetIndex + 1));
 
   String ip = InputTextAction::popup(
     title,

@@ -17,13 +17,13 @@ private:
   ListItem _items[10] = {
     {"IP Scan"},
     {"Port Scan"},
+    {"Web Servers"},
+    {"File Servers"},
+    {"Remote Shells"},
+    {"Printers"},
+    {"IP Cameras"},
+    {"IoT Devices"},
     {"mDNS"},
     {"SSDP"},
-    {"Web Servers"},
-    {"Remote Shells"},
-    {"File Servers"},
-    {"IoT Devices"},
-    {"Printers"},
-    {"CCTV"},
   };
 };

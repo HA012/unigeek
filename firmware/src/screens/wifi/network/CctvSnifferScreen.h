@@ -7,7 +7,7 @@
 
 class CctvSnifferScreen : public ListScreen {
 public:
-  const char* title()        override { return "CCTV"; }
+  const char* title()        override { return "IP Cameras"; }
   bool inhibitPowerSave()    override { return _state == STATE_SCANNING || _state == STATE_STREAMING; }
   bool inhibitPowerOff()     override { return _state == STATE_SCANNING || _state == STATE_STREAMING; }
 

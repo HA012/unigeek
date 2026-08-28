@@ -1,4 +1,5 @@
 #include "FileServiceScannerScreen.h"
+#include "utils/network/TargetResolveUtil.h"
 #include <WiFi.h>
 #include <stdio.h>
 #include <string.h>
@@ -156,10 +157,10 @@ void FileServiceScannerScreen::_showConfig(uint8_t selectedIndex)
     };
 
     static const char* targetLabels[MAX_TARGETS] = {
-      "IP 1",
-      "IP 2",
-      "IP 3",
-      "IP 4",
+      "Target 1",
+      "Target 2",
+      "Target 3",
+      "Target 4",
     };
 
     for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
@@ -194,14 +195,14 @@ void FileServiceScannerScreen::_scan()
 
   if (_scanMode == MODE_TARGETS) {
     if (!_hasTargets()) {
-      ShowStatusAction::show("Enter at least one IP");
+      ShowStatusAction::show("Enter at least one target");
       return;
     }
 
     for (uint8_t i = 0; i < MAX_TARGETS; ++i) {
       if (_targets[i].length() > 0 &&
-          !_validIp(_targets[i])) {
-        ShowStatusAction::show("Invalid IP address");
+          !TargetResolveUtil::isValidTarget(_targets[i])) {
+        ShowStatusAction::show("Invalid target");
         return;
       }
     }
@@ -240,7 +241,13 @@ void FileServiceScannerScreen::_scan()
         (unsigned)targetCount
       );
       ProgressView::progress(label, 0);
-      _scanTarget(_targets[i].c_str());
+      String resolved;
+      if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
+        ShowStatusAction::show("Could not resolve target", 900);
+        done++;
+        continue;
+      }
+      _scanTarget(resolved.c_str());
       done++;
 
       ProgressView::progress(
@@ -469,7 +476,7 @@ void FileServiceScannerScreen::_editTarget(
   snprintf(
     title,
     sizeof(title),
-    "IP %u",
+    "Target %u",
     (unsigned)(targetIndex + 1)
   );
 
