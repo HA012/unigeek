@@ -334,7 +334,7 @@ void CctvSnifferScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress("Scanning...", (uint8_t)(pct * 40 / 100));
+      ProgressView::progress("Scanning hosts...", (uint8_t)(pct * 40 / 100));
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -344,9 +344,10 @@ void CctvSnifferScreen::_scanRange()
     char label[48];
     snprintf(
       label, sizeof(label),
-      "Scanning %s/%u...",
+      "Scanning %s (%u/%u)...",
       _hosts[i].ip,
-      (unsigned)_endIp
+      (unsigned)(i + 1),
+      (unsigned)hostCount
     );
     ProgressView::progress(label, 0);
     _scanTarget(_hosts[i].ip);

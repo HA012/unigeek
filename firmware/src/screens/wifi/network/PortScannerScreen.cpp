@@ -212,7 +212,7 @@ void PortScannerScreen::_scan() {
     uint8_t hostCount = IpScanUtil::scan(
       (uint8_t)_startIp, (uint8_t)_endIp,
       _hosts, MAX_FOUND_HOSTS, false,
-      [](uint8_t pct) { ProgressView::progress("Scanning...", pct); },
+      [](uint8_t pct) { ProgressView::progress("Scanning hosts...", pct); },
     []() { return ScanCancelUtil::poll(); }
   );
 
@@ -221,9 +221,10 @@ void PortScannerScreen::_scan() {
       char label[48];
       snprintf(
         label, sizeof(label),
-        "Scanning %s/%u...",
+        "Scanning %s (%u/%u)...",
         _hosts[i].ip,
-        (unsigned)_endIp
+        (unsigned)(i + 1),
+        (unsigned)hostCount
       );
       ProgressView::progress(label, 0);
       _scanTarget(_hosts[i].ip, _resultCount, label);

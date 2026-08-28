@@ -239,7 +239,7 @@ void WebServerScannerScreen::_scanRange()
     false,
     [](uint8_t pct) {
       ProgressView::progress(
-        "Scanning...",
+        "Scanning hosts...",
         (uint8_t)((uint16_t)pct * 35 / 100)
       );
     },
@@ -255,9 +255,10 @@ void WebServerScannerScreen::_scanRange()
     char label[48];
     snprintf(
       label, sizeof(label),
-      "Scanning %s/%u...",
+      "Scanning %s (%u/%u)...",
       _hosts[i].ip,
-      (unsigned)_endIp
+      (unsigned)(i + 1),
+      (unsigned)hostCount
     );
     ProgressView::progress(label, 0);
     _scanTarget(_hosts[i].ip);
