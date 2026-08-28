@@ -20,6 +20,6 @@ private:
     {"SSDP"},   // UPnP/SSDP devices and services
     {"mDNS"},   // Bonjour / DNS-SD service discovery
     {"Printers"},// printers via SSDP + IPP/mDNS
-    {"CCTV Sniffer"},   // network cameras: brand, creds, live view
+    {"CCTV"},   // network cameras: brand, creds, live view
   };
 };
