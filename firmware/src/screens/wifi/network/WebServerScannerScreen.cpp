@@ -206,7 +206,10 @@ void WebServerScannerScreen::_scan()
         (unsigned)(done + 1),
         (unsigned)targetCount
       );
-      ProgressView::progress(label, 0);
+      ProgressView::progress(
+        label,
+        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 0
+      );
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
         ShowStatusAction::show("Could not resolve target", 900);
@@ -267,7 +270,10 @@ void WebServerScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(label, 0);
+    ProgressView::progress(
+      label,
+      (uint8_t)(35 + ((uint16_t)i * 65 / hostCount))
+    );
     _scanTarget(_hosts[i].ip);
 
     ProgressView::progress(

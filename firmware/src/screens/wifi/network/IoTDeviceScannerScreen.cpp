@@ -205,7 +205,10 @@ void IoTDeviceScannerScreen::_scan()
   render();
   ScanCancelUtil::begin();
   ProgressView::init();
-  ProgressView::progress("Scanning...", 1);
+  ProgressView::progress(
+    _scanMode == MODE_RANGE ? "Scanning hosts..." : "Scanning...",
+    1
+  );
 
   _discoverMulticast();
 
@@ -226,6 +229,8 @@ void IoTDeviceScannerScreen::_scan()
 
 void IoTDeviceScannerScreen::_discoverMulticast()
 {
+  const char* progressLabel =
+    _scanMode == MODE_RANGE ? "Scanning hosts..." : "Scanning...";
   memset(ssdpBuffer, 0, sizeof(ssdpBuffer));
 
   uint8_t ssdpCount = SsdpScanUtil::discover(
@@ -247,7 +252,7 @@ void IoTDeviceScannerScreen::_discoverMulticast()
     }
   }
 
-  ProgressView::progress("Scanning...", 12);
+  ProgressView::progress(progressLabel, 12);
 
   constexpr uint8_t typeCount =
     sizeof(MDNS_TYPES) / sizeof(MDNS_TYPES[0]);
@@ -278,7 +283,7 @@ void IoTDeviceScannerScreen::_discoverMulticast()
     }
 
     ProgressView::progress(
-      "Scanning...",
+      progressLabel,
       (uint8_t)(12 + ((uint16_t)(type + 1) * 23 / typeCount))
     );
   }
@@ -310,7 +315,10 @@ void IoTDeviceScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(label, 0);
+    ProgressView::progress(
+      label,
+      hostCount ? (uint8_t)(55 + ((uint16_t)i * 45 / hostCount)) : 55
+    );
     _probeTarget(_hosts[i].ip);
 
     ProgressView::progress(
@@ -343,7 +351,10 @@ void IoTDeviceScannerScreen::_scanTargets()
       (unsigned)(done + 1),
       (unsigned)count
     );
-    ProgressView::progress(label, 0);
+    ProgressView::progress(
+      label,
+      count ? (uint8_t)(35 + ((uint16_t)done * 65 / count)) : 35
+    );
     String resolved;
     if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
       ShowStatusAction::show("Could not resolve target", 900);
