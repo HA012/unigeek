@@ -142,7 +142,8 @@ void IPScannerScreen::_scanPort(const char* ip) {
 
   ScanCancelUtil::begin();
   ProgressView::init();
-  _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS, "Scanning...", false);
+  String scanLabel = String("Scanning ") + ip + "...";
+  _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS, scanLabel.c_str(), false);
   ProgressView::finish();
 
   if (_openCount == 0) {

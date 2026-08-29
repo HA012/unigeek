@@ -99,10 +99,10 @@ void SsdpScannerScreen::_showDetails(uint8_t index)
 
   _detailItems[0] = {"Name", _detailSubs[0].c_str()};
   _detailItems[1] = {"IP",   _detailSubs[1].c_str()};
-  _detailItems[2] = {_detailSubs[2].c_str(), "ST"};
-  _detailItems[3] = {_detailSubs[3].c_str(), "Server"};
-  _detailItems[4] = {_detailSubs[4].c_str(), "USN"};
-  _detailItems[5] = {_detailSubs[5].c_str(), "Location"};
+  _detailItems[2] = {"ST",       _detailSubs[2].c_str()};
+  _detailItems[3] = {"Server",   _detailSubs[3].c_str()};
+  _detailItems[4] = {"USN",      _detailSubs[4].c_str()};
+  _detailItems[5] = {"Location", _detailSubs[5].c_str()};
 
   setItems(_detailItems, DETAIL_ROWS);
 }
