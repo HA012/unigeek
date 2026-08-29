@@ -10,6 +10,19 @@
 #include <WiFi.h>
 #include <TJpg_Decoder.h>
 
+namespace {
+static const char* gCameraProgressLabel = nullptr;
+
+static void cameraPortProgress(uint8_t pct)
+{
+  if (!gCameraProgressLabel) return;
+  ProgressView::progress(
+    gCameraProgressLabel,
+    (uint8_t)((uint16_t)pct * 70 / 100)
+  );
+}
+}
+
 CctvSnifferScreen* CctvSnifferScreen::_instance = nullptr;
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -325,9 +338,12 @@ void CctvSnifferScreen::_editTarget(uint8_t targetIndex, uint8_t selectedIndex)
 void CctvSnifferScreen::_scanTarget(const char* ip, const char* label)
 {
   if (!ip || !ip[0] || _cameraCount >= MAX_FOUND) return;
-  ProgressView::progress(label, 5);
-  _scanHost(ip);
+
+  gCameraProgressLabel = label;
+  ProgressView::progress(label, 0);
+  _scanHost(ip, label);
   ProgressView::progress(label, 100);
+  gCameraProgressLabel = nullptr;
 }
 
 void CctvSnifferScreen::_scanRange()
@@ -359,13 +375,22 @@ void CctvSnifferScreen::_scanRange()
   }
 }
 
-void CctvSnifferScreen::_scanHost(const char* ip)
+void CctvSnifferScreen::_scanHost(const char* ip, const char* label)
 {
   CctvScanUtil::Camera tempCams[8];
   const bool patient = _scanMode == MODE_TARGETS;
-  uint8_t found = CctvScanUtil::scanPorts(ip, tempCams, 8, patient);
+  uint8_t found = CctvScanUtil::scanPorts(
+    ip,
+    tempCams,
+    8,
+    patient,
+    cameraPortProgress
+  );
 
-  if (found == 0) return;
+  if (found == 0) {
+    ProgressView::progress(label, 100);
+    return;
+  }
 
   for (uint8_t i = 0; i < found && _cameraCount < MAX_FOUND; i++) {
     bool detected = false;
@@ -396,6 +421,11 @@ void CctvSnifferScreen::_scanHost(const char* ip)
       );
       _cameraCount++;
     }
+
+    ProgressView::progress(
+      label,
+      (uint8_t)(70 + ((uint16_t)(i + 1) * 30 / found))
+    );
   }
 }
 

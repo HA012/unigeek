@@ -46,7 +46,8 @@ static const char* matchBrand(const String& text) {
 // ── Port scanning ─────────────────────────────────────────────────────────────
 
 uint8_t CctvScanUtil::scanPorts(const char* ip, Camera results[],
-                                uint8_t maxResults, bool patient) {
+                                uint8_t maxResults, bool patient,
+                                ProgressCallback progress) {
   uint8_t count = 0;
 
   for (uint8_t i = 0; i < kPortCount && count < maxResults; i++) {
@@ -63,7 +64,13 @@ uint8_t CctvScanUtil::scanPorts(const char* ip, Camera results[],
       results[count].brand[0] = '\0';
       count++;
     }
+
+    if (progress) {
+      progress((uint8_t)((uint16_t)(i + 1) * 100 / kPortCount));
+    }
   }
+
+  if (progress) progress(100);
   return count;
 }
 
