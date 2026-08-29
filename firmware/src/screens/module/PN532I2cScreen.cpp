@@ -368,6 +368,13 @@ bool PN532I2cScreen::_initModule() {
     Uni.InI2C->begin();
 #endif
 
+#ifdef DEVICE_HAS_PN532_POWER_CONTROL
+    // Wake the on-board PN532 only when we actually fall back to the internal bus.
+    // RSTPDN release is quick; 10 ms leaves a conservative startup margin.
+    digitalWrite(PN532_RESET_PIN, HIGH);
+    delay(10);
+#endif
+
     _nfc = new Adafruit_PN532(255, 255, Uni.InI2C);
     _nfc->begin();
     ProgressView::progress("Probing InI2C...", 35);
@@ -386,6 +393,10 @@ bool PN532I2cScreen::_initModule() {
       return true;
     }
     delete _nfc; _nfc = nullptr;
+#ifdef DEVICE_HAS_PN532_POWER_CONTROL
+    // A failed internal probe must not leave the on-board PN532 awake.
+    digitalWrite(PN532_RESET_PIN, LOW);
+#endif
   }
 
   ShowStatusAction::show("PN532 I2C not found");
@@ -398,6 +409,9 @@ void PN532I2cScreen::_cleanup() {
   // Release ExI2C so a later screen can re-begin with a different pin set.
   // InI2C is shared with the PMIC / on-board peripherals — never end() it.
   if (_wire && _wire == Uni.ExI2C) _wire->end();
+#ifdef DEVICE_HAS_PN532_POWER_CONTROL
+  if (_wire && _wire == Uni.InI2C) digitalWrite(PN532_RESET_PIN, LOW);
+#endif
   _wire    = nullptr;
   _busName = nullptr;
   _ready   = false;
