@@ -1,6 +1,7 @@
 #include "FileServiceScannerScreen.h"
 #include "utils/network/TargetResolveUtil.h"
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <stdio.h>
 #include <string.h>
 #include "core/ScreenManager.h"
@@ -12,6 +13,16 @@
 #include "screens/wifi/network/remote/FtpClientScreen.h"
 #include "screens/wifi/network/remote/SftpClientScreen.h"
 #include "screens/wifi/network/remote/WebDavClientScreen.h"
+
+namespace {
+static bool quickTcpOpen(const char* ip, uint16_t port, uint32_t timeoutMs)
+{
+  WiFiClient client;
+  const bool open = client.connect(ip, port, timeoutMs);
+  client.stop();
+  return open;
+}
+}
 
 void FileServiceScannerScreen::onInit()
 {
@@ -240,25 +251,15 @@ void FileServiceScannerScreen::_scan()
         (unsigned)(done + 1),
         (unsigned)targetCount
       );
-      ProgressView::progress(
-        label,
-        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 0
-      );
+      ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
         ShowStatusAction::show("Could not resolve target", 900);
         done++;
         continue;
       }
-      _scanTarget(resolved.c_str());
+      _scanTarget(resolved.c_str(), label);
       done++;
-
-      ProgressView::progress(
-        label,
-        targetCount
-          ? (uint8_t)((uint16_t)done * 100 / targetCount)
-          : 100
-      );
     }
   } else {
     _scanRange();
@@ -282,10 +283,7 @@ void FileServiceScannerScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress(
-        "Scanning hosts...",
-        (uint8_t)((uint16_t)pct * 30 / 100)
-      );
+      ProgressView::progress("Scanning hosts...", pct);
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -305,19 +303,8 @@ void FileServiceScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(
-      label,
-      (uint8_t)(30 + ((uint16_t)i * 70 / hostCount))
-    );
-    _scanTarget(_hosts[i].ip);
-
-    ProgressView::progress(
-      label,
-      (uint8_t)(
-        30 +
-        ((uint16_t)(i + 1) * 70 / hostCount)
-      )
-    );
+    ProgressView::progress(label, 0);
+    _scanTarget(_hosts[i].ip, label);
   }
 }
 
@@ -332,67 +319,57 @@ void FileServiceScannerScreen::_append(
   _results[_resultCount++] = result;
 }
 
-void FileServiceScannerScreen::_scanTarget(const char* ip)
+void FileServiceScannerScreen::_scanTarget(const char* ip, const char* label)
 {
   FileServiceScanUtil::Result result;
   const bool patient = _scanMode == MODE_TARGETS;
+  const uint32_t quickTimeout = patient ? 450 : 300;
+  uint8_t step = 0;
+  static constexpr uint8_t TOTAL_STEPS = 8;
 
-  if (FileServiceScanUtil::probeFtp(ip, result, patient)) {
-    _append(result);
-  }
-
-  if (FileServiceScanUtil::probeSftpCandidate(ip, result, patient)) {
-    _append(result);
-  }
-
-  if (FileServiceScanUtil::probeSmb(ip, 445, result, patient)) {
-    _append(result);
-  }
-
-  if (FileServiceScanUtil::probeSmb(ip, 139, result, patient)) {
-    _append(result);
-  }
-
-  static constexpr uint16_t HTTP_PORTS[] = {
-    80,
-    8080,
+  auto advance = [&]() {
+    ++step;
+    ProgressView::progress(label, (uint8_t)((uint16_t)step * 100 / TOTAL_STEPS));
   };
 
+  if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 21, quickTimeout) &&
+      FileServiceScanUtil::probeFtp(ip, result, patient)) _append(result);
+  advance();
+
+  if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 22, quickTimeout) &&
+      FileServiceScanUtil::probeSftpCandidate(ip, result, patient)) _append(result);
+  advance();
+
+  if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 445, quickTimeout) &&
+      FileServiceScanUtil::probeSmb(ip, 445, result, patient)) _append(result);
+  advance();
+
+  if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 139, quickTimeout) &&
+      FileServiceScanUtil::probeSmb(ip, 139, result, patient)) _append(result);
+  advance();
+
+  static constexpr uint16_t HTTP_PORTS[] = {80, 8080};
   for (uint16_t port : HTTP_PORTS) {
-    if (_resultCount >= FileServiceScanUtil::MAX_RESULTS) {
-      return;
-    }
-
-    if (FileServiceScanUtil::probeWebDav(
-          ip,
-          port,
-          false,
-          result,
-          patient
-        )) {
+    if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+        quickTcpOpen(ip, port, quickTimeout) &&
+        FileServiceScanUtil::probeWebDav(ip, port, false, result, patient)) {
       _append(result);
     }
+    advance();
   }
 
-  static constexpr uint16_t HTTPS_PORTS[] = {
-    443,
-    8443,
-  };
-
+  static constexpr uint16_t HTTPS_PORTS[] = {443, 8443};
   for (uint16_t port : HTTPS_PORTS) {
-    if (_resultCount >= FileServiceScanUtil::MAX_RESULTS) {
-      return;
-    }
-
-    if (FileServiceScanUtil::probeWebDav(
-          ip,
-          port,
-          true,
-          result,
-          patient
-        )) {
+    if (_resultCount < FileServiceScanUtil::MAX_RESULTS &&
+        quickTcpOpen(ip, port, quickTimeout) &&
+        FileServiceScanUtil::probeWebDav(ip, port, true, result, patient)) {
       _append(result);
     }
+    advance();
   }
 }
 

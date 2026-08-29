@@ -1,6 +1,7 @@
 #include "RemoteShellScannerScreen.h"
 #include "utils/network/TargetResolveUtil.h"
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <stdio.h>
 #include <string.h>
 #include "core/ScreenManager.h"
@@ -11,6 +12,16 @@
 #include "utils/network/ScanCancelUtil.h"
 #include "screens/wifi/network/remote/SshClientScreen.h"
 #include "screens/wifi/network/remote/TelnetClientScreen.h"
+
+namespace {
+static bool quickTcpOpen(const char* ip, uint16_t port, uint32_t timeoutMs)
+{
+  WiFiClient client;
+  const bool open = client.connect(ip, port, timeoutMs);
+  client.stop();
+  return open;
+}
+}
 
 void RemoteShellScannerScreen::onInit()
 {
@@ -200,25 +211,15 @@ void RemoteShellScannerScreen::_scan()
         (unsigned)(done + 1),
         (unsigned)targetCount
       );
-      ProgressView::progress(
-        label,
-        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 0
-      );
+      ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
         ShowStatusAction::show("Could not resolve target", 900);
         done++;
         continue;
       }
-      _scanTarget(resolved.c_str());
+      _scanTarget(resolved.c_str(), label);
       done++;
-
-      ProgressView::progress(
-        label,
-        targetCount
-          ? (uint8_t)((uint16_t)done * 100 / targetCount)
-          : 100
-      );
     }
   } else {
     _scanRange();
@@ -242,10 +243,7 @@ void RemoteShellScannerScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress(
-        "Scanning hosts...",
-        (uint8_t)((uint16_t)pct * 35 / 100)
-      );
+      ProgressView::progress("Scanning hosts...", pct);
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -264,43 +262,51 @@ void RemoteShellScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(
-      label,
-      (uint8_t)(35 + ((uint16_t)i * 65 / hostCount))
-    );
-    _scanTarget(_hosts[i].ip);
-
-    ProgressView::progress(
-      label,
-      (uint8_t)(35 + ((uint16_t)(i + 1) * 65 / hostCount))
-    );
+    ProgressView::progress(label, 0);
+    _scanTarget(_hosts[i].ip, label);
   }
 }
 
-void RemoteShellScannerScreen::_scanTarget(const char* ip)
+void RemoteShellScannerScreen::_scanTarget(const char* ip, const char* label)
 {
   RemoteShellScanUtil::Result result;
   const bool patient = _scanMode == MODE_TARGETS;
+  const uint32_t quickTimeout = patient ? 450 : 300;
+  uint8_t step = 0;
+  static constexpr uint8_t TOTAL_STEPS = 4;
+
+  auto advance = [&]() {
+    ++step;
+    ProgressView::progress(label, (uint8_t)((uint16_t)step * 100 / TOTAL_STEPS));
+  };
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 22, quickTimeout) &&
       RemoteShellScanUtil::probeSsh(ip, result, patient)) {
     _results[_resultCount++] = result;
   }
+  advance();
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 23, quickTimeout) &&
       RemoteShellScanUtil::probeTelnet(ip, result, patient)) {
     _results[_resultCount++] = result;
   }
+  advance();
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 5985, quickTimeout) &&
       RemoteShellScanUtil::probeWinRm(ip, false, result, patient)) {
     _results[_resultCount++] = result;
   }
+  advance();
 
   if (_resultCount < RemoteShellScanUtil::MAX_RESULTS &&
+      quickTcpOpen(ip, 5986, quickTimeout) &&
       RemoteShellScanUtil::probeWinRm(ip, true, result, patient)) {
     _results[_resultCount++] = result;
   }
+  advance();
 }
 
 void RemoteShellScannerScreen::_showResults()

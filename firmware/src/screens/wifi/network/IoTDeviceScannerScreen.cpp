@@ -1,6 +1,7 @@
 #include "IoTDeviceScannerScreen.h"
 #include "utils/network/TargetResolveUtil.h"
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <stdio.h>
 #include <string.h>
 #include "core/ScreenManager.h"
@@ -14,6 +15,14 @@
 #include "utils/network/WebScanUtil.h"
 
 namespace {
+
+static bool quickTcpOpen(const char* ip, uint16_t port, uint32_t timeoutMs)
+{
+  WiFiClient client;
+  const bool open = client.connect(ip, port, timeoutMs);
+  client.stop();
+  return open;
+}
 
 static MdnsScanUtil::Service mdnsBuffer[16];
 static SsdpScanUtil::Device ssdpBuffer[SsdpScanUtil::MAX_DEVICES];
@@ -298,10 +307,7 @@ void IoTDeviceScannerScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress(
-        "Scanning hosts...",
-        (uint8_t)(35 + ((uint16_t)pct * 20 / 100))
-      );
+      ProgressView::progress("Scanning hosts...", pct);
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -315,18 +321,8 @@ void IoTDeviceScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(
-      label,
-      hostCount ? (uint8_t)(55 + ((uint16_t)i * 45 / hostCount)) : 55
-    );
-    _probeTarget(_hosts[i].ip);
-
-    ProgressView::progress(
-      label,
-      hostCount
-        ? (uint8_t)(55 + ((uint16_t)(i + 1) * 45 / hostCount))
-        : 100
-    );
+    ProgressView::progress(label, 0);
+    _probeTarget(_hosts[i].ip, label);
   }
 }
 
@@ -351,31 +347,24 @@ void IoTDeviceScannerScreen::_scanTargets()
       (unsigned)(done + 1),
       (unsigned)count
     );
-    ProgressView::progress(
-      label,
-      count ? (uint8_t)(35 + ((uint16_t)done * 65 / count)) : 35
-    );
+    ProgressView::progress(label, 0);
     String resolved;
     if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
       ShowStatusAction::show("Could not resolve target", 900);
       done++;
       continue;
     }
-    _probeTarget(resolved.c_str());
+    _probeTarget(resolved.c_str(), label);
     done++;
-
-    ProgressView::progress(
-      label,
-      count
-        ? (uint8_t)(35 + ((uint16_t)done * 65 / count))
-        : 100
-    );
   }
 }
 
-void IoTDeviceScannerScreen::_probeTarget(const char* ip)
+void IoTDeviceScannerScreen::_probeTarget(const char* ip, const char* label)
 {
   if (!ip || !ip[0]) return;
+
+  const bool patient = _scanMode == MODE_TARGETS;
+  const uint32_t quickTimeout = patient ? 450 : 300;
 
   static constexpr struct {
     uint16_t port;
@@ -387,35 +376,40 @@ void IoTDeviceScannerScreen::_probeTarget(const char* ip)
     {8123, false},
   };
 
+  static constexpr uint8_t WEB_COUNT =
+    sizeof(WEB_PROBES) / sizeof(WEB_PROBES[0]);
+  static constexpr uint8_t IOT_COUNT =
+    sizeof(IOT_PORTS) / sizeof(IOT_PORTS[0]);
+  static constexpr uint8_t TOTAL_STEPS = WEB_COUNT + IOT_COUNT;
+
+  uint8_t step = 0;
+  auto advance = [&]() {
+    ++step;
+    ProgressView::progress(label, (uint8_t)((uint16_t)step * 100 / TOTAL_STEPS));
+  };
+
   for (const auto& probe : WEB_PROBES) {
-    WebScanUtil::Result web;
+    if (quickTcpOpen(ip, probe.port, quickTimeout)) {
+      WebScanUtil::Result web;
 
-    if (WebScanUtil::probe(
-          ip,
-          probe.port,
-          probe.https,
-          web,
-          _scanMode == MODE_TARGETS
-        )) {
-      IoTScanUtil::Device evidence;
-
-      if (IoTScanUtil::addWebEvidence(web, evidence)) {
-        _mergeEvidence(evidence);
+      if (WebScanUtil::probe(ip, probe.port, probe.https, web, patient)) {
+        IoTScanUtil::Device evidence;
+        if (IoTScanUtil::addWebEvidence(web, evidence)) {
+          _mergeEvidence(evidence);
+        }
       }
     }
+    advance();
   }
 
   for (uint16_t port : IOT_PORTS) {
     IoTScanUtil::Device evidence;
 
-    if (IoTScanUtil::addPortEvidence(
-          ip,
-          port,
-          evidence,
-          _scanMode == MODE_TARGETS
-        )) {
+    if (quickTcpOpen(ip, port, quickTimeout) &&
+        IoTScanUtil::addPortEvidence(ip, port, evidence, patient)) {
       _mergeEvidence(evidence);
     }
+    advance();
   }
 }
 

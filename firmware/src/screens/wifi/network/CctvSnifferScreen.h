@@ -80,7 +80,7 @@ private:
 
   void _showConfig(uint8_t selectedIndex = 0);
   void _startScan();
-  void _scanTarget(const char* ip);
+  void _scanTarget(const char* ip, const char* label);
   bool _validIp(const String& ip) const;
   bool _hasTargets() const;
   void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);

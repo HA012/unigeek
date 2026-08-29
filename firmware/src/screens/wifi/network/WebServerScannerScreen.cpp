@@ -1,6 +1,7 @@
 #include "WebServerScannerScreen.h"
 #include "utils/network/TargetResolveUtil.h"
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <stdio.h>
 #include <string.h>
 #include "core/ScreenManager.h"
@@ -28,6 +29,14 @@ static constexpr WebPort WEB_PORTS[] = {
 
 static constexpr uint8_t WEB_PORT_COUNT =
   sizeof(WEB_PORTS) / sizeof(WEB_PORTS[0]);
+
+static bool quickTcpOpen(const char* ip, uint16_t port, uint32_t timeoutMs)
+{
+  WiFiClient client;
+  const bool open = client.connect(ip, port, timeoutMs);
+  client.stop();
+  return open;
+}
 }
 
 void WebServerScannerScreen::onInit()
@@ -206,25 +215,15 @@ void WebServerScannerScreen::_scan()
         (unsigned)(done + 1),
         (unsigned)targetCount
       );
-      ProgressView::progress(
-        label,
-        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 0
-      );
+      ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
         ShowStatusAction::show("Could not resolve target", 900);
         done++;
         continue;
       }
-      _scanTarget(resolved.c_str());
+      _scanTarget(resolved.c_str(), label);
       done++;
-
-      ProgressView::progress(
-        label,
-        targetCount
-          ? (uint8_t)((uint16_t)done * 100 / targetCount)
-          : 100
-      );
     }
   } else {
     _scanRange();
@@ -248,10 +247,7 @@ void WebServerScannerScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress(
-        "Scanning hosts...",
-        (uint8_t)((uint16_t)pct * 35 / 100)
-      );
+      ProgressView::progress("Scanning hosts...", pct);
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -270,35 +266,37 @@ void WebServerScannerScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(
-      label,
-      (uint8_t)(35 + ((uint16_t)i * 65 / hostCount))
-    );
-    _scanTarget(_hosts[i].ip);
-
-    ProgressView::progress(
-      label,
-      (uint8_t)(35 + ((uint16_t)(i + 1) * 65 / hostCount))
-    );
+    ProgressView::progress(label, 0);
+    _scanTarget(_hosts[i].ip, label);
   }
 }
 
-void WebServerScannerScreen::_scanTarget(const char* ip)
+void WebServerScannerScreen::_scanTarget(const char* ip, const char* label)
 {
+  const bool patient = _scanMode == MODE_TARGETS;
+  const uint32_t quickTimeout = patient ? 450 : 300;
+
   for (uint8_t i = 0;
        i < WEB_PORT_COUNT && _resultCount < WebScanUtil::MAX_RESULTS;
        ++i) {
-    WebScanUtil::Result result;
+    if (quickTcpOpen(ip, WEB_PORTS[i].port, quickTimeout)) {
+      WebScanUtil::Result result;
 
-    if (WebScanUtil::probe(
-          ip,
-          WEB_PORTS[i].port,
-          WEB_PORTS[i].https,
-          result,
-          _scanMode == MODE_TARGETS
-        )) {
-      _results[_resultCount++] = result;
+      if (WebScanUtil::probe(
+            ip,
+            WEB_PORTS[i].port,
+            WEB_PORTS[i].https,
+            result,
+            patient
+          )) {
+        _results[_resultCount++] = result;
+      }
     }
+
+    ProgressView::progress(
+      label,
+      (uint8_t)((uint16_t)(i + 1) * 100 / WEB_PORT_COUNT)
+    );
   }
 }
 

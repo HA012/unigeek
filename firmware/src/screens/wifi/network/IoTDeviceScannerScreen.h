@@ -70,7 +70,7 @@ private:
   void _discoverMulticast();
   void _scanRange();
   void _scanTargets();
-  void _probeTarget(const char* ip);
+  void _probeTarget(const char* ip, const char* label);
   void _showResults();
   void _showDetails(uint8_t index);
   void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);

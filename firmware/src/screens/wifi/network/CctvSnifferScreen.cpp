@@ -255,22 +255,15 @@ void CctvSnifferScreen::_startScan()
         (unsigned)(done + 1),
         (unsigned)targetCount
       );
-      ProgressView::progress(
-        label,
-        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 0
-      );
+      ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
         ShowStatusAction::show("Could not resolve target", 900);
         done++;
         continue;
       }
-      _scanTarget(resolved.c_str());
+      _scanTarget(resolved.c_str(), label);
       done++;
-      ProgressView::progress(
-        label,
-        targetCount ? (uint8_t)((uint16_t)done * 100 / targetCount) : 100
-      );
     }
   } else {
     _scanRange();
@@ -329,10 +322,12 @@ void CctvSnifferScreen::_editTarget(uint8_t targetIndex, uint8_t selectedIndex)
   _showConfig(selectedIndex);
 }
 
-void CctvSnifferScreen::_scanTarget(const char* ip)
+void CctvSnifferScreen::_scanTarget(const char* ip, const char* label)
 {
   if (!ip || !ip[0] || _cameraCount >= MAX_FOUND) return;
+  ProgressView::progress(label, 5);
   _scanHost(ip);
+  ProgressView::progress(label, 100);
 }
 
 void CctvSnifferScreen::_scanRange()
@@ -344,7 +339,7 @@ void CctvSnifferScreen::_scanRange()
     MAX_FOUND_HOSTS,
     false,
     [](uint8_t pct) {
-      ProgressView::progress("Scanning hosts...", (uint8_t)(pct * 40 / 100));
+      ProgressView::progress("Scanning hosts...", pct);
     },
     []() { return ScanCancelUtil::poll(); }
   );
@@ -359,15 +354,8 @@ void CctvSnifferScreen::_scanRange()
       (unsigned)(i + 1),
       (unsigned)hostCount
     );
-    ProgressView::progress(
-      label,
-      (uint8_t)(40 + ((uint16_t)i * 60 / hostCount))
-    );
-    _scanTarget(_hosts[i].ip);
-    ProgressView::progress(
-      label,
-      (uint8_t)(40 + ((uint16_t)(i + 1) * 60 / hostCount))
-    );
+    ProgressView::progress(label, 0);
+    _scanTarget(_hosts[i].ip, label);
   }
 }
 

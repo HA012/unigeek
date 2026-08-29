@@ -70,7 +70,7 @@ private:
   void _showConfig(uint8_t selectedIndex = 0);
   void _scan();
   void _scanRange();
-  void _scanTarget(const char* ip);
+  void _scanTarget(const char* ip, const char* label);
   void _showResults();
   void _showDetails(uint8_t index);
   void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);
