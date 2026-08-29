@@ -97,6 +97,19 @@ bool sameName(const char* a, const char* b)
   return a && b && strcasecmp(a, b) == 0;
 }
 
+bool belongsToService(const char* instance, const char* service)
+{
+  if (!instance || !*instance || !service || !*service) return false;
+
+  size_t instanceLen = strlen(instance);
+  size_t serviceLen = strlen(service);
+  if (instanceLen <= serviceLen + 1) return false;
+
+  size_t suffixPos = instanceLen - serviceLen;
+  return instance[suffixPos - 1] == '.' &&
+         strcasecmp(instance + suffixPos, service) == 0;
+}
+
 bool endsWithLocal(const char* s)
 {
   if (!s) return false;
@@ -308,7 +321,8 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
         int np = rdataPos;
         char instance[192];
         if (decodeName(packet, len, np, instance, sizeof(instance)) &&
-            sameName(rrName, queryName.c_str())) {
+            sameName(rrName, queryName.c_str()) &&
+            belongsToService(instance, queryName.c_str())) {
           Pending* p = findPending(instance, true);
           if (p) p->seenPtr = true;
         }
@@ -316,7 +330,8 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
         uint16_t port = readU16(packet + rdataPos + 4);
         int np = rdataPos + 6;
         char host[96];
-        if (decodeName(packet, len, np, host, sizeof(host))) {
+        if (decodeName(packet, len, np, host, sizeof(host)) &&
+            belongsToService(rrName, queryName.c_str())) {
           Pending* p = findPending(rrName, true);
           if (p) {
             p->port = port;
@@ -326,7 +341,8 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
             if (ip) strncpy(p->ip, ip, sizeof(p->ip) - 1);
           }
         }
-      } else if (type == 16) { // TXT
+      } else if (type == 16 &&
+                 belongsToService(rrName, queryName.c_str())) { // TXT
         Pending* p = findPending(rrName, true);
         if (p) copyTxt(packet + rdataPos, rdlen, p->txt, sizeof(p->txt));
       } else if (type == 1 && rdlen == 4) { // A
@@ -351,8 +367,9 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
   for (uint8_t i = 0; i < pendingCount && count < maxResults; ++i) {
     Pending& p = pending[i];
 
-    // A PTR establishes discovery of the requested service. SRV-only records
-    // are accepted as well because some responders omit the PTR in follow-ups.
+    // PTR is the normal discovery path. SRV-only records are also accepted
+    // when their owner belongs to the requested service, because some
+    // responders omit PTR in follow-up packets.
     if (!p.seenPtr && !p.seenSrv) continue;
     if (!p.instance[0]) continue;
 

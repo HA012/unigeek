@@ -1,4 +1,5 @@
 #include "utils/network/SsdpScanUtil.h"
+#include "utils/network/ScanCancelUtil.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <HTTPClient.h>
@@ -37,41 +38,162 @@ bool extractHeader(const char* packet, const char* header, char* out, size_t out
   return n > 0;
 }
 
-String extractTag(const String& body, const char* tag)
+void trimAscii(char* value)
 {
-  String openTag  = String("<") + tag + ">";
-  String closeTag = String("</") + tag + ">";
+  if (!value || !*value) return;
 
-  int s = body.indexOf(openTag);
-  if (s < 0) return "";
-  s += openTag.length();
+  char* start = value;
+  while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') ++start;
+  if (start != value) memmove(value, start, strlen(start) + 1);
 
-  int e = body.indexOf(closeTag, s);
-  if (e < 0) return "";
+  size_t len = strlen(value);
+  while (len > 0) {
+    char c = value[len - 1];
+    if (c != ' ' && c != '\t' && c != '\r' && c != '\n') break;
+    value[--len] = '\0';
+  }
+}
 
-  String value = body.substring(s, e);
-  value.trim();
-  return value;
+bool locationMatchesDevice(const char* location, const char* deviceIp)
+{
+  if (!location || !*location || !deviceIp || !*deviceIp) return false;
+
+  const char* authority = nullptr;
+  if (strncasecmp(location, "http://", 7) == 0) {
+    authority = location + 7;
+  } else if (strncasecmp(location, "https://", 8) == 0) {
+    authority = location + 8;
+  } else {
+    return false;
+  }
+
+  const char* authorityEnd = strchr(authority, '/');
+  if (!authorityEnd) authorityEnd = location + strlen(location);
+  if (authority == authorityEnd) return false;
+
+  // Reject user-info and IPv6 literals here. SSDP responders in this scanner
+  // are IPv4 and LOCATION should point back to the responding device.
+  for (const char* p = authority; p < authorityEnd; ++p) {
+    if (*p == '@' || *p == '[' || *p == ']') return false;
+  }
+
+  const char* hostEnd = authorityEnd;
+  for (const char* p = authority; p < authorityEnd; ++p) {
+    if (*p == ':') {
+      hostEnd = p;
+      break;
+    }
+  }
+
+  size_t hostLen = (size_t)(hostEnd - authority);
+  size_t ipLen = strlen(deviceIp);
+  return hostLen == ipLen && strncasecmp(authority, deviceIp, ipLen) == 0;
+}
+
+struct TagCapture {
+  const char* openTag;
+  size_t matched;
+  char* value;
+  size_t valueLen;
+  size_t written;
+  bool capturing;
+  bool done;
+};
+
+void feedTag(TagCapture& tag, char c)
+{
+  if (tag.done) return;
+
+  if (tag.capturing) {
+    if (c == '<') {
+      tag.value[tag.written] = '\0';
+      trimAscii(tag.value);
+      tag.done = true;
+      tag.capturing = false;
+      return;
+    }
+
+    if (tag.written + 1 < tag.valueLen) {
+      tag.value[tag.written++] = c;
+    }
+    return;
+  }
+
+  if (c == tag.openTag[tag.matched]) {
+    tag.matched++;
+    if (tag.openTag[tag.matched] == '\0') {
+      tag.matched = 0;
+      tag.written = 0;
+      tag.value[0] = '\0';
+      tag.capturing = true;
+    }
+    return;
+  }
+
+  tag.matched = (c == tag.openTag[0]) ? 1 : 0;
 }
 
 void fetchFriendlyName(SsdpScanUtil::Device& dev)
 {
-  if (!dev.location[0]) return;
+  if (!dev.location[0] || !locationMatchesDevice(dev.location, dev.ip)) return;
 
   HTTPClient http;
-  http.setTimeout(1800);
+  http.useHTTP10(true); // Avoid chunked transfer while parsing the stream.
+  http.setTimeout(900);
   if (!http.begin(dev.location)) return;
 
   int code = http.GET();
-  if (code == 200) {
-    String body = http.getString();
-    String name = extractTag(body, "friendlyName");
-    if (name.isEmpty()) name = extractTag(body, "deviceName");
-    if (name.isEmpty()) name = extractTag(body, "modelName");
+  if (code >= 200 && code < 300 && !ScanCancelUtil::wasCancelled()) {
+    WiFiClient* stream = http.getStreamPtr();
+    if (stream) {
+      char friendly[sizeof(dev.name)] = {};
+      char deviceName[sizeof(dev.name)] = {};
+      char modelName[sizeof(dev.name)] = {};
 
-    if (!name.isEmpty()) {
-      strncpy(dev.name, name.c_str(), sizeof(dev.name) - 1);
-      dev.name[sizeof(dev.name) - 1] = '\0';
+      TagCapture tags[] = {
+        {"<friendlyName>", 0, friendly, sizeof(friendly), 0, false, false},
+        {"<deviceName>",   0, deviceName, sizeof(deviceName), 0, false, false},
+        {"<modelName>",    0, modelName, sizeof(modelName), 0, false, false},
+      };
+
+      constexpr size_t MAX_DESCRIPTION_BYTES = 8192;
+      constexpr uint32_t MAX_READ_MS = 1200;
+      size_t bytesRead = 0;
+      uint32_t readStart = millis();
+
+      while (bytesRead < MAX_DESCRIPTION_BYTES &&
+             (uint32_t)(millis() - readStart) < MAX_READ_MS &&
+             (http.connected() || stream->available() > 0)) {
+        if (ScanCancelUtil::poll()) break;
+
+        int available = stream->available();
+        if (available <= 0) {
+          delay(5);
+          continue;
+        }
+
+        while (available-- > 0 && bytesRead < MAX_DESCRIPTION_BYTES) {
+          int ch = stream->read();
+          if (ch < 0) break;
+          bytesRead++;
+
+          for (auto& tag : tags) feedTag(tag, (char)ch);
+          if (tags[0].done && friendly[0]) break;
+        }
+
+        // friendlyName has highest priority, so no need to read further once
+        // it has been captured successfully.
+        if (tags[0].done && friendly[0]) break;
+      }
+
+      const char* name = friendly[0] ? friendly
+                         : deviceName[0] ? deviceName
+                         : modelName[0] ? modelName
+                         : nullptr;
+      if (name) {
+        strncpy(dev.name, name, sizeof(dev.name) - 1);
+        dev.name[sizeof(dev.name) - 1] = '\0';
+      }
     }
   }
   http.end();
@@ -118,7 +240,9 @@ uint8_t SsdpScanUtil::discover(const char* searchTarget,
   const uint32_t totalMs = 4500;
   uint32_t nextResend = startMs + resendEveryMs;
 
-  while ((uint32_t)(millis() - startMs) < totalMs && count < maxDevices) {
+  while ((uint32_t)(millis() - startMs) < totalMs &&
+         count < maxDevices &&
+         !ScanCancelUtil::wasCancelled()) {
     if (searchesSent < maxSearches &&
         (int32_t)(millis() - nextResend) >= 0) {
       sendSearch();
@@ -129,8 +253,8 @@ uint8_t SsdpScanUtil::discover(const char* searchTarget,
     if (progressCb) {
       uint32_t elapsed = millis() - startMs;
       uint8_t pct = elapsed >= totalMs
-                      ? 100
-                      : (uint8_t)(elapsed * 100 / totalMs);
+                      ? 75
+                      : (uint8_t)(elapsed * 75 / totalMs);
       progressCb(pct);
     }
 
@@ -172,11 +296,25 @@ uint8_t SsdpScanUtil::discover(const char* searchTarget,
     extractHeader(packet, "SERVER:",   dev.server,   sizeof(dev.server));
     extractHeader(packet, "LOCATION:", dev.location, sizeof(dev.location));
 
-    fetchFriendlyName(dev);
     count++;
   }
 
   udp.stop();
-  if (progressCb) progressCb(100);
+
+  // Resolve device descriptions only after multicast discovery is complete.
+  // This keeps the discovery window deterministic and makes HTTP enrichment
+  // bounded and cancellable without accumulating response bodies in heap.
+  if (!ScanCancelUtil::wasCancelled()) {
+    for (uint8_t i = 0; i < count; ++i) {
+      if (ScanCancelUtil::poll()) break;
+      fetchFriendlyName(out[i]);
+      if (progressCb) {
+        uint8_t pct = 75 + (uint8_t)(((uint16_t)(i + 1) * 25U) / count);
+        progressCb(pct);
+      }
+    }
+  }
+
+  if (progressCb && !ScanCancelUtil::wasCancelled()) progressCb(100);
   return count;
 }
