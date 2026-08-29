@@ -59,18 +59,18 @@ void SsdpScannerScreen::_scan()
     return;
   }
 
-  if (_deviceCount == 0) {
-    ShowStatusAction::show("No SSDP devices found", 1500);
-    Screen.goBack();
-    return;
-  }
-
   _showResults();
 }
 
 void SsdpScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+
+  if (_deviceCount == 0) {
+    _resultItems[0] = {"No SSDP devices found"};
+    setItems(_resultItems, 1);
+    return;
+  }
 
   for (uint8_t i = 0; i < _deviceCount; ++i) {
     _resultSubs[i] = _devices[i].ip;

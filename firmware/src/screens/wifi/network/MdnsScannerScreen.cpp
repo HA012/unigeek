@@ -78,18 +78,18 @@ void MdnsScannerScreen::_scan()
     return;
   }
 
-  if (_resultCount == 0) {
-    ShowStatusAction::show("No mDNS services found", 1500);
-    Screen.goBack();
-    return;
-  }
-
   _showResults();
 }
 
 void MdnsScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+
+  if (_resultCount == 0) {
+    _resultItems[0] = {"No mDNS services found"};
+    setItems(_resultItems, 1);
+    return;
+  }
 
   for (uint8_t i = 0; i < _resultCount; ++i) {
     if (_results[i].ip[0]) {
