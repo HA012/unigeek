@@ -1,7 +1,9 @@
 #include "utils/network/MdnsScanUtil.h"
+#include "utils/network/ScanCancelUtil.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <string.h>
+#include <stdlib.h>
 
 namespace {
 
@@ -200,16 +202,29 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
   };
 
   static constexpr uint8_t MAX_PENDING = 16;
-  static Pending pending[MAX_PENDING];
-  memset(pending, 0, sizeof(pending));
-  uint8_t pendingCount = 0;
 
   struct HostAddress {
     char host[96];
     char ip[16];
   };
-  static HostAddress addresses[16];
-  memset(addresses, 0, sizeof(addresses));
+
+  // These work buffers used to be function-local statics, permanently
+  // consuming internal DRAM even when mDNS was idle. Keep them temporary so
+  // constrained targets pay the cost only while discovery is running.
+  Pending* pending = static_cast<Pending*>(calloc(MAX_PENDING, sizeof(Pending)));
+  HostAddress* addresses =
+    static_cast<HostAddress*>(calloc(MAX_PENDING, sizeof(HostAddress)));
+  uint8_t* packet = static_cast<uint8_t*>(malloc(1200));
+
+  if (!pending || !addresses || !packet) {
+    free(packet);
+    free(addresses);
+    free(pending);
+    udp.stop();
+    return 0;
+  }
+
+  uint8_t pendingCount = 0;
   uint8_t addressCount = 0;
 
   auto findPending = [&](const char* instance, bool create) -> Pending* {
@@ -232,7 +247,7 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
         return;
       }
     }
-    if (addressCount >= 16) return;
+    if (addressCount >= MAX_PENDING) return;
     strncpy(addresses[addressCount].host, host, sizeof(addresses[addressCount].host) - 1);
     strncpy(addresses[addressCount].ip, ip, sizeof(addresses[addressCount].ip) - 1);
     addressCount++;
@@ -256,6 +271,10 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
   uint32_t nextResend = startMs + resendEveryMs;
 
   while ((uint32_t)(millis() - startMs) < totalMs) {
+    // mDNS can run for several seconds and is also used without a progress
+    // callback (notably by IoT discovery), so cancellation must not depend on
+    // callers remembering to poll navigation.
+    if (ScanCancelUtil::poll()) break;
     if (queriesSent < maxQueries &&
         (int32_t)(millis() - nextResend) >= 0) {
       sendQuery();
@@ -277,8 +296,7 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
       continue;
     }
 
-    static uint8_t packet[1200];
-    int len = udp.read(packet, sizeof(packet));
+    int len = udp.read(packet, 1200);
     if (len < 12) continue;
 
     int pos = 0;
@@ -397,7 +415,10 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
     count++;
   }
 
+  free(packet);
+  free(addresses);
+  free(pending);
   udp.stop();
-  if (progressCb) progressCb(100);
+  if (progressCb && !ScanCancelUtil::wasCancelled()) progressCb(100);
   return count;
 }

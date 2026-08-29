@@ -156,37 +156,54 @@ public:
 
         sprite.setTextColor(selected ? TFT_CYAN : TFT_DARKGREY, bg);
         int16_t subAvailW = listW - 12;
-        String subText;
-        if (selected && sprite.textWidth(item->sublabel) > subAvailW)
-          subText = _marqueeWindow(sprite, item->sublabel, subAvailW);
-        else
-          subText = item->sublabel;
-
-        int16_t subX = listW - 6 - sprite.textWidth(subText);
-        if (subX < 6) subX = 6;
-        sprite.drawString(subText, subX, 11 + dy);
+        if (selected && sprite.textWidth(item->sublabel) > subAvailW) {
+          String subText = _marqueeWindow(sprite, item->sublabel, subAvailW);
+          int16_t subX = listW - 6 - sprite.textWidth(subText);
+          if (subX < 6) subX = 6;
+          sprite.drawString(subText, subX, 11 + dy);
+        } else {
+          int16_t subX = listW - 6 - sprite.textWidth(item->sublabel);
+          if (subX < 6) subX = 6;
+          sprite.drawString(item->sublabel, subX, 11 + dy);
+        }
       }
       else
       {
         if (item->sublabel)
         {
           int16_t subMaxW = listW - 12;
-          bool subOverflows = sprite.textWidth(item->sublabel) > subMaxW;
+          int16_t labelW = sprite.textWidth(item->label);
+          int16_t subW = sprite.textWidth(item->sublabel);
+          bool subOverflows = subW > subMaxW;
+          bool preferSub = selected && _preferSublabel &&
+                           (labelW + 4 + subW > subMaxW);
 
           sprite.setTextColor(selected ? TFT_CYAN : TFT_DARKGREY, bg);
-          String subText;
-          if (selected && subOverflows)
-            subText = _marqueeWindow(sprite, item->sublabel, subMaxW);
-          else
-            subText = item->sublabel;
+          if (selected && (subOverflows || preferSub)) {
+            if (subOverflows) {
+              String subText = _marqueeWindow(sprite, item->sublabel, subMaxW);
+              int16_t subX = listW - 6 - sprite.textWidth(subText);
+              if (subX < 6) subX = 6;
+              sprite.drawString(subText, subX, (ITEM_H / 2) - 4 + dy);
+            } else {
+              int16_t subX = listW - 6 - subW;
+              if (subX < 6) subX = 6;
+              sprite.drawString(item->sublabel, subX, (ITEM_H / 2) - 4 + dy);
+            }
+          } else {
+            int16_t subX = listW - 6 - subW;
+            if (subX < 6) subX = 6;
+            sprite.drawString(item->sublabel, subX, (ITEM_H / 2) - 4 + dy);
+          }
 
-          int16_t subX = listW - 6 - sprite.textWidth(subText);
+          int16_t subX = listW - 6 - subW;
           if (subX < 6) subX = 6;
-          sprite.drawString(subText, subX, (ITEM_H / 2) - 4 + dy);
 
-          // When the selected sublabel needs the whole row, give it priority:
-          // it is the secondary scan result users are trying to inspect.
-          labelAvailW = (selected && subOverflows) ? 0 : subX - 6 - 4;
+          // A selected preferred sublabel gets the row when the pair does not
+          // fit, instead of making the primary label (e.g. an IP) marquee.
+          labelAvailW = (selected && (subOverflows || preferSub))
+                          ? 0
+                          : subX - 6 - 4;
           sprite.setTextColor(fg, bg);
         }
 
@@ -274,6 +291,15 @@ protected:
     _resetMarquee();
   }
 
+  // In compact result lists, prefer the selected sublabel when label +
+  // sublabel cannot fit together. This is useful for rows such as
+  // "IP / hostname", where the hostname is the value that needs inspection.
+  void setPreferSublabel(bool enabled)
+  {
+    _preferSublabel = enabled;
+    _resetMarquee();
+  }
+
   // Update only the count after in-place array edits (SettingScreen pattern).
   // Clamps selection and adjusts scroll — does NOT call render(). Caller must.
   void setCount(uint8_t count)
@@ -291,6 +317,7 @@ private:
   uint8_t       _scrollOffset     = 0;
   bool          _partialTopActive = false;
   bool          _stackedSublabels = false;
+  bool          _preferSublabel = false;
 
   uint32_t      _marqueeTimer     = 0;
   int16_t       _marqueeOffset    = 0;
@@ -329,14 +356,19 @@ private:
       marqueeText = item.sublabel;
     } else if (item.sublabel) {
       int16_t subMaxW = listW - 12;
-      if (Uni.Lcd.textWidth(item.sublabel) > subMaxW) {
-        // Normal result lists keep their compact one-line layout, but a long
-        // selected sublabel (hostname, service/banner, etc.) gets the full row
-        // and uses marquee so it remains readable.
+      int16_t subW = Uni.Lcd.textWidth(item.sublabel);
+      int16_t labelW = Uni.Lcd.textWidth(item.label);
+      bool preferSub = _preferSublabel &&
+                       (labelW + 4 + subW > subMaxW);
+
+      if (subW > subMaxW || preferSub) {
+        // Give a preferred selected sublabel the row when the pair cannot fit.
+        // If the value itself is wider than the row, the existing marquee
+        // scrolls it; otherwise it is simply shown in full.
         marqueeText = item.sublabel;
         availW = subMaxW;
       } else {
-        availW = (listW - 6 - Uni.Lcd.textWidth(item.sublabel)) - 10;
+        availW = (listW - 6 - subW) - 10;
       }
     }
 

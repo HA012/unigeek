@@ -67,7 +67,7 @@ private:
 
   void _showConfig(uint8_t selectedIndex = 0);
   void _scan();
-  void _discoverMulticast();
+  bool _discoverMulticast();
   void _scanRange();
   void _scanTargets();
   void _probeTarget(const char* ip, const char* label);

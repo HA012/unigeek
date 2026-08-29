@@ -26,6 +26,7 @@ void IPScannerScreen::onBack() {
   switch (_state) {
     case STATE_RESULT_PORT:
       _state = STATE_RESULT_IP;
+      setPreferSublabel(true);
       setItems(_foundItems, (_foundCount == 0) ? 1 : _foundCount);
       break;
     case STATE_RESULT_IP:
@@ -73,6 +74,7 @@ void IPScannerScreen::onItemSelected(uint8_t index) {
 
 void IPScannerScreen::_showConfiguration(uint8_t selectedIndex) {
   _state = STATE_CONFIGURATION;
+  setPreferSublabel(false);
   _startIpSub = String(_startIp);
   _endIpSub   = String(_endIp);
   _configItems[0] = {"Start IP", _startIpSub.c_str()};
@@ -116,6 +118,7 @@ void IPScannerScreen::_scanIP() {
   if (_foundCount == 0) {
     _foundItems[0] = {"No devices found"};
     _state = STATE_RESULT_IP;
+    setPreferSublabel(true);
     setItems(_foundItems, 1);
     return;
   }
@@ -128,6 +131,7 @@ void IPScannerScreen::_scanIP() {
   }
 
   _state = STATE_RESULT_IP;
+  setPreferSublabel(true);
   setItems(_foundItems, _foundCount);
 }
 
@@ -148,6 +152,7 @@ void IPScannerScreen::_scanPort(const char* ip) {
 
   if (ScanCancelUtil::wasCancelled()) {
     _state = STATE_RESULT_IP;
+    setPreferSublabel(true);
     setItems(_foundItems, _foundCount);
     return;
   }
@@ -155,6 +160,7 @@ void IPScannerScreen::_scanPort(const char* ip) {
   if (_openCount == 0) {
     _openItems[0] = {"No ports open"};
     _state = STATE_RESULT_PORT;
+    setPreferSublabel(false);
     setItems(_openItems, 1);
     return;
   }
@@ -167,5 +173,6 @@ void IPScannerScreen::_scanPort(const char* ip) {
   }
 
   _state = STATE_RESULT_PORT;
+  setPreferSublabel(false);
   setItems(_openItems, _openCount);
 }

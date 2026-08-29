@@ -13,6 +13,7 @@
 #include "utils/network/MdnsScanUtil.h"
 #include "utils/network/SsdpScanUtil.h"
 #include "utils/network/WebScanUtil.h"
+#include <stdlib.h>
 
 namespace {
 
@@ -23,9 +24,6 @@ static bool quickTcpOpen(const char* ip, uint16_t port, uint32_t timeoutMs)
   client.stop();
   return open;
 }
-
-static MdnsScanUtil::Service mdnsBuffer[16];
-static SsdpScanUtil::Device ssdpBuffer[SsdpScanUtil::MAX_DEVICES];
 
 static constexpr const char* MDNS_TYPES[] = {
   "_googlecast._tcp.local",
@@ -223,7 +221,17 @@ void IoTDeviceScannerScreen::_scan()
     1
   );
 
-  _discoverMulticast();
+  if (!_discoverMulticast()) {
+    ProgressView::finish();
+    _showConfig();
+    return;
+  }
+
+  if (ScanCancelUtil::wasCancelled()) {
+    ProgressView::finish();
+    _showConfig();
+    return;
+  }
 
   if (_scanMode == MODE_RANGE) {
     _scanRange();
@@ -240,11 +248,18 @@ void IoTDeviceScannerScreen::_scan()
   _showResults();
 }
 
-void IoTDeviceScannerScreen::_discoverMulticast()
+bool IoTDeviceScannerScreen::_discoverMulticast()
 {
   const char* progressLabel =
     _scanMode == MODE_RANGE ? "Scanning hosts..." : "Scanning...";
-  memset(ssdpBuffer, 0, sizeof(ssdpBuffer));
+
+  SsdpScanUtil::Device* ssdpBuffer = static_cast<SsdpScanUtil::Device*>(
+    calloc(SsdpScanUtil::MAX_DEVICES, sizeof(SsdpScanUtil::Device))
+  );
+  if (!ssdpBuffer) {
+    ShowStatusAction::show("Not enough memory", 1200);
+    return false;
+  }
 
   uint8_t ssdpCount = SsdpScanUtil::discover(
     "ssdp:all",
@@ -264,14 +279,25 @@ void IoTDeviceScannerScreen::_discoverMulticast()
       _mergeEvidence(evidence);
     }
   }
+  free(ssdpBuffer);
+
+  if (ScanCancelUtil::wasCancelled()) return true;
 
   ProgressView::progress(progressLabel, 12);
 
   constexpr uint8_t typeCount =
     sizeof(MDNS_TYPES) / sizeof(MDNS_TYPES[0]);
 
+  MdnsScanUtil::Service* mdnsBuffer = static_cast<MdnsScanUtil::Service*>(
+    calloc(16, sizeof(MdnsScanUtil::Service))
+  );
+  if (!mdnsBuffer) {
+    ShowStatusAction::show("Not enough memory", 1200);
+    return false;
+  }
+
   for (uint8_t type = 0; type < typeCount; ++type) {
-    memset(mdnsBuffer, 0, sizeof(mdnsBuffer));
+    memset(mdnsBuffer, 0, 16 * sizeof(MdnsScanUtil::Service));
 
     uint8_t count = MdnsScanUtil::discover(
       MDNS_TYPES[type],
@@ -295,11 +321,16 @@ void IoTDeviceScannerScreen::_discoverMulticast()
       }
     }
 
+    if (ScanCancelUtil::wasCancelled()) break;
+
     ProgressView::progress(
       progressLabel,
       (uint8_t)(12 + ((uint16_t)(type + 1) * 23 / typeCount))
     );
   }
+
+  free(mdnsBuffer);
+  return true;
 }
 
 void IoTDeviceScannerScreen::_scanRange()

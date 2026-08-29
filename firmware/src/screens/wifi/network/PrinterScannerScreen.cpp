@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputNumberAction.h"
@@ -145,8 +146,16 @@ void PrinterScannerScreen::_scan()
   ScanCancelUtil::begin();
   ProgressView::init();
 
-  static SsdpScanUtil::Device ssdp[SsdpScanUtil::MAX_DEVICES];
-  memset(ssdp, 0, sizeof(ssdp));
+  SsdpScanUtil::Device* ssdp = static_cast<SsdpScanUtil::Device*>(
+    calloc(SsdpScanUtil::MAX_DEVICES, sizeof(SsdpScanUtil::Device))
+  );
+  if (!ssdp) {
+    ProgressView::finish();
+    ShowStatusAction::show("Not enough memory", 1200);
+    _showConfig();
+    return;
+  }
+
   uint8_t ssdpCount = SsdpScanUtil::discover(
     "urn:schemas-upnp-org:device:Printer:1",
     ssdp,
@@ -160,6 +169,7 @@ void PrinterScannerScreen::_scan()
   for (uint8_t i = 0; i < ssdpCount; ++i) {
     _mergeSsdp(ssdp[i]);
   }
+  free(ssdp);
 
   if (ScanCancelUtil::wasCancelled()) {
     ProgressView::finish();
@@ -167,8 +177,18 @@ void PrinterScannerScreen::_scan()
     return;
   }
 
-  static MdnsScanUtil::Service mdns[MdnsScanUtil::MAX_RESULTS];
-  memset(mdns, 0, sizeof(mdns));
+  // SSDP and mDNS buffers are deliberately sequential: constrained devices
+  // never need to hold both large discovery result arrays at once.
+  MdnsScanUtil::Service* mdns = static_cast<MdnsScanUtil::Service*>(
+    calloc(MdnsScanUtil::MAX_RESULTS, sizeof(MdnsScanUtil::Service))
+  );
+  if (!mdns) {
+    ProgressView::finish();
+    ShowStatusAction::show("Not enough memory", 1200);
+    _showConfig();
+    return;
+  }
+
   uint8_t mdnsCount = MdnsScanUtil::discover(
     "_ipp._tcp.local",
     mdns,
@@ -182,6 +202,7 @@ void PrinterScannerScreen::_scan()
   for (uint8_t i = 0; i < mdnsCount; ++i) {
     _mergeMdns(mdns[i]);
   }
+  free(mdns);
 
   ProgressView::finish();
 
