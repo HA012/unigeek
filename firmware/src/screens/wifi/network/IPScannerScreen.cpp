@@ -146,6 +146,12 @@ void IPScannerScreen::_scanPort(const char* ip) {
   _openCount = PortScanUtil::scan(ip, _openPorts, PortScanUtil::MAX_RESULTS, scanLabel.c_str(), false);
   ProgressView::finish();
 
+  if (ScanCancelUtil::wasCancelled()) {
+    _state = STATE_RESULT_IP;
+    setItems(_foundItems, _foundCount);
+    return;
+  }
+
   if (_openCount == 0) {
     _openItems[0] = {"No ports open"};
     _state = STATE_RESULT_PORT;

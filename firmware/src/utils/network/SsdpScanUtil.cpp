@@ -116,10 +116,9 @@ uint8_t SsdpScanUtil::discover(const char* searchTarget,
   uint8_t count = 0;
   uint32_t startMs = millis();
   const uint32_t totalMs = 4500;
-  uint32_t deadline = startMs + totalMs;
   uint32_t nextResend = startMs + resendEveryMs;
 
-  while (millis() < deadline && count < maxDevices) {
+  while ((uint32_t)(millis() - startMs) < totalMs && count < maxDevices) {
     if (searchesSent < maxSearches &&
         (int32_t)(millis() - nextResend) >= 0) {
       sendSearch();

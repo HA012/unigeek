@@ -240,10 +240,9 @@ uint8_t MdnsScanUtil::discover(const char* serviceType,
 
   uint32_t startMs = millis();
   const uint32_t totalMs = 3500;
-  uint32_t deadline = startMs + totalMs;
   uint32_t nextResend = startMs + resendEveryMs;
 
-  while (millis() < deadline) {
+  while ((uint32_t)(millis() - startMs) < totalMs) {
     if (queriesSent < maxQueries &&
         (int32_t)(millis() - nextResend) >= 0) {
       sendQuery();

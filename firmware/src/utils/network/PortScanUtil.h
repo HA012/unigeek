@@ -85,7 +85,7 @@ public:
       if (_scanOne(targetIp, (uint16_t)port, results[found], serviceScan, patient)) found++;
     }
 
-    ProgressView::progress(msg, 100);
+    if (!ScanCancelUtil::wasCancelled()) ProgressView::progress(msg, 100);
     return found;
   }
 
@@ -107,7 +107,7 @@ public:
       if (_scanOne(targetIp, ports[i], results[found], serviceScan, patient)) found++;
     }
 
-    ProgressView::progress(msg, 100);
+    if (!ScanCancelUtil::wasCancelled()) ProgressView::progress(msg, 100);
     return found;
   }
 

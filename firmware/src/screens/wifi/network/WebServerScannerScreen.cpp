@@ -89,25 +89,29 @@ void WebServerScannerScreen::onItemSelected(uint8_t index)
         _editTarget(3, index);
         break;
 
-      case CFG_START_IP:
-        _startIp = InputNumberAction::popup(
+      case CFG_START_IP: {
+        int value = InputNumberAction::popup(
           "Start IP",
           1,
           _endIp,
           _startIp
         );
+        if (!InputNumberAction::wasCancelled()) _startIp = value;
         _showConfig(index);
         break;
+      }
 
-      case CFG_END_IP:
-        _endIp = InputNumberAction::popup(
+      case CFG_END_IP: {
+        int value = InputNumberAction::popup(
           "End IP",
           _startIp,
           254,
           _endIp
         );
+        if (!InputNumberAction::wasCancelled()) _endIp = value;
         _showConfig(index);
         break;
+      }
 
       case CFG_START_SCAN:
         _scan();
@@ -368,7 +372,7 @@ void WebServerScannerScreen::_editTarget(
     ? _targets[targetIndex]
     : _networkPrefix();
 
-  char title[8];
+  char title[16];
   snprintf(title, sizeof(title), "Target %u", (unsigned)(targetIndex + 1));
 
   String ip = InputTextAction::popup(
