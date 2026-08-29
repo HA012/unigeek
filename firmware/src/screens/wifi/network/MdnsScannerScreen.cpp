@@ -84,6 +84,7 @@ void MdnsScannerScreen::_scan()
 void MdnsScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_resultCount == 0) {
     _resultItems[0] = {"No mDNS services found"};
@@ -113,6 +114,7 @@ void MdnsScannerScreen::_showDetails(uint8_t index)
 {
   if (index >= _resultCount) return;
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
 
   const auto& svc = _results[index];
 

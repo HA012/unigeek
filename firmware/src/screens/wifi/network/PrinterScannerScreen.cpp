@@ -285,6 +285,7 @@ String PrinterScannerScreen::_networkPrefix() const
 void PrinterScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_printerCount == 0) {
     _resultItems[0] = {"No printers found"};
@@ -314,6 +315,7 @@ void PrinterScannerScreen::_showDetails(uint8_t index)
 {
   if (index >= _printerCount) return;
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
 
   const Printer& p = _printers[index];
 

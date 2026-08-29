@@ -468,6 +468,7 @@ void IoTDeviceScannerScreen::_mergeEvidence(
 void IoTDeviceScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_deviceCount == 0) {
     _resultItems[0] = {"No IoT devices found"};
@@ -497,6 +498,7 @@ void IoTDeviceScannerScreen::_showDetails(uint8_t index)
   if (index >= _deviceCount) return;
 
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
   const auto& dev = _devices[index];
 
   _detailSubs[0] = dev.ip;

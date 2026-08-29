@@ -148,19 +148,56 @@ public:
       sprite.setTextColor(fg, bg);
 
       int16_t labelAvailW = listW - 12;
-      if (item->sublabel)
+      if (_stackedSublabels && item->sublabel)
       {
-        sprite.setTextColor(selected ? TFT_CYAN : TFT_DARKGREY, bg);
-        int16_t subX = listW - 6 - sprite.textWidth(item->sublabel);
-        sprite.drawString(item->sublabel, subX, (ITEM_H / 2) - 4 + dy);
-        labelAvailW = subX - 6 - 4;
-        sprite.setTextColor(fg, bg);
-      }
+        // Detail layout: field name above, value below. Short values remain
+        // right-aligned; long selected values marquee within the full row.
+        sprite.drawString(item->label, 6, 2 + dy);
 
-      if (selected && sprite.textWidth(item->label) > labelAvailW)
-        sprite.drawString(_marqueeWindow(sprite, item->label, labelAvailW), 6, (ITEM_H / 2) - 4 + dy);
+        sprite.setTextColor(selected ? TFT_CYAN : TFT_DARKGREY, bg);
+        int16_t subAvailW = listW - 12;
+        String subText;
+        if (selected && sprite.textWidth(item->sublabel) > subAvailW)
+          subText = _marqueeWindow(sprite, item->sublabel, subAvailW);
+        else
+          subText = item->sublabel;
+
+        int16_t subX = listW - 6 - sprite.textWidth(subText);
+        if (subX < 6) subX = 6;
+        sprite.drawString(subText, subX, 11 + dy);
+      }
       else
-        sprite.drawString(item->label, 6, (ITEM_H / 2) - 4 + dy);
+      {
+        if (item->sublabel)
+        {
+          int16_t subMaxW = listW - 12;
+          bool subOverflows = sprite.textWidth(item->sublabel) > subMaxW;
+
+          sprite.setTextColor(selected ? TFT_CYAN : TFT_DARKGREY, bg);
+          String subText;
+          if (selected && subOverflows)
+            subText = _marqueeWindow(sprite, item->sublabel, subMaxW);
+          else
+            subText = item->sublabel;
+
+          int16_t subX = listW - 6 - sprite.textWidth(subText);
+          if (subX < 6) subX = 6;
+          sprite.drawString(subText, subX, (ITEM_H / 2) - 4 + dy);
+
+          // When the selected sublabel needs the whole row, give it priority:
+          // it is the secondary scan result users are trying to inspect.
+          labelAvailW = (selected && subOverflows) ? 0 : subX - 6 - 4;
+          sprite.setTextColor(fg, bg);
+        }
+
+        if (labelAvailW > 0)
+        {
+          if (selected && sprite.textWidth(item->label) > labelAvailW)
+            sprite.drawString(_marqueeWindow(sprite, item->label, labelAvailW), 6, (ITEM_H / 2) - 4 + dy);
+          else
+            sprite.drawString(item->label, 6, (ITEM_H / 2) - 4 + dy);
+        }
+      }
 
       sprite.pushSprite(bodyX(), bodyY() + screenY);
       sprite.deleteSprite();
@@ -227,6 +264,16 @@ public:
 protected:
   uint8_t _selectedIndex = 0;
 
+  // Render sublabels on a second line, right-aligned. Intended for detail
+  // views where values (banners, TXT records, URLs, etc.) may be long.
+  // The selected long value uses the existing marquee so the full text can
+  // be read without changing ListItem or increasing per-row storage.
+  void setStackedSublabels(bool enabled)
+  {
+    _stackedSublabels = enabled;
+    _resetMarquee();
+  }
+
   // Update only the count after in-place array edits (SettingScreen pattern).
   // Clamps selection and adjusts scroll — does NOT call render(). Caller must.
   void setCount(uint8_t count)
@@ -243,6 +290,7 @@ private:
   uint8_t       _count            = 0;
   uint8_t       _scrollOffset     = 0;
   bool          _partialTopActive = false;
+  bool          _stackedSublabels = false;
 
   uint32_t      _marqueeTimer     = 0;
   int16_t       _marqueeOffset    = 0;
@@ -273,10 +321,26 @@ private:
     const ListItem& item   = _items[_selectedIndex];
     int16_t         listW  = bodyW() - 4;
     int16_t         availW = listW - 12;
-    if (item.sublabel)
-      availW = (listW - 6 - Uni.Lcd.textWidth(item.sublabel)) - 10;
 
-    if (Uni.Lcd.textWidth(item.label) <= availW) {
+    const char* marqueeText = item.label;
+    if (_stackedSublabels && item.sublabel) {
+      // In detail layout the value gets the full row width and is the text
+      // users most need to inspect completely.
+      marqueeText = item.sublabel;
+    } else if (item.sublabel) {
+      int16_t subMaxW = listW - 12;
+      if (Uni.Lcd.textWidth(item.sublabel) > subMaxW) {
+        // Normal result lists keep their compact one-line layout, but a long
+        // selected sublabel (hostname, service/banner, etc.) gets the full row
+        // and uses marquee so it remains readable.
+        marqueeText = item.sublabel;
+        availW = subMaxW;
+      } else {
+        availW = (listW - 6 - Uni.Lcd.textWidth(item.sublabel)) - 10;
+      }
+    }
+
+    if (Uni.Lcd.textWidth(marqueeText) <= availW) {
       if (_marqueeOffset != 0) { _marqueeOffset = 0; onRender(); }
       return;
     }

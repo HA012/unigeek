@@ -65,6 +65,7 @@ void SsdpScannerScreen::_scan()
 void SsdpScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_deviceCount == 0) {
     _resultItems[0] = {"No SSDP devices found"};
@@ -87,6 +88,7 @@ void SsdpScannerScreen::_showDetails(uint8_t index)
 {
   if (index >= _deviceCount) return;
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
 
   const auto& dev = _devices[index];
 

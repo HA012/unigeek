@@ -316,6 +316,7 @@ void RemoteShellScannerScreen::_scanTarget(const char* ip, const char* label)
 void RemoteShellScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_resultCount == 0) {
     _resultItems[0] = {"No remote shells found"};
@@ -345,6 +346,7 @@ void RemoteShellScannerScreen::_showDetails(uint8_t index)
   if (index >= _resultCount) return;
 
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
   _detailResultIndex = index;
   const auto& result = _results[index];
 

@@ -307,6 +307,7 @@ void WebServerScannerScreen::_scanTarget(const char* ip, const char* label)
 void WebServerScannerScreen::_showResults()
 {
   _state = STATE_RESULTS;
+  setStackedSublabels(false);
 
   if (_resultCount == 0) {
     _resultItems[0] = {"No web servers found"};
@@ -336,6 +337,7 @@ void WebServerScannerScreen::_showDetails(uint8_t index)
   if (index >= _resultCount) return;
 
   _state = STATE_DETAILS;
+  setStackedSublabels(true);
   const auto& result = _results[index];
 
   _detailSubs[0] = result.ip;
