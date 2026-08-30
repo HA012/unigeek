@@ -9,7 +9,6 @@
 #include "WifiAnalysisDetectionMenuScreen.h"
 #include "WifiSniffersMenuScreen.h"
 #include "WifiAttacksMenuScreen.h"
-#include "WifiESPNowChatScreen.h"
 
 void WifiMenuScreen::onInit() {
   setItems(_items);
@@ -22,7 +21,6 @@ void WifiMenuScreen::onItemSelected(uint8_t index) {
     case 2: Screen.push(new WifiAnalysisDetectionMenuScreen()); break;
     case 3: Screen.push(new WifiSniffersMenuScreen());          break;
     case 4: Screen.push(new WifiAttacksMenuScreen());           break;
-    case 5: Screen.push(new WifiESPNowChatScreen());            break;
   }
 }
 

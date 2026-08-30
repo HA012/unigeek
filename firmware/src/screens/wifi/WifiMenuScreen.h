@@ -16,12 +16,11 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[6] = {
+  ListItem _items[5] = {
     {"Access Point"},
     {"Network"},
     {"Analysis & Detection"},
     {"Sniffers"},
     {"Attacks"},
-    {"ESPNOW Chat"},
   };
 };
