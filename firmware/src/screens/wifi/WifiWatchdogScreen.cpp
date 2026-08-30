@@ -92,7 +92,26 @@ void WifiWatchdogScreen::onInit()
   Uni.Nav->setSuppressKeys(true);
 #endif
 
-  render();
+  if (_initialView != InitialView::None) {
+    static constexpr View kInitialViewMap[] = {
+      VIEW_DEAUTH, VIEW_PROBES, VIEW_FLOOD, VIEW_EVILTWIN
+    };
+    _enterView(kInitialViewMap[static_cast<int>(_initialView)]);
+  } else {
+    render();
+  }
+}
+
+void WifiWatchdogScreen::_enterView(View view)
+{
+#ifdef DEVICE_HAS_TOUCH_NAV
+  Uni.Nav->setSuppressKeys(false);
+#endif
+  _holdCell  = -1;
+  _view      = view;
+  _itemCount = 0;
+  _scroll.resetScroll();
+  _renderView();
 }
 
 void WifiWatchdogScreen::onUpdate()
@@ -115,12 +134,8 @@ void WifiWatchdogScreen::onUpdate()
         const int row = ((int)ty - (int)bodyY()) / (bodyH() / 2);
         if (col >= 0 && col < 2 && row >= 0 && row < 2) {
           static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_PROBES, VIEW_FLOOD, VIEW_EVILTWIN};
-          Uni.Nav->setSuppressKeys(false);
-          _holdCell  = -1;
-          _view      = kViewMap[row * 2 + col];
-          _itemCount = 0;
-          _scroll.resetScroll();
-          _renderView();
+          _enterView(kViewMap[row * 2 + col]);
+          return;
         }
       }
 #else
@@ -145,10 +160,7 @@ void WifiWatchdogScreen::onUpdate()
         if (Uni.Speaker) Uni.Speaker->beep();
       } else if (dir == INavigation::DIR_PRESS) {
         static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_PROBES, VIEW_FLOOD, VIEW_EVILTWIN};
-        _view      = kViewMap[_gridSel];
-        _itemCount = 0;
-        _scroll.resetScroll();
-        _renderView();
+        _enterView(kViewMap[_gridSel]);
         return;
       }
 #endif
@@ -195,6 +207,10 @@ void WifiWatchdogScreen::onUpdate()
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
+        if (_initialView != InitialView::None) {
+          onBack();
+          return;
+        }
         _view        = VIEW_OVERALL;
         _prevGridSel = -1;
 #ifdef DEVICE_HAS_TOUCH_NAV
@@ -233,14 +249,14 @@ void WifiWatchdogScreen::onRender()
   if (_itemCount > 0) {
     _scroll.render(bodyX(), bodyY(), bodyW(), bodyH());
   } else {
-    Sprite sp(&Uni.Lcd);
-    sp.createSprite(bodyW(), bodyH());
-    sp.fillSprite(TFT_BLACK);
-    sp.setTextDatum(MC_DATUM);
-    sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    sp.drawString("Monitoring...", bodyW() / 2, bodyH() / 2);
-    sp.pushSprite(bodyX(), bodyY());
-    sp.deleteSprite();
+    Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+    Uni.Lcd.setTextDatum(MC_DATUM);
+    Uni.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    Uni.Lcd.drawString(
+      "Monitoring...",
+      bodyX() + bodyW() / 2,
+      bodyY() + bodyH() / 2
+    );
   }
 }
 
