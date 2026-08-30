@@ -103,7 +103,7 @@ void WifiRogueAPScreen::onItemSelected(uint8_t index) {
         InputSelectAction::Option opts[kMaxOpts];
         for (uint8_t i = 0; i < optCount; i++)
           opts[i] = {_browser.entry(i).name.c_str(), _browser.entry(i).name.c_str()};
-        const char* selected = InputSelectAction::popup("Captive Portal", opts, optCount);
+        const char* selected = InputSelectAction::popup("Portal", opts, optCount);
         render();
         if (!selected) break;
         _captivePath = String(PORTALS_DIR) + "/" + selected;
@@ -132,7 +132,7 @@ void WifiRogueAPScreen::_showMenu() {
   _state = STATE_MENU;
   _menuItems[0] = {"SSID", _ssid.isEmpty() ? "-" : _ssid.c_str()};
   _menuItems[1] = {"DNS Spoof", _dnsSpoofEnabled ? "On" : "Off"};
-  _menuItems[2] = {"Captive Portal", _captiveEnabled ? _captiveSub.c_str() : "-"};
+  _menuItems[2] = {"Portal", _captiveEnabled ? _captiveSub.c_str() : "-"};
   _menuItems[3] = {"Start"};
   setItems(_menuItems, 4);
 }
