@@ -1,6 +1,6 @@
 #include "WifiAttacksMenuScreen.h"
 #include "core/ScreenManager.h"
-#include "WifiAPScreen.h"
+#include "WifiRogueAPScreen.h"
 #include "WifiEvilTwinScreen.h"
 #include "karma/WifiKarmaMenuScreen.h"
 #include "WifiDeautherScreen.h"
@@ -14,7 +14,7 @@ void WifiAttacksMenuScreen::onInit() {
 
 void WifiAttacksMenuScreen::onItemSelected(uint8_t index) {
   switch (index) {
-    case 0: Screen.push(new WifiAPScreen()); break;
+    case 0: Screen.push(new WifiRogueAPScreen()); break;
     case 1: Screen.push(new WifiEvilTwinScreen()); break;
     case 2: Screen.push(new WifiKarmaMenuScreen()); break;
     case 3: Screen.push(new WifiDeautherScreen()); break;
