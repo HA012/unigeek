@@ -30,6 +30,7 @@ public:
   ~WifiWatchdogScreen();
 
   void onInit() override;
+  void onRestore() override;
   void onUpdate() override;
   void onRender() override;
   void onBack();
@@ -153,6 +154,7 @@ private:
   int                 _prevGridSel      = -1;
   int                 _holdCell         = -1;
   int                 _prevCounts[4]    = {-1, -1, -1, -1};
+  int                 _karmaBaseline    = 0;
   ScrollListView      _scroll;
   ScrollListView::Row _rows[MAX_ROWS]          = {};
   char                _labels[MAX_ROWS][64]    = {};

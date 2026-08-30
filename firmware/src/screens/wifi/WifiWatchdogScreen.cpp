@@ -1,4 +1,5 @@
 #include "WifiWatchdogScreen.h"
+#include "karma/WifiKarmaDetectorScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -84,6 +85,8 @@ void WifiWatchdogScreen::onInit()
   _beaconMap.clear();
   _twinMap.clear();
 
+  _karmaBaseline = Achievement.getInt("wifi_karma_attack_detected");
+
   WiFi.mode(WIFI_MODE_STA);
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&WifiWatchdogScreen::_promiscuousCb);
@@ -114,6 +117,22 @@ void WifiWatchdogScreen::_enterView(View view)
   _renderView();
 }
 
+void WifiWatchdogScreen::onRestore()
+{
+  WiFi.mode(WIFI_MODE_STA);
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous_rx_cb(&WifiWatchdogScreen::_promiscuousCb);
+
+  _view        = VIEW_OVERALL;
+  _prevGridSel = -1;
+  _holdCell    = -1;
+  for (int i = 0; i < 4; i++) _prevCounts[i] = -1;
+
+#ifdef DEVICE_HAS_TOUCH_NAV
+  Uni.Nav->setSuppressKeys(true);
+#endif
+}
+
 void WifiWatchdogScreen::onUpdate()
 {
   if (_view == VIEW_OVERALL) {
@@ -133,8 +152,14 @@ void WifiWatchdogScreen::onUpdate()
         const int col = gx / (gw / 2);
         const int row = ((int)ty - (int)bodyY()) / (bodyH() / 2);
         if (col >= 0 && col < 2 && row >= 0 && row < 2) {
-          static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_PROBES, VIEW_FLOOD, VIEW_EVILTWIN};
-          _enterView(kViewMap[row * 2 + col]);
+          const int idx = row * 2 + col;
+          if (idx == 3) {
+            Uni.Nav->setSuppressKeys(false);
+            Screen.push(new WifiKarmaDetectorScreen());
+            return;
+          }
+          static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_FLOOD, VIEW_EVILTWIN};
+          _enterView(kViewMap[idx]);
           return;
         }
       }
@@ -159,7 +184,11 @@ void WifiWatchdogScreen::onUpdate()
         _renderOverall();
         if (Uni.Speaker) Uni.Speaker->beep();
       } else if (dir == INavigation::DIR_PRESS) {
-        static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_PROBES, VIEW_FLOOD, VIEW_EVILTWIN};
+        if (_gridSel == 3) {
+          Screen.push(new WifiKarmaDetectorScreen());
+          return;
+        }
+        static constexpr View kViewMap[] = {VIEW_DEAUTH, VIEW_FLOOD, VIEW_EVILTWIN};
         _enterView(kViewMap[_gridSel]);
         return;
       }
@@ -491,13 +520,14 @@ void WifiWatchdogScreen::_renderOverall()
 
   int counts[4];
   counts[0] = (int)_deauthMap.size();
-  counts[1] = (int)_probeMap.size();
-  counts[2] = 0;
+  counts[1] = 0;
   for (auto& kv : _beaconMap)
-    if (kv.second.ratePerSec >= FLOOD_THRESHOLD) counts[2]++;
-  counts[3] = 0;
+    if (kv.second.ratePerSec >= FLOOD_THRESHOLD) counts[1]++;
+  counts[2] = 0;
   for (auto& kv : _twinMap)
-    if ((int)kv.second.size() >= 2) counts[3]++;
+    if ((int)kv.second.size() >= 2) counts[2]++;
+  counts[3] = Achievement.getInt("wifi_karma_attack_detected") - _karmaBaseline;
+  if (counts[3] < 0) counts[3] = 0;
 
   const bool forceAll = (_prevGridSel < 0);
 
@@ -651,7 +681,7 @@ void WifiWatchdogScreen::_drawBackButton()
 void WifiWatchdogScreen::_drawGridCell(int idx, int count)
 {
   static constexpr const char* kNames[] = {
-    "Deauth", "Probes", "Beacon Flood", "Evil Twin"
+    "Deauth", "Beacon Flood", "Evil Twin", "Karma"
   };
 
 #ifdef DEVICE_HAS_TOUCH_NAV
