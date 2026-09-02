@@ -12,11 +12,12 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[5] = {
+  ListItem _items[6] = {
     {"WiFi Analyzer"},
     {"Channel Monitor"},
     {"Packet Monitor"},
     {"Packet Sniffer"},
     {"WiFi Watchdog"},
+    {"WiFi Watchcat"},
   };
 };
