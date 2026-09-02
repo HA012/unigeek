@@ -45,6 +45,7 @@ void SettingScreen::_refresh() {
   _volSub      = Config.get(APP_CONFIG_VOLUME,               APP_CONFIG_VOLUME_DEFAULT)                + "%";
 #endif
 #ifdef DEVICE_HAS_SOUND
+  _soundSub    = Config.get(APP_CONFIG_SOUND,                APP_CONFIG_SOUND_DEFAULT).toInt() ? "On" : "Off";
   _navSndSub   = Config.get(APP_CONFIG_NAV_SOUND,            APP_CONFIG_NAV_SOUND_DEFAULT).toInt() ? "On" : "Off";
 #endif
   _colorSub    = Config.get(APP_CONFIG_PRIMARY_COLOR,        APP_CONFIG_PRIMARY_COLOR_DEFAULT);
@@ -81,6 +82,7 @@ void SettingScreen::_refresh() {
   _items[SETT_VOLUME].sublabel    = _volSub.c_str();
 #endif
 #ifdef DEVICE_HAS_SOUND
+  _items[SETT_SOUND].sublabel     = _soundSub.c_str();
   _items[SETT_NAV_SOUND].sublabel = _navSndSub.c_str();
 #endif
   _items[SETT_COLOR].sublabel        = _colorSub.c_str();
@@ -187,6 +189,18 @@ void SettingScreen::onItemSelected(uint8_t index) {
 #endif
 
 #ifdef DEVICE_HAS_SOUND
+    case SETT_SOUND: {
+      bool cur = Config.get(APP_CONFIG_SOUND, APP_CONFIG_SOUND_DEFAULT).toInt();
+      Config.set(APP_CONFIG_SOUND, cur ? "0" : "1");
+      Config.save(Uni.Storage);
+
+      // If sound is disabled while audio is already playing, stop it now.
+      if (cur && Uni.Speaker) Uni.Speaker->noTone();
+
+      _refresh();
+      break;
+    }
+
     case SETT_NAV_SOUND: {
       bool cur = Config.get(APP_CONFIG_NAV_SOUND, APP_CONFIG_NAV_SOUND_DEFAULT).toInt();
       Config.set(APP_CONFIG_NAV_SOUND, cur ? "0" : "1");
