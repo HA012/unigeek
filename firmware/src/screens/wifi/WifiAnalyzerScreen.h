@@ -23,7 +23,7 @@ private:
 
   // Per-channel dwell for the one-shot scan. 600 ms x up to 14 channels = 8.4 s,
   // which stays under the framework's hard 10 s sync-scan timeout (see
-  // WifiEapolCaptureScreen::_selectWifi for the full rationale).
+  // WifiEapolScreen::_selectWifi for the full rationale).
   static constexpr int SCAN_DWELL_MS = 600;
 
   enum State { STATE_SCAN, STATE_CLIENTS };

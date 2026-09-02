@@ -439,7 +439,7 @@ void BLEAnalyzerScreen::_doScan()
 {
   _state             = STATE_SCAN;
   _selectedDeviceIdx = -1;
-  ShowStatusAction::show("Scanning BLE...", 0);
+  ShowStatusAction::show("Scanning...", 0);
 
   // Undo the watcher's scan config before a storing scan.
   _bleScan->setAdvertisedDeviceCallbacks(nullptr, false);

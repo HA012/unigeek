@@ -220,6 +220,9 @@ void WifiEvilTwinScreen::_selectWifi()
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
     _scanItems[i] = {_scanLabels[i], _scanValues[i]};
+    _scanItems[i].rssi              = (int16_t)WiFi.RSSI(i);
+    _scanItems[i].hasRssi           = true;
+    _scanItems[i].sublabelMarquee   = true;
   }
 
   setItems(_scanItems, _scanCount);
@@ -371,7 +374,6 @@ void WifiEvilTwinScreen::_startAttack()
   }
 
   _log.addLine("Web server started");
-  _log.addLine("BACK/Press to stop");
   _drawLog();
 }
 

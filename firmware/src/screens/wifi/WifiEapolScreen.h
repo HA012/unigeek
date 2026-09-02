@@ -10,12 +10,12 @@
 #include "ui/views/LogView.h"
 #include "utils/network/WifiAttackUtil.h"
 
-class WifiEapolCaptureScreen : public ListScreen {
+class WifiEapolScreen : public ListScreen {
 public:
-  const char* title() override { return "EAPOL Capture"; }
+  const char* title() override { return "EAPOL"; }
   bool inhibitPowerOff() override { return true; }
 
-  ~WifiEapolCaptureScreen();
+  ~WifiEapolScreen();
 
   void onInit() override;
   void onUpdate() override;

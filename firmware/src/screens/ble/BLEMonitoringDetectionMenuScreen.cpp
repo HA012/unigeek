@@ -1,14 +1,14 @@
-#include "BLEAnalysisDetectionMenuScreen.h"
+#include "BLEMonitoringDetectionMenuScreen.h"
 #include "core/ScreenManager.h"
 #include "screens/ble/BLEAnalyzerScreen.h"
 #include "screens/ble/BLEDetectorScreen.h"
 
-void BLEAnalysisDetectionMenuScreen::onInit()
+void BLEMonitoringDetectionMenuScreen::onInit()
 {
   setItems(_items);
 }
 
-void BLEAnalysisDetectionMenuScreen::onItemSelected(uint8_t index)
+void BLEMonitoringDetectionMenuScreen::onItemSelected(uint8_t index)
 {
   switch (index) {
     case 0: Screen.push(new BLEAnalyzerScreen()); break;
@@ -16,7 +16,7 @@ void BLEAnalysisDetectionMenuScreen::onItemSelected(uint8_t index)
   }
 }
 
-void BLEAnalysisDetectionMenuScreen::onBack()
+void BLEMonitoringDetectionMenuScreen::onBack()
 {
   Screen.goBack();
 }

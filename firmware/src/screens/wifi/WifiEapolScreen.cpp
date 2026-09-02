@@ -1,4 +1,4 @@
-#include "WifiEapolCaptureScreen.h"
+#include "WifiEapolScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -15,43 +15,43 @@
 
 // ── Static definitions ────────────────────────────────────────────────────
 
-const char* WifiEapolCaptureScreen::SAVE_DIR = "/unigeek/wifi/eapol";
+const char* WifiEapolScreen::SAVE_DIR = "/unigeek/wifi/eapol";
 
-WifiEapolCaptureScreen::RawCapture WifiEapolCaptureScreen::_ring[WifiEapolCaptureScreen::RING_SIZE] = {};
-volatile int  WifiEapolCaptureScreen::_ringHead    = 0;
-volatile int  WifiEapolCaptureScreen::_ringTail    = 0;
-volatile bool WifiEapolCaptureScreen::_skipBeacons = false;
+WifiEapolScreen::RawCapture WifiEapolScreen::_ring[WifiEapolScreen::RING_SIZE] = {};
+volatile int  WifiEapolScreen::_ringHead    = 0;
+volatile int  WifiEapolScreen::_ringTail    = 0;
+volatile bool WifiEapolScreen::_skipBeacons = false;
 
-WifiEapolCaptureScreen::ApTarget WifiEapolCaptureScreen::_apTargets[WifiEapolCaptureScreen::MAX_TARGETS] = {};
-int WifiEapolCaptureScreen::_apCount = 0;
-
-std::unordered_map<
-  WifiEapolCaptureScreen::MacAddr,
-  WifiEapolCaptureScreen::EapolEntry,
-  WifiEapolCaptureScreen::MacHash,
-  WifiEapolCaptureScreen::MacEqual
-> WifiEapolCaptureScreen::_eapolMap = {};
+WifiEapolScreen::ApTarget WifiEapolScreen::_apTargets[WifiEapolScreen::MAX_TARGETS] = {};
+int WifiEapolScreen::_apCount = 0;
 
 std::unordered_map<
-  WifiEapolCaptureScreen::MacAddr,
+  WifiEapolScreen::MacAddr,
+  WifiEapolScreen::EapolEntry,
+  WifiEapolScreen::MacHash,
+  WifiEapolScreen::MacEqual
+> WifiEapolScreen::_eapolMap = {};
+
+std::unordered_map<
+  WifiEapolScreen::MacAddr,
   std::string,
-  WifiEapolCaptureScreen::MacHash,
-  WifiEapolCaptureScreen::MacEqual
-> WifiEapolCaptureScreen::_ssidMap = {};
+  WifiEapolScreen::MacHash,
+  WifiEapolScreen::MacEqual
+> WifiEapolScreen::_ssidMap = {};
 
 std::unordered_map<
-  WifiEapolCaptureScreen::MacAddr,
+  WifiEapolScreen::MacAddr,
   std::vector<std::vector<uint8_t>>,
-  WifiEapolCaptureScreen::MacHash,
-  WifiEapolCaptureScreen::MacEqual
-> WifiEapolCaptureScreen::_pending = {};
+  WifiEapolScreen::MacHash,
+  WifiEapolScreen::MacEqual
+> WifiEapolScreen::_pending = {};
 
 std::unordered_map<
-  WifiEapolCaptureScreen::MacAddr,
+  WifiEapolScreen::MacAddr,
   std::vector<uint8_t>,
-  WifiEapolCaptureScreen::MacHash,
-  WifiEapolCaptureScreen::MacEqual
-> WifiEapolCaptureScreen::_beaconStore = {};
+  WifiEapolScreen::MacHash,
+  WifiEapolScreen::MacEqual
+> WifiEapolScreen::_beaconStore = {};
 
 // ── PCAP structs ──────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ struct PcapPktHdr {
 
 // ── Destructor ────────────────────────────────────────────────────────────
 
-WifiEapolCaptureScreen::~WifiEapolCaptureScreen() {
+WifiEapolScreen::~WifiEapolScreen() {
   _skipBeacons = false;
   esp_wifi_set_promiscuous_rx_cb(nullptr);
   esp_wifi_set_promiscuous(false);
@@ -94,30 +94,30 @@ WifiEapolCaptureScreen::~WifiEapolCaptureScreen() {
 
 // ── Status bar callback ───────────────────────────────────────────────────
 
-void WifiEapolCaptureScreen::_statusBarCb(Sprite& sp, int barY, int width, void* userData) {
-  auto* self = static_cast<WifiEapolCaptureScreen*>(userData);
+void WifiEapolScreen::_statusBarCb(Sprite& sp, int barY, int width, void* userData) {
+  auto* self = static_cast<WifiEapolScreen*>(userData);
 
   char countBuf[24];
   snprintf(countBuf, sizeof(countBuf), "Captured: %u", self->_handshakes);
   sp.setTextDatum(TL_DATUM);
-  sp.setTextColor(self->_handshakes > 0 ? TFT_MAGENTA : TFT_DARKGREY);
+  sp.setTextColor(TFT_GREEN);
   sp.drawString(countBuf, 2, barY);
 
   if (self->_lastEapolName[0] != '\0') {
     sp.setTextDatum(TR_DATUM);
-    sp.setTextColor(TFT_CYAN);
+    sp.setTextColor(TFT_GREEN);
     sp.drawString(self->_lastEapolName, width - 2, barY);
   }
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-void WifiEapolCaptureScreen::onInit() {
+void WifiEapolScreen::onInit() {
   _phase = PHASE_MENU;
   _showMenu();
 }
 
-void WifiEapolCaptureScreen::_showMenu() {
+void WifiEapolScreen::_showMenu() {
   _modeSub      = (_mode == MODE_TARGET) ? "Target" : "All";
   _targetSub    = _target.ssid;
   _discoverySub = String(_discoveryDwellMs) + " ms";
@@ -145,7 +145,7 @@ void WifiEapolCaptureScreen::_showMenu() {
   setItems(_menuItems, _menuCount);
 }
 
-void WifiEapolCaptureScreen::onItemSelected(uint8_t index) {
+void WifiEapolScreen::onItemSelected(uint8_t index) {
   if (_phase == PHASE_SELECT_WIFI) {
     if (index >= _scanCount) return;
     // _scanLabels[index] is "[ch] ssid"
@@ -240,7 +240,7 @@ void WifiEapolCaptureScreen::onItemSelected(uint8_t index) {
 
       _attacker = new WifiAttackUtil();
       esp_wifi_set_promiscuous(true);
-      esp_wifi_set_promiscuous_rx_cb(&WifiEapolCaptureScreen::_promiscuousCb);
+      esp_wifi_set_promiscuous_rx_cb(&WifiEapolScreen::_promiscuousCb);
 
       if (_mode == MODE_TARGET) {
         // Seed the chosen AP and jump straight to PHASE_ATTACK on its channel.
@@ -276,7 +276,7 @@ void WifiEapolCaptureScreen::onItemSelected(uint8_t index) {
   }
 }
 
-void WifiEapolCaptureScreen::_selectWifi() {
+void WifiEapolScreen::_selectWifi() {
   _phase = PHASE_SELECT_WIFI;
   ShowStatusAction::show("Scanning (10s)...", 0);
 
@@ -304,12 +304,15 @@ void WifiEapolCaptureScreen::_selectWifi() {
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
     _scanItems[i] = {_scanLabels[i], _scanValues[i]};
+    _scanItems[i].rssi              = (int16_t)WiFi.RSSI(i);
+    _scanItems[i].hasRssi           = true;
+    _scanItems[i].sublabelMarquee   = true;
   }
 
   setItems(_scanItems, _scanCount);
 }
 
-void WifiEapolCaptureScreen::onUpdate() {
+void WifiEapolScreen::onUpdate() {
   if (_phase == PHASE_MENU || _phase == PHASE_SELECT_WIFI) {
     ListScreen::onUpdate();
     return;
@@ -382,7 +385,6 @@ void WifiEapolCaptureScreen::onUpdate() {
             const bool got = (it != _eapolMap.end() && it->second.validated);
             _logView.addLine(got ? "Done. Handshake captured." : "Done. No handshake (timeout).",
                              got ? TFT_GREEN : TFT_YELLOW);
-            _logView.addLine("BACK to exit.", TFT_DARKGREY);
             render();
             // Stop firing deauths; let user press BACK.
             _phase = PHASE_ATTACK;  // keep state, but no more channels to attack
@@ -439,7 +441,7 @@ void WifiEapolCaptureScreen::onUpdate() {
   }
 }
 
-void WifiEapolCaptureScreen::onRender() {
+void WifiEapolScreen::onRender() {
   if (_phase == PHASE_MENU || _phase == PHASE_SELECT_WIFI) {
     ListScreen::onRender();
     return;
@@ -447,7 +449,7 @@ void WifiEapolCaptureScreen::onRender() {
   _logView.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _statusBarCb, this);
 }
 
-void WifiEapolCaptureScreen::onBack() {
+void WifiEapolScreen::onBack() {
   if (_phase == PHASE_SELECT_WIFI) {
     _phase = PHASE_MENU;
     _showMenu();
@@ -459,7 +461,7 @@ void WifiEapolCaptureScreen::onBack() {
 // ── Phase helpers ─────────────────────────────────────────────────────────
 
 // Build the list of unique channels that still have APs needing more EAPOL.
-void WifiEapolCaptureScreen::_buildAttackChans() {
+void WifiEapolScreen::_buildAttackChans() {
   _attackChanCount = 0;
   for (int i = 0; i < _apCount; i++) {
     MacAddr mac;
@@ -481,7 +483,7 @@ void WifiEapolCaptureScreen::_buildAttackChans() {
 }
 
 // Hop to the current attack channel and arm timing/flags.
-void WifiEapolCaptureScreen::_hopToAttackChan() {
+void WifiEapolScreen::_hopToAttackChan() {
   _channel     = _attackChans[_attackChanIdx];
   _attacker->setChannel(_channel);
   _deauthFired = false;
@@ -493,7 +495,7 @@ void WifiEapolCaptureScreen::_hopToAttackChan() {
 
 // ── Deauth injection ──────────────────────────────────────────────────────
 
-void WifiEapolCaptureScreen::_registerApTarget(const MacAddr& bssid, uint8_t ch) {
+void WifiEapolScreen::_registerApTarget(const MacAddr& bssid, uint8_t ch) {
   for (int i = 0; i < _apCount; i++) {
     if (memcmp(_apTargets[i].bssid, bssid.data(), 6) == 0) {
       _apTargets[i].channel = ch;
@@ -507,7 +509,7 @@ void WifiEapolCaptureScreen::_registerApTarget(const MacAddr& bssid, uint8_t ch)
   }
 }
 
-void WifiEapolCaptureScreen::_sendDeauth(int ch) {
+void WifiEapolScreen::_sendDeauth(int ch) {
   if (_apCount == 0 || !_attacker) return;
 
   int deauthed = 0;
@@ -541,7 +543,7 @@ void WifiEapolCaptureScreen::_sendDeauth(int ch) {
 
 // ── Storage free space guard ──────────────────────────────────────────────
 
-bool WifiEapolCaptureScreen::_checkFreeSpace() {
+bool WifiEapolScreen::_checkFreeSpace() {
   if (!_storageOk) return false;
   const unsigned long now = millis();
   if (now - _lastFreeCheck < 5000) return true;
@@ -557,7 +559,7 @@ bool WifiEapolCaptureScreen::_checkFreeSpace() {
 
 // ── PCAP helpers ──────────────────────────────────────────────────────────
 
-std::string WifiEapolCaptureScreen::_sanitize(const std::string& s) {
+std::string WifiEapolScreen::_sanitize(const std::string& s) {
   std::string out;
   out.reserve(s.size());
   for (char c : s) {
@@ -571,7 +573,7 @@ std::string WifiEapolCaptureScreen::_sanitize(const std::string& s) {
   return out;
 }
 
-std::string WifiEapolCaptureScreen::_makePath(const MacAddr& bssid, const std::string& ssid) {
+std::string WifiEapolScreen::_makePath(const MacAddr& bssid, const std::string& ssid) {
   char mac[13];
   snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X",
            bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
@@ -580,7 +582,7 @@ std::string WifiEapolCaptureScreen::_makePath(const MacAddr& bssid, const std::s
   return std::string(SAVE_DIR) + "/" + mac + "_" + safe + ".pcap";
 }
 
-void WifiEapolCaptureScreen::_writePcapHeader(const std::string& path) {
+void WifiEapolScreen::_writePcapHeader(const std::string& path) {
   if (!_checkFreeSpace()) return;
   fs::File f = Uni.Storage->open(path.c_str(), FILE_WRITE);
   if (!f) return;
@@ -589,7 +591,7 @@ void WifiEapolCaptureScreen::_writePcapHeader(const std::string& path) {
   f.close();
 }
 
-void WifiEapolCaptureScreen::_appendPcapFrame(const std::string& path,
+void WifiEapolScreen::_appendPcapFrame(const std::string& path,
                                                const uint8_t* data, uint16_t len) {
   if (!_checkFreeSpace()) return;
   fs::File f = Uni.Storage->open(path.c_str(), FILE_APPEND);
@@ -615,7 +617,7 @@ void WifiEapolCaptureScreen::_appendPcapFrame(const std::string& path,
 // produces a MIC that can never verify against that ANonce, no matter the
 // password.
 
-int WifiEapolCaptureScreen::_updateValidation(EapolEntry& entry,
+int WifiEapolScreen::_updateValidation(EapolEntry& entry,
                                                 const uint8_t* data, uint16_t len) {
   EapolUtil::Frame f;
   EapolUtil::Msg   msg = EapolUtil::parse(data, len, f);
@@ -649,7 +651,7 @@ int WifiEapolCaptureScreen::_updateValidation(EapolEntry& entry,
 
 // ── Main loop frame processor ─────────────────────────────────────────────
 
-void WifiEapolCaptureScreen::_flush() {
+void WifiEapolScreen::_flush() {
   while (_ringTail != _ringHead) {
     const RawCapture& cap = _ring[_ringTail];
     _ringTail = (_ringTail + 1) % RING_SIZE;
@@ -834,7 +836,7 @@ void WifiEapolCaptureScreen::_flush() {
 
 // ── Promiscuous callback ───────────────────────────────────────────────────
 
-void WifiEapolCaptureScreen::_promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t type) {
+void WifiEapolScreen::_promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t type) {
   if (buf == nullptr) return;
   if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA) return;
 

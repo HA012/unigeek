@@ -2,9 +2,9 @@
 
 #include "ui/templates/ListScreen.h"
 
-class BLEAnalysisDetectionMenuScreen : public ListScreen {
+class BLEMonitoringDetectionMenuScreen : public ListScreen {
 public:
-  const char* title() override { return "Analysis & Detection"; }
+  const char* title() override { return "Monitoring & Detection"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;
