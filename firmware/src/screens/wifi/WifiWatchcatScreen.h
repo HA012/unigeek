@@ -78,7 +78,8 @@ private:
   static constexpr int           MAX_ROWS        = 90;
   static constexpr unsigned long WINDOW_MS       = 30000UL;
   static constexpr int           MAX_RING        = 128;
-  static constexpr size_t        MAX_TRACKED_MAC = 256;
+  static constexpr size_t        MAX_PROBE_ENTRIES    = 128;
+  static constexpr size_t        MAX_ACTIVITY_ENTRIES = 64;
 
   enum View : uint8_t {
     VIEW_OVERALL,

@@ -4,6 +4,7 @@
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
 
+#include <algorithm>
 #include <cstring>
 
 // ── Static definitions ────────────────────────────────────────────────────────
@@ -253,7 +254,7 @@ void WifiWatchcatScreen::_drainRing()
     if (ev.kind == EVENT_PROBE) {
       auto it = _probeMap.find(ev.sta);
       if (it == _probeMap.end()) {
-        if (_probeMap.size() < MAX_TRACKED_MAC) {
+        if (_probeMap.size() < MAX_PROBE_ENTRIES) {
           ProbeEntry e{};
           e.timestamp = ev.timestamp;
           e.count     = 1;
@@ -290,7 +291,7 @@ void WifiWatchcatScreen::_drainRing()
 
     auto it = map->find(key);
     if (it == map->end()) {
-      if (map->size() < MAX_TRACKED_MAC) {
+      if (map->size() < MAX_ACTIVITY_ENTRIES) {
         ActivityEntry e{};
         e.timestamp = ev.timestamp;
         e.count     = 1;
@@ -377,16 +378,24 @@ void WifiWatchcatScreen::_renderOverall()
 
 void WifiWatchcatScreen::_renderProbes()
 {
+  using ProbeItem = std::pair<MacAddr, ProbeEntry>;
+  std::vector<ProbeItem> items;
+  items.reserve(_probeMap.size());
+  for (const auto& kv : _probeMap) items.push_back(kv);
+  std::sort(items.begin(), items.end(), [](const ProbeItem& a, const ProbeItem& b) {
+    return a.second.timestamp > b.second.timestamp;
+  });
+
   int n = 0;
   int macCount = 0;
-  for (const auto& kv : _probeMap) {
+  for (const auto& kv : items) {
     if (macCount >= MAX_ITEMS || n >= MAX_ROWS) break;
 
     const MacAddr&    mac = kv.first;
     const ProbeEntry& e   = kv.second;
 
     snprintf(_labels[n], sizeof(_labels[n]),
-             "%02X:%02X:%02X:%02X:%02X:%02X (x%d)",
+             "STA %02X:%02X:%02X:%02X:%02X:%02X (x%d)",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], e.count);
     _rows[n].label = _labels[n];
     _rows[n].value = "";
@@ -417,16 +426,24 @@ void WifiWatchcatScreen::_renderActivity(
   const std::unordered_map<PairKey, ActivityEntry, PairHash, PairEqual>& map,
   bool showSsid)
 {
+  using ActivityItem = std::pair<PairKey, ActivityEntry>;
+  std::vector<ActivityItem> items;
+  items.reserve(map.size());
+  for (const auto& kv : map) items.push_back(kv);
+  std::sort(items.begin(), items.end(), [](const ActivityItem& a, const ActivityItem& b) {
+    return a.second.timestamp > b.second.timestamp;
+  });
+
   int n = 0;
   int pairCount = 0;
-  for (const auto& kv : map) {
+  for (const auto& kv : items) {
     if (pairCount >= MAX_ITEMS || n >= MAX_ROWS) break;
 
-    const PairKey&      key = kv.first;
-    const ActivityEntry& e  = kv.second;
+    const PairKey&       key = kv.first;
+    const ActivityEntry& e   = kv.second;
 
     snprintf(_labels[n], sizeof(_labels[n]),
-             "%02X:%02X:%02X:%02X:%02X:%02X (x%d)",
+             "STA %02X:%02X:%02X:%02X:%02X:%02X (x%d)",
              key.sta[0], key.sta[1], key.sta[2], key.sta[3], key.sta[4], key.sta[5], e.count);
     _rows[n].label = _labels[n];
     _rows[n].value = "";
@@ -434,7 +451,7 @@ void WifiWatchcatScreen::_renderActivity(
 
     if (n < MAX_ROWS) {
       snprintf(_labels[n], sizeof(_labels[n]),
-               "  AP %02X:%02X:%02X:%02X:%02X:%02X",
+               "  BSSID %02X:%02X:%02X:%02X:%02X:%02X",
                key.ap[0], key.ap[1], key.ap[2], key.ap[3], key.ap[4], key.ap[5]);
       _rows[n].label = _labels[n];
       _rows[n].value = "";
@@ -577,13 +594,19 @@ void WifiWatchcatScreen::_promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t t
     // Probe Request
     if (fcSub == 0x4) {
       char ssid[33] = {};
-      if (len >= 26) {
-        const uint8_t id   = pay[24];
-        const uint8_t elen = pay[25];
-        if (id == 0 && elen > 0 && elen <= 32 && (size_t)(26 + elen) <= len) {
-          memcpy(ssid, pay + 26, elen);
-          ssid[elen] = '\0';
+      size_t pos = 24;
+      while (pos + 2 <= len) {
+        const uint8_t id   = pay[pos];
+        const uint8_t elen = pay[pos + 1];
+        if (pos + 2 + elen > len) break;
+        if (id == 0) {
+          if (elen > 0 && elen <= 32) {
+            memcpy(ssid, pay + pos + 2, elen);
+            ssid[elen] = '\0';
+          }
+          break;
         }
+        pos += 2 + elen;
       }
       _pushEvent(EVENT_PROBE, pay + 10, nullptr, ssid);
       return;
