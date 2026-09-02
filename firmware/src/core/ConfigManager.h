@@ -22,8 +22,6 @@
 #define APP_CONFIG_BRIGHTNESS_DEFAULT           "70"
 #define APP_CONFIG_VOLUME                       "volume"
 #define APP_CONFIG_VOLUME_DEFAULT               "75"
-#define APP_CONFIG_SOUND                        "sound"
-#define APP_CONFIG_SOUND_DEFAULT                "1"
 #define APP_CONFIG_NAV_SOUND                    "nav_sound"
 #define APP_CONFIG_NAV_SOUND_DEFAULT            "1"
 #define APP_CONFIG_PRIMARY_COLOR                "primary_color"
