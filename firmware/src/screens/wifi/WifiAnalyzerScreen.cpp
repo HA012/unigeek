@@ -162,7 +162,7 @@ void WifiAnalyzerScreen::_doScan()
 {
   _state = STATE_SCAN;
   strncpy(_title, "WiFi Analyzer", sizeof(_title));
-  ShowStatusAction::show("Scanning (10s)...", 0);
+  ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();

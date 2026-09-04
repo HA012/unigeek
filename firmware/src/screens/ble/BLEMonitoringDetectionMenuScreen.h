@@ -11,8 +11,9 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[2] = {
+  ListItem _items[3] = {
     {"BLE Analyzer"},
     {"BLE Detector"},
+    {"BLE Fox Hunt"},
   };
 };

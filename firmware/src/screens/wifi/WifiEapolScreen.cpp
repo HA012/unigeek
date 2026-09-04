@@ -278,7 +278,7 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
 
 void WifiEapolScreen::_selectWifi() {
   _phase = PHASE_SELECT_WIFI;
-  ShowStatusAction::show("Scanning (10s)...", 0);
+  ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
