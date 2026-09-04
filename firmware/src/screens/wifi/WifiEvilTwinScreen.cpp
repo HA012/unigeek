@@ -121,7 +121,7 @@ void WifiEvilTwinScreen::onItemSelected(uint8_t index)
     if (scanIndex < 0 || scanIndex >= _scanCount) return;
 
     _target.ssid    = _scanSsids[scanIndex];
-    _target.channel = atoi(_scanLabels[scanIndex] + 1);
+    _target.channel = _scanChannels[scanIndex];
     sscanf(_scanValues[scanIndex], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
            &_target.bssid[0], &_target.bssid[1], &_target.bssid[2],
            &_target.bssid[3], &_target.bssid[4], &_target.bssid[5]);
@@ -241,8 +241,8 @@ void WifiEvilTwinScreen::_selectWifi(bool forceScan)
     const String ssid = WiFi.SSID(i);
     snprintf(_scanSsids[i], sizeof(_scanSsids[i]), "%s",
              ssid.length() > 0 ? ssid.c_str() : "(hidden)");
-    snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "[%2d] %s",
-             WiFi.channel(i), _scanSsids[i]);
+    snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "%s", _scanSsids[i]);
+    _scanChannels[i] = (uint8_t)WiFi.channel(i);
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
     _scanRssi[i] = (int16_t)WiFi.RSSI(i);

@@ -155,10 +155,8 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
     const int scanIndex = (int)index - 1;
     if (scanIndex < 0 || scanIndex >= _scanCount) return;
 
-    // _scanLabels[scanIndex] is "[ch] ssid"
-    _target.channel = atoi(_scanLabels[scanIndex] + 1);
-    const char* sp = strchr(_scanLabels[scanIndex], ']');
-    _target.ssid = (sp && sp[1]) ? String(sp + 2) : String("(hidden)");
+    _target.channel = _scanChannels[scanIndex];
+    _target.ssid = String(_scanLabels[scanIndex]);
     sscanf(_scanValues[scanIndex], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
            &_target.bssid[0], &_target.bssid[1], &_target.bssid[2],
            &_target.bssid[3], &_target.bssid[4], &_target.bssid[5]);
@@ -194,7 +192,7 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
       break;
     case ACT_START: {
       // Target mode requires a picked AP — _target.channel only goes non-zero
-      // once _selectWifi() lands an `[ch] ssid` result, so it's the canonical
+      // once _selectWifi() lands a scan result, so it's the canonical
       // "no target set" indicator.
       if (_mode == MODE_TARGET && _target.channel == 0) {
         ShowStatusAction::show("Select a Target WiFi first!");
@@ -312,8 +310,9 @@ void WifiEapolScreen::_selectWifi(bool forceScan) {
 
   _scanCount = total > MAX_SCAN ? MAX_SCAN : (total > 0 ? total : 0);
   for (int i = 0; i < _scanCount; i++) {
-    snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "[%2d] %s",
-             WiFi.channel(i), WiFi.SSID(i).c_str());
+    snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "%s",
+             WiFi.SSID(i).c_str());
+    _scanChannels[i] = (uint8_t)WiFi.channel(i);
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
     _scanRssi[i] = (int16_t)WiFi.RSSI(i);

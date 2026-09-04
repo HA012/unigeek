@@ -158,6 +158,7 @@ private:
   char     _scanLabels[MAX_SCAN][52];
   char     _scanValues[MAX_SCAN][18];
   int16_t  _scanRssi[MAX_SCAN] = {};
+  uint8_t  _scanChannels[MAX_SCAN] = {};
   int      _scanCount = 0;
   bool     _scanValid = false;
   int           _discoveryCount   = 0;    // channels scanned in current discovery pass

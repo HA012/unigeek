@@ -61,6 +61,7 @@ private:
   char     _scanSsids[MAX_SCAN][33];
   char     _scanValues[MAX_SCAN][18];
   int16_t  _scanRssi[MAX_SCAN] = {};
+  uint8_t  _scanChannels[MAX_SCAN] = {};
   int      _scanCount = 0;
   bool     _scanValid = false;
 
