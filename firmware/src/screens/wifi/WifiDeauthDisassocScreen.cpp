@@ -44,10 +44,18 @@ void WifiDeauthDisassocScreen::onItemSelected(uint8_t index)
     } else {  // MODE_ALL
       if (index == 1) _startDeauth();
     }
-  } else if (_state == STATE_SELECT_WIFI && index < _scanCount) {
-    _target.ssid    = _scanLabels[index];
-    _target.channel = atoi(_scanLabels[index] + 1);
-    sscanf(_scanValues[index], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+  } else if (_state == STATE_SELECT_WIFI) {
+    if (index == 0) {
+      _selectWifi(true);
+      return;
+    }
+
+    const int scanIndex = (int)index - 1;
+    if (scanIndex < 0 || scanIndex >= _scanCount) return;
+
+    _target.ssid    = _scanLabels[scanIndex];
+    _target.channel = atoi(_scanLabels[scanIndex] + 1);
+    sscanf(_scanValues[scanIndex], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
            &_target.bssid[0], &_target.bssid[1], &_target.bssid[2],
            &_target.bssid[3], &_target.bssid[4], &_target.bssid[5]);
     _showMain();
@@ -121,33 +129,52 @@ void WifiDeauthDisassocScreen::_showMain()
   }
 }
 
-void WifiDeauthDisassocScreen::_selectWifi()
+void WifiDeauthDisassocScreen::_showScanResults()
 {
+  _state = STATE_SELECT_WIFI;
+  _scanItems[0] = {"Rescan"};
+
+  for (int i = 0; i < _scanCount; i++) {
+    _scanItems[i + 1] = {_scanLabels[i], _scanValues[i]};
+    _scanItems[i + 1].rssi            = _scanRssi[i];
+    _scanItems[i + 1].hasRssi         = true;
+    _scanItems[i + 1].sublabelMarquee = true;
+  }
+
+  setItems(_scanItems, _scanCount + 1);
+}
+
+void WifiDeauthDisassocScreen::_selectWifi(bool forceScan)
+{
+  if (_scanValid && !forceScan) {
+    _showScanResults();
+    return;
+  }
+
   _state = STATE_SELECT_WIFI;
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
+  WiFi.scanDelete();
   const int total = WiFi.scanNetworks();
 
-  if (total == 0) {
-    ShowStatusAction::show("No networks found");
-    _showMain();
-    return;
-  }
-
-  _scanCount = total > MAX_SCAN ? MAX_SCAN : total;
+  _scanCount = total > MAX_SCAN ? MAX_SCAN : (total > 0 ? total : 0);
   for (int i = 0; i < _scanCount; i++) {
     snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "[%2d] %s",
              WiFi.channel(i), WiFi.SSID(i).c_str());
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
-    _scanItems[i] = {_scanLabels[i], _scanValues[i]};
-    _scanItems[i].rssi              = (int16_t)WiFi.RSSI(i);
-    _scanItems[i].hasRssi           = true;
-    _scanItems[i].sublabelMarquee   = true;
+    _scanRssi[i] = (int16_t)WiFi.RSSI(i);
   }
 
-  setItems(_scanItems, _scanCount);
+  WiFi.scanDelete();
+  _scanValid = true;
+
+  if (_scanCount == 0) {
+    ShowStatusAction::show("No networks found");
+  }
+
+  _showScanResults();
 }
 
 void WifiDeauthDisassocScreen::_startDeauth()

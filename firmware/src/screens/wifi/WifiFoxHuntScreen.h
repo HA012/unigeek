@@ -17,7 +17,6 @@ public:
 
 private:
   static constexpr int MAX_SCAN = 20;
-  static constexpr int SCAN_DWELL_MS = 600;
 
   enum State { STATE_SCAN, STATE_TRACK };
   State _state = STATE_SCAN;
@@ -32,7 +31,7 @@ private:
   WifiEntry _entries[MAX_SCAN];
   String    _labels[MAX_SCAN];
   String    _subs[MAX_SCAN];
-  ListItem  _items[MAX_SCAN];
+  ListItem  _items[MAX_SCAN + 1];
   int       _entryCount = 0;
   int       _selected = -1;
 
@@ -50,6 +49,7 @@ private:
   int16_t         _pulseSpriteH = 0;
 
   void _doScan();
+  void _showScan();
   void _startTracking(int index);
   void _stopTracking();
   void _updateTracking();

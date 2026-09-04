@@ -50,7 +50,7 @@ void WifiFoxHuntScreen::onUpdate()
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
       _stopTracking();
-      _doScan();
+      _showScan();
       return;
     }
   }
@@ -69,14 +69,21 @@ void WifiFoxHuntScreen::onRender()
 
 void WifiFoxHuntScreen::onItemSelected(uint8_t index)
 {
-  if (_state == STATE_SCAN && index < _entryCount) _startTracking(index);
+  if (_state == STATE_SCAN) {
+    if (index == 0) {
+      _doScan();
+      return;
+    }
+    const int apIndex = (int)index - 1;
+    if (apIndex >= 0 && apIndex < _entryCount) _startTracking(apIndex);
+  }
 }
 
 void WifiFoxHuntScreen::onBack()
 {
   if (_state == STATE_TRACK) {
     _stopTracking();
-    _doScan();
+    _showScan();
   } else {
     WiFi.scanDelete();
     Screen.goBack();
@@ -90,14 +97,14 @@ void WifiFoxHuntScreen::_doScan()
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  int total = WiFi.scanNetworks(false, false, false, SCAN_DWELL_MS, 0);
+  WiFi.scanDelete();
+  int total = WiFi.scanNetworks();
 
   _entryCount = 0;
   if (total <= 0) {
     WiFi.scanDelete();
     ShowStatusAction::show("No networks found");
-    setItems(_items, 0);
+    _showScan();
     return;
   }
 
@@ -112,15 +119,27 @@ void WifiFoxHuntScreen::_doScan()
 
     _labels[_entryCount] = e.ssid;
     _subs[_entryCount] = e.bssid;
-    _items[_entryCount] = {_labels[_entryCount].c_str(), _subs[_entryCount].c_str()};
-    _items[_entryCount].rssi = (int16_t)e.rssi;
-    _items[_entryCount].hasRssi = true;
-    _items[_entryCount].sublabelMarquee = true;
     _entryCount++;
   }
 
   WiFi.scanDelete();
-  setItems(_items, _entryCount);
+  _showScan();
+}
+
+void WifiFoxHuntScreen::_showScan()
+{
+  _state = STATE_SCAN;
+  _selected = -1;
+  _items[0] = {"Rescan"};
+
+  for (int i = 0; i < _entryCount; i++) {
+    _items[i + 1] = {_labels[i].c_str(), _subs[i].c_str()};
+    _items[i + 1].rssi = (int16_t)_entries[i].rssi;
+    _items[i + 1].hasRssi = true;
+    _items[i + 1].sublabelMarquee = true;
+  }
+
+  setItems(_items, _entryCount + 1);
 }
 
 void WifiFoxHuntScreen::_startTracking(int index)

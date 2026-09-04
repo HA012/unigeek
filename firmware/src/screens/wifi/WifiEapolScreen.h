@@ -149,14 +149,17 @@ private:
   String        _attackSub;
   String        _deauthSub;
   void          _showMenu();
-  void          _selectWifi();
+  void          _selectWifi(bool forceScan = false);
+  void          _showScanResults();
 
   // ── Network scan list ────────────────────────────────────────────────────
   static constexpr int MAX_SCAN = 20;
-  ListItem _scanItems[MAX_SCAN];
+  ListItem _scanItems[MAX_SCAN + 1];
   char     _scanLabels[MAX_SCAN][52];
   char     _scanValues[MAX_SCAN][18];
+  int16_t  _scanRssi[MAX_SCAN] = {};
   int      _scanCount = 0;
+  bool     _scanValid = false;
   int           _discoveryCount   = 0;    // channels scanned in current discovery pass
   uint8_t       _attackChans[13]  = {};   // unique channels with APs needing EAPOL
   int           _attackChanCount  = 0;

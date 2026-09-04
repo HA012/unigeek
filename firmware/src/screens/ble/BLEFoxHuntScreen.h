@@ -25,11 +25,12 @@ private:
 
   NimBLEScan*       _bleScan = nullptr;
   NimBLEScanResults _scanResults;
+  NimBLEAdvertisedDevice _devices[kMaxDevices];
   NimBLEAdvertisedDevice _selDev;
 
   String   _labels[kMaxDevices];
   String   _subs[kMaxDevices];
-  ListItem _items[kMaxDevices];
+  ListItem _items[kMaxDevices + 1];
   uint8_t  _devCount = 0;
   int      _selected = -1;
 
@@ -48,6 +49,7 @@ private:
   int16_t         _pulseSpriteH = 0;
 
   void _doScan();
+  void _showList();
   void _startTracking(int index);
   void _stopTracking();
   void _updateTracking();

@@ -59,10 +59,12 @@ private:
   String   _modeSub;
   String   _targetSub;
 
-  ListItem _scanItems[MAX_SCAN];
+  ListItem _scanItems[MAX_SCAN + 1];
   char     _scanLabels[MAX_SCAN][52];
   char     _scanValues[MAX_SCAN][18];
+  int16_t  _scanRssi[MAX_SCAN] = {};
   int      _scanCount = 0;
+  bool     _scanValid = false;
 
   static ApEntry      _allTargets[MAX_ALL];
   static int          _allCount;
@@ -72,7 +74,8 @@ private:
   String _statusMsg;
 
   void _showMain();
-  void _selectWifi();
+  void _selectWifi(bool forceScan = false);
+  void _showScanResults();
   void _startDeauth();
   void _stopDeauth();
   void _deauthAll();

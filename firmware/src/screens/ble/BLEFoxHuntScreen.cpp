@@ -47,7 +47,7 @@ void BLEFoxHuntScreen::onUpdate()
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
       _stopTracking();
-      _doScan();
+      _showList();
       return;
     }
   }
@@ -66,14 +66,21 @@ void BLEFoxHuntScreen::onRender()
 
 void BLEFoxHuntScreen::onItemSelected(uint8_t index)
 {
-  if (_state == STATE_LIST && index < _devCount) _startTracking(index);
+  if (_state == STATE_LIST) {
+    if (index == 0) {
+      _doScan();
+      return;
+    }
+    const int devIndex = (int)index - 1;
+    if (devIndex >= 0 && devIndex < _devCount) _startTracking(devIndex);
+  }
 }
 
 void BLEFoxHuntScreen::onBack()
 {
   if (_state == STATE_TRACK) {
     _stopTracking();
-    _doScan();
+    _showList();
   } else {
     if (_bleScan) _bleScan->stop();
     Screen.goBack();
@@ -91,32 +98,41 @@ void BLEFoxHuntScreen::_doScan()
   _bleScan->clearResults();
   _scanResults = _bleScan->start(kScanSeconds, false);
 
-  _devCount = 0;
-  int count = min((int)_scanResults.getCount(), (int)kMaxDevices);
-  for (int i = 0; i < count; i++) {
-    NimBLEAdvertisedDevice dev = _scanResults.getDevice(i);
-    std::string n = dev.getName();
-    String addr = dev.getAddress().toString().c_str();
+  _devCount = min((int)_scanResults.getCount(), (int)kMaxDevices);
+  for (int i = 0; i < _devCount; i++) {
+    _devices[i] = _scanResults.getDevice(i);
+    std::string n = _devices[i].getName();
+    String addr = _devices[i].getAddress().toString().c_str();
 
-    _labels[_devCount] = n.empty() ? addr : String(n.c_str());
-    _subs[_devCount] = n.empty() ? "" : addr;
-    _items[_devCount] = {_labels[_devCount].c_str(),
-                         _subs[_devCount].length() ? _subs[_devCount].c_str() : nullptr};
-    _items[_devCount].rssi = (int16_t)dev.getRSSI();
-    _items[_devCount].hasRssi = true;
-    _items[_devCount].sublabelMarquee = true;
-    _devCount++;
+    _labels[i] = n.empty() ? addr : String(n.c_str());
+    _subs[i] = n.empty() ? "" : addr;
   }
 
   if (_devCount == 0) ShowStatusAction::show("No devices found");
+  _showList();
+}
+
+void BLEFoxHuntScreen::_showList()
+{
   _state = STATE_LIST;
-  setItems(_items, _devCount);
+  _selected = -1;
+  _items[0] = {"Rescan"};
+
+  for (int i = 0; i < _devCount; i++) {
+    _items[i + 1] = {_labels[i].c_str(),
+                     _subs[i].length() ? _subs[i].c_str() : nullptr};
+    _items[i + 1].rssi = (int16_t)_devices[i].getRSSI();
+    _items[i + 1].hasRssi = true;
+    _items[i + 1].sublabelMarquee = true;
+  }
+
+  setItems(_items, _devCount + 1);
 }
 
 void BLEFoxHuntScreen::_startTracking(int index)
 {
   _selected = index;
-  _selDev = _scanResults.getDevice(index);  // self-contained snapshot
+  _selDev = _devices[index];  // self-contained snapshot from the initial scan
   _state = STATE_TRACK;
 
   _foxBleTarget = _selDev.getAddress();

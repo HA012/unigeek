@@ -72,12 +72,14 @@ private:
   String   _targetSub;
   String   _startSub;
   ListItem _menuItems[3] = { {"Mode"}, {"Target"}, {"Start"} };
-  ListItem _apItems[MAX_AP];
+  ListItem _apItems[MAX_AP + 1];
+  bool     _scanValid = false;
 
   void _updateMenuValues();
   void _showFilePicker();
   bool _loadDictFile(const String& path);
-  void _startScan();
+  void _startScan(bool forceScan = false);
+  void _showScanResults();
   void _startAttack();
   void _stop();
   void _broadcastNext();

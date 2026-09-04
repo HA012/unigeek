@@ -147,12 +147,19 @@ void WifiEapolScreen::_showMenu() {
 
 void WifiEapolScreen::onItemSelected(uint8_t index) {
   if (_phase == PHASE_SELECT_WIFI) {
-    if (index >= _scanCount) return;
-    // _scanLabels[index] is "[ch] ssid"
-    _target.channel = atoi(_scanLabels[index] + 1);
-    const char* sp = strchr(_scanLabels[index], ']');
+    if (index == 0) {
+      _selectWifi(true);
+      return;
+    }
+
+    const int scanIndex = (int)index - 1;
+    if (scanIndex < 0 || scanIndex >= _scanCount) return;
+
+    // _scanLabels[scanIndex] is "[ch] ssid"
+    _target.channel = atoi(_scanLabels[scanIndex] + 1);
+    const char* sp = strchr(_scanLabels[scanIndex], ']');
     _target.ssid = (sp && sp[1]) ? String(sp + 2) : String("(hidden)");
-    sscanf(_scanValues[index], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+    sscanf(_scanValues[scanIndex], "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
            &_target.bssid[0], &_target.bssid[1], &_target.bssid[2],
            &_target.bssid[3], &_target.bssid[4], &_target.bssid[5]);
     _phase = PHASE_MENU;
@@ -276,40 +283,50 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
   }
 }
 
-void WifiEapolScreen::_selectWifi() {
+void WifiEapolScreen::_showScanResults() {
+  _phase = PHASE_SELECT_WIFI;
+  _scanItems[0] = {"Rescan"};
+
+  for (int i = 0; i < _scanCount; i++) {
+    _scanItems[i + 1] = {_scanLabels[i], _scanValues[i]};
+    _scanItems[i + 1].rssi            = _scanRssi[i];
+    _scanItems[i + 1].hasRssi         = true;
+    _scanItems[i + 1].sublabelMarquee = true;
+  }
+
+  setItems(_scanItems, _scanCount + 1);
+}
+
+void WifiEapolScreen::_selectWifi(bool forceScan) {
+  if (_scanValid && !forceScan) {
+    _showScanResults();
+    return;
+  }
+
   _phase = PHASE_SELECT_WIFI;
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  // Long-ish sweep so weaker / less chatty APs get airtime, but the per-channel
-  // dwell MUST stay under the framework's hard 10 s sync-scan timeout
-  // (WiFiScan.cpp waits WIFI_SCAN_DONE_BIT for 10000 ms, else WIFI_SCAN_FAILED).
-  // 600 ms × up to 14 channels = 8.4 s — comfortably below 10 s. The previous
-  // 770 ms × 13 channels = 10.01 s tipped over the timeout in 13-channel
-  // regulatory domains (EU/BR), so every scan returned "No networks found".
-  const int total = WiFi.scanNetworks(false, false, false, 600, 0);
+  WiFi.scanDelete();
+  const int total = WiFi.scanNetworks();
 
-  if (total <= 0) {
-    ShowStatusAction::show("No networks found");
-    _phase = PHASE_MENU;
-    _showMenu();
-    return;
-  }
-
-  _scanCount = total > MAX_SCAN ? MAX_SCAN : total;
+  _scanCount = total > MAX_SCAN ? MAX_SCAN : (total > 0 ? total : 0);
   for (int i = 0; i < _scanCount; i++) {
     snprintf(_scanLabels[i], sizeof(_scanLabels[i]), "[%2d] %s",
              WiFi.channel(i), WiFi.SSID(i).c_str());
     snprintf(_scanValues[i], sizeof(_scanValues[i]), "%s",
              WiFi.BSSIDstr(i).c_str());
-    _scanItems[i] = {_scanLabels[i], _scanValues[i]};
-    _scanItems[i].rssi              = (int16_t)WiFi.RSSI(i);
-    _scanItems[i].hasRssi           = true;
-    _scanItems[i].sublabelMarquee   = true;
+    _scanRssi[i] = (int16_t)WiFi.RSSI(i);
   }
 
-  setItems(_scanItems, _scanCount);
+  WiFi.scanDelete();
+  _scanValid = true;
+
+  if (_scanCount == 0) {
+    ShowStatusAction::show("No networks found");
+  }
+
+  _showScanResults();
 }
 
 void WifiEapolScreen::onUpdate() {
