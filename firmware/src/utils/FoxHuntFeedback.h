@@ -81,26 +81,33 @@ public:
     uint8_t g = 0;
     uint8_t b = 0;
 
-    if (t < 0.25f) {
+    if (t < 0.20f) {
       // Blue -> cyan.
-      const float u = t * 4.0f;
+      const float u = t * 5.0f;
       g = (uint8_t)(u * 255.0f);
       b = 255;
-    } else if (t < 0.50f) {
-      // Cyan -> green.
-      const float u = (t - 0.25f) * 4.0f;
-      g = 255;
-      b = (uint8_t)((1.0f - u) * 255.0f);
-    } else if (t < 0.75f) {
-      // Green -> yellow.
-      const float u = (t - 0.50f) * 4.0f;
+    } else if (t < 0.40f) {
+      // Cyan -> white. Avoid passing through green on the way to warm colors.
+      const float u = (t - 0.20f) * 5.0f;
       r = (uint8_t)(u * 255.0f);
       g = 255;
-    } else {
-      // Yellow -> red.
-      const float u = (t - 0.75f) * 4.0f;
+      b = 255;
+    } else if (t < 0.60f) {
+      // White -> yellow.
+      const float u = (t - 0.40f) * 5.0f;
       r = 255;
-      g = (uint8_t)((1.0f - u) * 255.0f);
+      g = 255;
+      b = (uint8_t)((1.0f - u) * 255.0f);
+    } else if (t < 0.80f) {
+      // Yellow -> orange.
+      const float u = (t - 0.60f) * 5.0f;
+      r = 255;
+      g = (uint8_t)(255.0f - u * 127.0f);
+    } else {
+      // Orange -> red.
+      const float u = (t - 0.80f) * 5.0f;
+      r = 255;
+      g = (uint8_t)((1.0f - u) * 128.0f);
     }
 
     return _rgb565(r, g, b);
