@@ -70,17 +70,40 @@ public:
   uint16_t color() const {
     if (!_hasSignal) return TFT_DARKGREY;
 
-    // Continuous red -> yellow -> green gradient.
-    const float s = strength();
-    uint8_t r, g;
-    if (s < 0.5f) {
-      r = 255;
-      g = (uint8_t)(s * 2.0f * 255.0f);
-    } else {
-      r = (uint8_t)((1.0f - s) * 2.0f * 255.0f);
+    // Thermal cold -> hot gradient. Keep this mapping independent from
+    // strength(), which intentionally saturates at -45 dBm for beep cadence.
+    // Here -90 dBm is fully cold (blue) and -20 dBm is fully hot (red).
+    float t = (_smoothedRssi + 90.0f) / 70.0f;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+
+    if (t < 0.25f) {
+      // Blue -> cyan.
+      const float u = t * 4.0f;
+      g = (uint8_t)(u * 255.0f);
+      b = 255;
+    } else if (t < 0.50f) {
+      // Cyan -> green.
+      const float u = (t - 0.25f) * 4.0f;
       g = 255;
+      b = (uint8_t)((1.0f - u) * 255.0f);
+    } else if (t < 0.75f) {
+      // Green -> yellow.
+      const float u = (t - 0.50f) * 4.0f;
+      r = (uint8_t)(u * 255.0f);
+      g = 255;
+    } else {
+      // Yellow -> red.
+      const float u = (t - 0.75f) * 4.0f;
+      r = 255;
+      g = (uint8_t)((1.0f - u) * 255.0f);
     }
-    return _rgb565(r, g, 0);
+
+    return _rgb565(r, g, b);
   }
 
   const char* label() const {
