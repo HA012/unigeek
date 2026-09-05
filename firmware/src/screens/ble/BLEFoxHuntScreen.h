@@ -42,8 +42,8 @@ private:
   bool            _wasLive = false;
   bool            _uiInitialized = false;
   int             _displayedRssi = 127;
-  String          _displayedLabel;
   bool            _displayedLive = false;
+  bool            _continuousTone = false;
   Sprite*         _pulseSprite = nullptr;
   int16_t         _pulseSpriteW = 0;
   int16_t         _pulseSpriteH = 0;

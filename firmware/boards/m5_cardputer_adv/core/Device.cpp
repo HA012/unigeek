@@ -21,6 +21,9 @@ Device* Device::createInstance() {
   digitalWrite(LORA_CS, HIGH);    // deselect LoRa so it doesn't interfere with SD
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH);
+  pinMode(ST25R3916_CS_PIN, OUTPUT);
+  digitalWrite(ST25R3916_CS_PIN, HIGH);  // keep optional NFC cap deselected on shared SPI
+  pinMode(ST25R3916_IRQ_PIN, INPUT);
   sdSpi.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
 
   Wire.begin(GROVE_SDA, GROVE_SCL);  // Grove I2C (ExI2C) — Wire1 is reserved for keyboard+codec

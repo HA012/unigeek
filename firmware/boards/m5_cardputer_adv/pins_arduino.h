@@ -37,6 +37,11 @@ static const uint8_t SCL = 15;
 // ─── LoRa Module (SX1262, shares SPI bus) ─────────────────
 #define LORA_CS  5
 
+// ─── ST25R3916 NFC (M5Stack Cap CC1101 & NFC) ─────────────
+// Shares SPI bus with SD: SCK=40, MISO=39, MOSI=14.
+#define ST25R3916_CS_PIN   6
+#define ST25R3916_IRQ_PIN  4
+
 // ─── Keyboard (TCA8418 via Wire1) ─────────────────────────
 #define KB_INT            11
 #define KB_I2C_SDA         8
@@ -102,6 +107,7 @@ static const uint8_t SCL = 15;
 
 // ─── Firmware Feature Flags ───────────────────────────────
 #define DEVICE_HAS_KEYBOARD       // keyboard attached — enables keyboard input paths
+#define DEVICE_HAS_ST25R3916       // supports M5Stack Cap CC1101 & NFC over shared SPI
 #define DEVICE_HAS_SOUND          // speaker attached — enables audio paths and sound settings
 #define DEVICE_HAS_VOLUME_CONTROL // I2S amp + ES8311 codec support setVolume() — shows Volume slider in Settings
 #define DEVICE_HAS_USB_HID        // ESP32-S3 native USB OTG — enables USB HID keyboard

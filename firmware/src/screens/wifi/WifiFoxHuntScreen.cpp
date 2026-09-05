@@ -160,8 +160,8 @@ void WifiFoxHuntScreen::_startTracking(int index)
   _wasLive = false;
   _uiInitialized = false;
   _displayedRssi = 127;
-  _displayedLabel = "";
   _displayedLive = false;
+  _continuousTone = false;
   _feedback.reset(_entries[index].rssi);
 
   WiFi.mode(WIFI_MODE_STA);
@@ -180,6 +180,7 @@ void WifiFoxHuntScreen::_stopTracking()
   delay(10);
   esp_wifi_set_promiscuous(false);
   if (Uni.Speaker) Uni.Speaker->noTone();
+  _continuousTone = false;
   _destroyTrackingUi();
 }
 
@@ -199,9 +200,29 @@ void WifiFoxHuntScreen::_updateTracking()
     else                   _feedback.updateRssi(raw);
   }
 
-  if (live && _feedback.beepDue(now) && Uni.Speaker && !Uni.Speaker->isPlaying()) {
-    Uni.Speaker->tone(1200, 55);
-    _feedback.markBeep(now);
+  // At -20 dBm or stronger, switch from cadence beeps to a continuous
+  // lock tone. A 3 dB hysteresis prevents rapid on/off chatter around the
+  // threshold. The long tone is restarted if the speaker task ever expires.
+  if (Uni.Speaker && live) {
+    const int filteredRssi = _feedback.rssi();
+    if (!_continuousTone && filteredRssi >= -20) {
+      _continuousTone = true;
+      Uni.Speaker->tone(1200, 60000);
+      _feedback.markBeep(now);
+    } else if (_continuousTone && filteredRssi < -23) {
+      Uni.Speaker->noTone();
+      _continuousTone = false;
+    }
+
+    if (_continuousTone) {
+      if (!Uni.Speaker->isPlaying()) Uni.Speaker->tone(1200, 60000);
+    } else if (_feedback.beepDue(now) && !Uni.Speaker->isPlaying()) {
+      Uni.Speaker->tone(1200, 55);
+      _feedback.markBeep(now);
+    }
+  } else if (_continuousTone) {
+    if (Uni.Speaker) Uni.Speaker->noTone();
+    _continuousTone = false;
   }
 
   _wasLive = live;
@@ -235,35 +256,34 @@ void WifiFoxHuntScreen::_renderTracking(bool force)
     lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     lcd.drawString(name, x + w / 2, y + 4);
     _displayedRssi = 127;
-    _displayedLabel = "";
     _displayedLive = !live;  // force status redraw below
   }
 
   const int shownRssi = live ? _feedback.rssi() : 0;
-  if (force || live != _displayedLive || (live && shownRssi != _displayedRssi)) {
+  const bool statusChanged = force || live != _displayedLive ||
+                             (live && shownRssi != _displayedRssi);
+  if (statusChanged) {
     lcd.fillRect(x, y + 16, w, 12, TFT_BLACK);
     lcd.setTextDatum(TC_DATUM);
     lcd.setTextSize(1);
+    lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    if (!live) {
+      lcd.drawString("Searching...", x + w / 2, y + 18);
+    }
+  }
+
+  if (statusChanged) {
+    lcd.fillRect(x, y + h - 16, w, 16, TFT_BLACK);
+    lcd.setTextDatum(BC_DATUM);
     lcd.setTextColor(live ? TFT_WHITE : TFT_DARKGREY, TFT_BLACK);
     if (live) {
       char rssiText[20];
       snprintf(rssiText, sizeof(rssiText), "%d dBm", shownRssi);
-      lcd.drawString(rssiText, x + w / 2, y + 18);
-    } else {
-      lcd.drawString("Searching...", x + w / 2, y + 18);
+      lcd.drawString(rssiText, x + w / 2, y + h - 5);
     }
-    _displayedRssi = shownRssi;
-    _displayedLive = live;
   }
-
-  const char* nextLabel = live ? _feedback.label() : "SEARCHING";
-  if (force || _displayedLabel != nextLabel) {
-    lcd.fillRect(x, y + h - 16, w, 16, TFT_BLACK);
-    lcd.setTextDatum(BC_DATUM);
-    lcd.setTextColor(live ? _feedback.color() : TFT_DARKGREY, TFT_BLACK);
-    lcd.drawString(nextLabel, x + w / 2, y + h - 5);
-    _displayedLabel = nextLabel;
-  }
+  _displayedRssi = shownRssi;
+  _displayedLive = live;
 
   int16_t maxR = min((int16_t)(w / 4), (int16_t)(h / 3));
   if (maxR < 16) maxR = 16;
@@ -273,7 +293,7 @@ void WifiFoxHuntScreen::_renderTracking(bool force)
   const uint16_t color = live ? _feedback.color() : TFT_DARKGREY;
 
   const int16_t cx = x + w / 2;
-  const int16_t cy = y + h / 2 + 4;
+  const int16_t cy = y + h / 2 - 4;
   if (_pulseSprite) {
     _pulseSprite->fillSprite(TFT_BLACK);
     const int16_t scx = _pulseSpriteW / 2;
