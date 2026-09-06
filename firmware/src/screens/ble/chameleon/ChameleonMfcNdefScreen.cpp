@@ -362,6 +362,51 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
     {0x12,0x34,0x56,0x78,0x9A,0xBC}, {0xBD,0x49,0x3A,0x39,0x62,0xB6},
   };
 
+  // Prefer per-UID Discovered Keys.  Formatting may be requested on a tag
+  // whose current keys are not part of the public/default candidate list.
+  uint8_t savedA[3][6] = {};
+  uint8_t savedB[3][6] = {};
+  bool hasSavedA[3] = {};
+  bool hasSavedB[3] = {};
+  if (Uni.Storage && Uni.Storage->isAvailable() && _uidLen > 0) {
+    String uid = _uidString();
+    uid.replace(":", "");
+    String content = Uni.Storage->readFile((String("/unigeek/nfc/keys/") + uid + ".txt").c_str());
+    auto hexNibble = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9') return ch - '0';
+      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+      return -1;
+    };
+    int start = 0;
+    while (start < (int)content.length()) {
+      int nl = content.indexOf('\n', start);
+      if (nl < 0) nl = content.length();
+      String line = content.substring(start, nl);
+      line.trim();
+      int sector = -1;
+      char keyType = 0;
+      char hex[13] = {};
+      if (sscanf(line.c_str(), "S%d %c %12s", &sector, &keyType, hex) == 3 &&
+          sector >= 0 && sector < 3 && strlen(hex) == 12) {
+        uint8_t raw[6] = {};
+        bool valid = true;
+        for (uint8_t i = 0; i < 6; ++i) {
+          const int hi = hexNibble(hex[i * 2]);
+          const int lo = hexNibble(hex[i * 2 + 1]);
+          if (hi < 0 || lo < 0) { valid = false; break; }
+          raw[i] = (uint8_t)((hi << 4) | lo);
+        }
+        if (valid && (keyType == 'A' || keyType == 'a')) {
+          memcpy(savedA[sector], raw, 6); hasSavedA[sector] = true;
+        } else if (valid && (keyType == 'B' || keyType == 'b')) {
+          memcpy(savedB[sector], raw, 6); hasSavedB[sector] = true;
+        }
+      }
+      start = nl + 1;
+    }
+  }
+
   auto& c = ChameleonClient::get();
   uint8_t sectorKey[3][6] = {};
   uint8_t sectorKeyType[3] = {};
@@ -370,6 +415,19 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
   for (uint8_t sector = 0; sector < 3; ++sector) {
     const uint8_t block = _trailerBlock(sector);
     bool found = false;
+
+    // Persisted keys are tag-specific and therefore take priority.
+    if (hasSavedA[sector] && c.mf1CheckKey(block, 0x60, savedA[sector])) {
+      memcpy(sectorKey[sector], savedA[sector], 6);
+      sectorKeyType[sector] = 0x60;
+      found = true;
+    }
+    if (!found && hasSavedB[sector] && c.mf1CheckKey(block, 0x61, savedB[sector])) {
+      memcpy(sectorKey[sector], savedB[sector], 6);
+      sectorKeyType[sector] = 0x61;
+      found = true;
+    }
+
     for (uint8_t kt = 0; kt < 2 && !found; ++kt) {
       const uint8_t keyType = kt == 0 ? 0x60 : 0x61;
       for (const auto& key : candidates) {
@@ -400,8 +458,16 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
              (unsigned)(done + 1u), (unsigned)total);
     ProgressView::progress(msg, (int)((uint32_t)done * 100u / total));
     // A key that authenticates is not necessarily permitted to write this
-    // block by the current access bits. Try the preflight key first, then
-    // the known public/default candidates with both key types.
+    // block by the current access bits. Try every persisted credential for
+    // this sector before falling back to the preflight/default candidates.
+    if (hasSavedA[sector] && c.mf1WriteBlock(block, 0x60, savedA[sector], data)) {
+      ++done;
+      return true;
+    }
+    if (hasSavedB[sector] && c.mf1WriteBlock(block, 0x61, savedB[sector], data)) {
+      ++done;
+      return true;
+    }
     if (c.mf1WriteBlock(block, sectorKeyType[sector], sectorKey[sector], data)) {
       ++done;
       return true;

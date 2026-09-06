@@ -1233,7 +1233,8 @@ void ChameleonMfcScreen::_callStaticNested() {
     }
   }
 
-  snprintf(m, sizeof(m), "Static nested done: %d new keys", newKeys);
+  if (newKeys > 0) snprintf(m, sizeof(m), "Keys updated: %d new", newKeys);
+  else snprintf(m, sizeof(m), "No new keys found");
   strncpy(_actionStatus, m, sizeof(_actionStatus) - 1);
   _actionPct = 100;
   _log(m, newKeys > 0 ? TFT_GREEN : TFT_YELLOW);
@@ -1469,7 +1470,8 @@ void ChameleonMfcScreen::_callNestedAttack() {
     }
   }
 
-  snprintf(m, sizeof(m), "Nested done: %d new keys", newKeys);
+  if (newKeys > 0) snprintf(m, sizeof(m), "Keys updated: %d new", newKeys);
+  else snprintf(m, sizeof(m), "No new keys found");
   strncpy(_actionStatus, m, sizeof(_actionStatus) - 1);
   _actionPct = 100;
   _log(m, newKeys > 0 ? TFT_GREEN : TFT_YELLOW);

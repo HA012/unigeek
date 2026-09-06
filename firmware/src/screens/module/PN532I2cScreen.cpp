@@ -2238,6 +2238,12 @@ bool PN532I2cScreen::_formatClassic1kNdef() {
     {0x00,0x00,0x00,0x00,0x00,0x00},
   };
 
+  // Use the current tag's persisted Discovered Keys before the generic
+  // formatter candidates.  Keep this separate from discovery/auth scans: the
+  // PN532 only needs a usable credential for each block it actually writes.
+  _mfKeys.fill({});
+  _loadSavedKeys();
+
   uint8_t zero[16] = {};
   uint8_t emptyNdef[16] = {0x03,0x00,0xFE};
   uint16_t done = 0;
@@ -2249,6 +2255,36 @@ bool PN532I2cScreen::_formatClassic1kNdef() {
     snprintf(msg, sizeof(msg), "Formatting blocks (%u/%u)...",
              (unsigned)(done + 1u), (unsigned)total);
     ProgressView::progress(msg, (int)((uint32_t)done * 100u / total));
+
+    const uint8_t sector = (uint8_t)(block / 4u); // Classic 1K only here.
+    auto& keyA = _mfKeys[sector].first;
+    auto& keyB = _mfKeys[sector].second;
+    const bool madDataBlock = (sector == 0 && (block == 1 || block == 2));
+
+    // MAD1 data blocks are the one place where the validated PN532 path must
+    // prefer Key B because of NFC Forum access conditions.
+    if (madDataBlock && keyB) {
+      const auto kb = keyB.value();
+      if (_tryWriteMifareBlock(block, data, (const uint8_t*)kb.data(), true)) {
+        ++done;
+        return true;
+      }
+    }
+    if (keyA) {
+      const auto ka = keyA.value();
+      if (_tryWriteMifareBlock(block, data, (const uint8_t*)ka.data(), false)) {
+        ++done;
+        return true;
+      }
+    }
+    if (!madDataBlock && keyB) {
+      const auto kb = keyB.value();
+      if (_tryWriteMifareBlock(block, data, (const uint8_t*)kb.data(), true)) {
+        ++done;
+        return true;
+      }
+    }
+
     for (const auto& key : candidates) {
       if (_tryWriteMifareBlock(block, data, key, false) ||
           _tryWriteMifareBlock(block, data, key, true)) {
