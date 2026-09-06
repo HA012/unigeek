@@ -105,6 +105,7 @@ private:
   bool _loadDictFile(const char* path);
   void _runDictAttack();
   void _buildKeyRows();
+  void _loadKeys();
   void _saveKeys();
 
   // Nested attack UI helpers (nonce collection now done firmware-side).

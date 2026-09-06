@@ -26,10 +26,16 @@ private:
     STATE_SCAN_RESULT,
     STATE_SCAN_14A,
     STATE_MIFARE_MENU,
+    STATE_MIFARE_TAG_MENU,
+    STATE_MIFARE_NDEF_MENU,
     STATE_MIFARE_DUMP,
+    STATE_MIFARE_DUMP_HEX,
     STATE_MIFARE_KEYS,
+    STATE_MIFARE_DUMP_SELECT,
     STATE_DICT_SELECT,
     STATE_ULTRALIGHT_MENU,
+    STATE_ULTRALIGHT_TAG_MENU,
+    STATE_ULTRALIGHT_NDEF_MENU,
     STATE_MAGIC_MENU,
     STATE_RAW_RESULT,
     STATE_EMULATE,
@@ -68,29 +74,46 @@ private:
   uint16_t _rowCount = 0;
 
   ListItem _mainItems[5] = {
-    {"Scan ISO14443A"},
+    {"Scan Tag"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"Magic Card"},
     {"Firmware Info"},
   };
 
-  ListItem _mfItems[7] = {
-    {"Read NDEF"},
-    {"Write NDEF"},
-    {"Erase NDEF"},
-    {"Authenticate"},
-    {"Dump Memory"},
+  ListItem _mfItems[4] = {
+    {"Tag Operations"},
+    {"NDEF Operations"},
     {"Discovered Keys"},
     {"Dictionary Attack"},
   };
 
-  ListItem _ulItems[5] = {
+  ListItem _mfTagItems[3] = {
+    {"Read Tag"},
+    {"Write to Tag"},
+    {"Erase Tag"},
+  };
+
+  ListItem _mfNdefItems[3] = {
     {"Read NDEF"},
     {"Write NDEF"},
     {"Erase NDEF"},
-    {"Read All Pages"},
+  };
+
+  ListItem _ulItems[2] = {
+    {"Tag Operations"},
+    {"NDEF Operations"},
+  };
+
+  ListItem _ulTagItems[2] = {
+    {"Read Pages"},
     {"Write Page"},
+  };
+
+  ListItem _ulNdefItems[3] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+    {"Erase NDEF"},
   };
 
   ListItem _magicItems[3] = {
@@ -121,6 +144,9 @@ private:
   uint8_t  _dumpImg[4096] = {};
   size_t   _dumpLen = 0;
   bool     _hasDump = false;
+  bool     _dumpComplete = false;
+  bool     _resumeReadAfterDict = false;
+  String   _dumpPickDir;
 
   enum NdefTarget_e {
     NDEF_TARGET_ULTRALIGHT,
@@ -146,14 +172,33 @@ private:
   void _cleanup();
   void _goMain();
   void _goMifare();
+  void _goMifareTag();
+  void _goMifareNdef();
   void _goUltralight();
+  void _goUltralightTag();
+  void _goUltralightNdef();
   void _goMagic();
   void _doNtagMenu();
 
   void _showFirmwareInfo();
   void _doScan14A();
   void _doAuthenticate();
+  bool _discoverDefaultKeys();
+  void _loadSavedKeys();
+  void _saveKeys();
+  bool _hasReadableKeyForEverySector() const;
+  void _doReadTag();
   void _doDumpMemory();
+  void _showTagDetails();
+  void _appendDumpNdefDetails();
+  void _showDumpHex();
+  void _showDumpActions();
+  void _doWriteDumpToTag(const uint8_t* dump, size_t len);
+  bool _tryWriteMifareBlock(uint16_t block, const uint8_t data[16],
+                            const uint8_t key[6], bool useKeyB);
+  void _doWriteDumpFromFilePicker();
+  void _doWriteDumpFileSelected(uint8_t fileIndex);
+  void _doEraseTag();
   void _doShowKeys();
   void _doDictionaryPicker();
   void _doDictionaryAttackWithFile(uint8_t fileIndex);

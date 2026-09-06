@@ -169,7 +169,11 @@ void ChameleonMfcScreen::_callAuth() {
   _authLog.addLine(msg, TFT_GREEN);
   _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
 
-  // Initial scan only tries the FFFFFFFFFFFF default. For deeper checks the
+  // Reuse keys previously discovered for this UID. They are verified below
+  // before being trusted, then FFFFFFFFFFFF fills any remaining gaps.
+  _loadKeys();
+
+  // Initial scan tries persisted keys first and then FFFFFFFFFFFF. For deeper checks the
   // user runs Dictionary Attack from the menu — keeps first-entry fast.
   static constexpr uint8_t kDefaultKey[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
   int totalWork = _sectors * 2;
@@ -182,22 +186,42 @@ void ChameleonMfcScreen::_callAuth() {
       char    keyTypeCh = (kt == 0) ? 'A'  : 'B';
       _authPct = (progress * 100) / totalWork;
 
-      snprintf(_authStatus, sizeof(_authStatus), "S%d %c default", s, keyTypeCh);
+      bool hadSaved = (kt == 0) ? _foundA[s] : _foundB[s];
+      snprintf(_authStatus, sizeof(_authStatus), "S%d %c %s",
+               s, keyTypeCh, hadSaved ? "saved" : "default");
       _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
 
-      bool ok = c.mf1CheckKey(block, keyType, kDefaultKey);
+      bool ok = false;
+      if (hadSaved) {
+        uint8_t* saved = (kt == 0) ? _keysA[s] : _keysB[s];
+        ok = c.mf1CheckKey(block, keyType, saved);
+        if (!ok) {
+          if (kt == 0) _foundA[s] = false; else _foundB[s] = false;
+          _recovered--;
+        }
+      }
 
-      char line[48];
-      snprintf(line, sizeof(line), "S%d %c: %s",
-               s, keyTypeCh, ok ? "FFFFFFFFFFFF" : "not default");
+      if (!ok) {
+        ok = c.mf1CheckKey(block, keyType, kDefaultKey);
+        if (ok) {
+          if (kt == 0) {
+            memcpy(_keysA[s], kDefaultKey, 6);
+            if (!_foundA[s]) { _foundA[s] = true; _recovered++; }
+          } else {
+            memcpy(_keysB[s], kDefaultKey, 6);
+            if (!_foundB[s]) { _foundB[s] = true; _recovered++; }
+          }
+        }
+      }
+
+      char line[56];
+      if (ok && hadSaved)
+        snprintf(line, sizeof(line), "S%d %c: saved key", s, keyTypeCh);
+      else
+        snprintf(line, sizeof(line), "S%d %c: %s",
+                 s, keyTypeCh, ok ? "FFFFFFFFFFFF" : "not found");
       _authLog.addLine(line, ok ? TFT_GREEN : TFT_DARKGREY);
       _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
-
-      if (ok) {
-        if (kt == 0) { memcpy(_keysA[s], kDefaultKey, 6); _foundA[s] = true; }
-        else         { memcpy(_keysB[s], kDefaultKey, 6); _foundB[s] = true; }
-        _recovered++;
-      }
 
       progress++;
     }
@@ -287,6 +311,60 @@ void ChameleonMfcScreen::_showDiscoveredKeys() {
   _state = STATE_SHOW_KEYS;
   _buildKeyRows();
   render();
+}
+
+// ── Persisted keys (shared format with PN532 and ChameleonMfcDictScreen) ──
+
+static bool _parseSavedMfcKeyCu(const String& text, uint8_t out[6]) {
+  String s = text;
+  s.trim();
+  if (s.length() != 12) return false;
+  for (int i = 0; i < 6; ++i) {
+    char hex[3] = { s[i * 2], s[i * 2 + 1], 0 };
+    char* end = nullptr;
+    unsigned long v = strtoul(hex, &end, 16);
+    if (!end || *end != 0) return false;
+    out[i] = (uint8_t)v;
+  }
+  return true;
+}
+
+void ChameleonMfcScreen::_loadKeys() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable() || _uidLen == 0) return;
+
+  char uidHex[16] = {};
+  for (uint8_t i = 0; i < _uidLen && i * 2 + 2 < (int)sizeof(uidHex); i++) {
+    char h[4]; snprintf(h, sizeof(h), "%02X", _uid[i]); strcat(uidHex, h);
+  }
+  String path = String("/unigeek/nfc/keys/") + uidHex + ".txt";
+  String content = Uni.Storage->readFile(path.c_str());
+  if (content.length() == 0) return;
+
+  int start = 0;
+  while (start < (int)content.length()) {
+    int nl = content.indexOf('\n', start);
+    if (nl < 0) nl = content.length();
+    String line = content.substring(start, nl);
+    line.trim();
+
+    int sector = -1;
+    char keyType = 0;
+    char hex[13] = {};
+    if (sscanf(line.c_str(), "S%d %c %12s", &sector, &keyType, hex) == 3 &&
+        sector >= 0 && sector < _sectors) {
+      uint8_t raw[6];
+      if (_parseSavedMfcKeyCu(String(hex), raw)) {
+        if (keyType == 'A' || keyType == 'a') {
+          memcpy(_keysA[sector], raw, 6);
+          if (!_foundA[sector]) { _foundA[sector] = true; _recovered++; }
+        } else if (keyType == 'B' || keyType == 'b') {
+          memcpy(_keysB[sector], raw, 6);
+          if (!_foundB[sector]) { _foundB[sector] = true; _recovered++; }
+        }
+      }
+    }
+    start = nl + 1;
+  }
 }
 
 // ── Save keys (same format as ChameleonMfcDictScreen for interop) ──
