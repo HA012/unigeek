@@ -11,7 +11,7 @@ static constexpr uint16_t kWritablePages = 126u; // pages 4..129
 
 void _mfuWriteProgress(uint16_t done, uint16_t total) {
   char msg[36];
-  snprintf(msg, sizeof(msg), "Writing %u/%u pages",
+  snprintf(msg, sizeof(msg), "Writing pages (%u/%u)...",
            (unsigned)done, (unsigned)kWritablePages);
   const int pct = total ? (int)((uint32_t)done * 100u / total) : 0;
   ProgressView::progress(msg, pct);
@@ -251,7 +251,7 @@ void ChameleonMfuWriteScreen::_detectTarget() {
 void ChameleonMfuWriteScreen::_write() {
   _busy = true;
   ProgressView::init();
-  ProgressView::progress("Writing 0/126 pages", 0);
+  ProgressView::progress("Writing pages (0/126)...", 0);
   bool ok = ChameleonClient::get().mfuWriteNtag215User(
       _dump, _dumpLen, _mfuWriteProgress, &_targetInfo);
   ProgressView::finish();

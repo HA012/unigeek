@@ -338,7 +338,7 @@ void ChameleonSlotContentScreen::_run() {
     while (done < _pages) {
       uint8_t count = (uint8_t)min<uint16_t>(maxChunkPages, _pages - done);
       char msg[32];
-      snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+      snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...",
                (unsigned)(done + count), (unsigned)_pages);
       int pct = (int)(((uint32_t)(done + count) * 100u) / _pages);
       ProgressView::progress(msg, pct);
@@ -376,7 +376,7 @@ void ChameleonSlotContentScreen::_run() {
   uint8_t block[16];
   for (uint16_t b = 0; b < _blocks; ++b) {
     char msg[32];
-    snprintf(msg, sizeof(msg), "Reading %u/%u blocks",
+    snprintf(msg, sizeof(msg), "Reading blocks (%u/%u)...",
              (unsigned)(b + 1), (unsigned)_blocks);
     const int pct = (int)(((uint32_t)(b + 1) * 100u) / _blocks);
     ProgressView::progress(msg, pct);

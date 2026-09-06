@@ -13,7 +13,7 @@ static constexpr uint16_t kNtag215WritablePages = 126;
 
 void _mfuEraseProgress(uint16_t done, uint16_t total) {
   char msg[36];
-  snprintf(msg, sizeof(msg), "Erasing %u/%u pages",
+  snprintf(msg, sizeof(msg), "Erasing pages (%u/%u)...",
            (unsigned)done, (unsigned)kNtag215WritablePages);
   const int pct = total ? (int)((uint32_t)done * 100u / total) : 0;
   ProgressView::progress(msg, pct);
@@ -156,7 +156,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
 
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   ProgressView::init();
-  ProgressView::progress("Erasing 0/126 pages", 0);
+  ProgressView::progress("Erasing pages (0/126)...", 0);
   const bool ok = c.mfuWriteNtag215User(
       image, (uint16_t)imageLen, _mfuEraseProgress, &info);
   ProgressView::finish();

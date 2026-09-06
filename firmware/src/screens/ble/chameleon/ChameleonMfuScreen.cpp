@@ -11,7 +11,7 @@
 namespace {
 void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
   char msg[32];
-  snprintf(msg, sizeof(msg), "Reading %u/%u pages",
+  snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...",
            (unsigned)pagesDone, (unsigned)totalPages);
   const int pct = totalPages
                     ? (int)((uint32_t)pagesDone * 100u / totalPages)
@@ -202,7 +202,7 @@ void ChameleonMfuScreen::_read() {
 
   ProgressView::init();
   char progressMsg[32];
-  snprintf(progressMsg, sizeof(progressMsg), "Reading 0/%u pages",
+  snprintf(progressMsg, sizeof(progressMsg), "Reading pages (0/%u)...",
            (unsigned)_info.pages);
   ProgressView::progress(progressMsg, 0);
 

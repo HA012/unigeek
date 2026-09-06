@@ -276,12 +276,12 @@ bool ChameleonMfcWriteScreen::_writeTarget(
   auto& c = ChameleonClient::get();
   uint16_t written = 0;
   static constexpr uint16_t totalWrites = 63; // all blocks except immutable block 0
-  ProgressView::init(); ProgressView::progress("Writing 0/63 blocks", 0);
+  ProgressView::init(); ProgressView::progress("Writing blocks (0/63)...", 0);
   for (uint8_t s = 0; s < kSectors; ++s) {
     const uint8_t first = s * 4u; const uint8_t trailer = trailerBlock(s);
     for (uint8_t b = first; b < trailer; ++b) {
       if (b == 0) continue;
-      char msg[36]; snprintf(msg, sizeof(msg), "Writing %u/%u blocks", (unsigned)(written + 1u), (unsigned)totalWrites);
+      char msg[36]; snprintf(msg, sizeof(msg), "Writing blocks (%u/%u)...", (unsigned)(written + 1u), (unsigned)totalWrites);
       ProgressView::progress(msg, (int)((uint32_t)written * 100u / totalWrites));
       const uint8_t* data = _dump + (size_t)b * 16u; bool ok = false;
       if (foundA[s]) ok = c.mf1WriteBlock(b, 0x60, keysA[s], data);
@@ -295,7 +295,7 @@ bool ChameleonMfcWriteScreen::_writeTarget(
     // Trailer last so changing keys/access bits cannot lock us out before the
     // sector data blocks have been written.
     const uint8_t* data = _dump + (size_t)trailer * 16u; bool ok = false;
-    char msg[36]; snprintf(msg, sizeof(msg), "Writing %u/%u blocks", (unsigned)(written + 1u), (unsigned)totalWrites);
+    char msg[36]; snprintf(msg, sizeof(msg), "Writing blocks (%u/%u)...", (unsigned)(written + 1u), (unsigned)totalWrites);
     ProgressView::progress(msg, (int)((uint32_t)written * 100u / totalWrites));
     if (foundA[s]) ok = c.mf1WriteBlock(trailer, 0x60, keysA[s], data);
     if (!ok && foundB[s]) ok = c.mf1WriteBlock(trailer, 0x61, keysB[s], data);
@@ -305,7 +305,7 @@ bool ChameleonMfcWriteScreen::_writeTarget(
     }
     ++written;
   }
-  ProgressView::progress("Writing 63/63 blocks", 100); ProgressView::finish();
+  ProgressView::progress("Writing blocks (63/63)...", 100); ProgressView::finish();
   return true;
 }
 

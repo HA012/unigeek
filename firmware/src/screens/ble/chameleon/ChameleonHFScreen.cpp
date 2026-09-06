@@ -39,7 +39,7 @@ void ChameleonHFScreen::_draw() {
   sp.drawString("Place ISO14443 card near", bw / 2, bh / 2 - 10);
   sp.drawString("Chameleon reader face", bw / 2, bh / 2 + 6);
   sp.setTextColor(TFT_WHITE, TFT_BLACK);
-  sp.drawString("[Press] Scan", bw / 2, bh / 2 + 24);
+  sp.drawString("Press to scan", bw / 2, bh / 2 + 24);
 
   sp.pushSprite(bx, by);
   sp.deleteSprite();
@@ -141,10 +141,6 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Hold]"; _rowValues[_rowCount] = "Copy to slot";
-    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
-    _rowCount++;
-
     _scrollView.setRows(_rows, _rowCount);
 
     int n = Achievement.inc("chameleon_hf_read");
@@ -204,15 +200,6 @@ void ChameleonHFScreen::onInit() {
 void ChameleonHFScreen::onUpdate() {
   if (_scanning) return;
 
-  // Press-hold anywhere opens the action menu. Works on every board since it
-  // only needs a single PRESS axis.
-  if (!_holdFired && Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 700) {
-    _holdFired = true;
-    Uni.Nav->suppressCurrentPress();
-    if (_state == STATE_RESULT) _doClone();
-    return;
-  }
-
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK) {
@@ -220,13 +207,16 @@ void ChameleonHFScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS) {
-      // Tap = scan (or re-scan). Hold = copy (handled above).
-      _doScan();
+      if (_state == STATE_RESULT) {
+        _state = STATE_IDLE;
+        _needsDraw = true;
+        render();
+      } else {
+        _doScan();
+      }
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);
-  } else if (_holdFired && !Uni.Nav->isPressed()) {
-    _holdFired = false;   // consume the release so it doesn't trigger a tap
   }
 }
 

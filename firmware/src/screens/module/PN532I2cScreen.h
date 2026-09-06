@@ -28,6 +28,10 @@ private:
     STATE_MIFARE_MENU,
     STATE_MIFARE_TAG_MENU,
     STATE_MIFARE_NDEF_MENU,
+    STATE_MIFARE_ATTACKS_MENU,
+    STATE_MIFARE_KEYS_MENU,
+    STATE_MIFARE_KEY_DB_SELECT,
+    STATE_MIFARE_KEY_DB_VIEW,
     STATE_MIFARE_DUMP,
     STATE_MIFARE_DUMP_HEX,
     STATE_MIFARE_KEYS,
@@ -84,8 +88,17 @@ private:
   ListItem _mfItems[4] = {
     {"Tag Operations"},
     {"NDEF Operations"},
-    {"Discovered Keys"},
+    {"Attacks"},
+    {"Keys"},
+  };
+
+  ListItem _mfAttackItems[1] = {
     {"Dictionary Attack"},
+  };
+
+  ListItem _mfKeysItems[2] = {
+    {"Discovered Keys"},
+    {"Key Databases"},
   };
 
   ListItem _mfTagItems[3] = {
@@ -94,10 +107,11 @@ private:
     {"Erase Tag"},
   };
 
-  ListItem _mfNdefItems[3] = {
+  ListItem _mfNdefItems[4] = {
     {"Read NDEF"},
     {"Write NDEF"},
     {"Erase NDEF"},
+    {"Format NDEF"},
   };
 
   ListItem _ulItems[2] = {
@@ -167,6 +181,8 @@ private:
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
   BrowseFileView _browser;
   String         _dictPickDir;   // current dir in the dict picker
+  String         _keyDbPickDir;  // current dir in the key database browser
+  String         _keyDbViewTitle;
 
   bool _initModule();
   void _cleanup();
@@ -174,6 +190,11 @@ private:
   void _goMifare();
   void _goMifareTag();
   void _goMifareNdef();
+  void _goMifareAttacks();
+  void _goMifareKeys();
+  void _goScan14A();
+  void _openKeyDatabases();
+  void _openKeyDatabase(uint8_t index);
   void _goUltralight();
   void _goUltralightTag();
   void _goUltralightNdef();
@@ -183,7 +204,7 @@ private:
   void _showFirmwareInfo();
   void _doScan14A();
   void _doAuthenticate();
-  bool _discoverDefaultKeys();
+  bool _discoverDefaultKeys(bool checkingProgress = false);
   void _loadSavedKeys();
   void _saveKeys();
   bool _hasReadableKeyForEverySector() const;
@@ -226,6 +247,7 @@ private:
   bool _writeNdefRecord(const uint8_t* ndef, size_t ndefLen);
   bool _writeUltralightNdefRecord(const uint8_t* ndef, size_t ndefLen);
   bool _writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  bool _formatClassic1kNdef();
   bool _classicNdefSectors(uint8_t* sectors, size_t maxSectors, size_t& count);
   bool _classicAuthSector(uint8_t sector, const uint8_t key[6]);
   bool _classicReadNdefArea(const uint8_t* sectors, size_t sectorCount,
