@@ -21,9 +21,6 @@ namespace ModuleRegistry
     MOD_M5_RF433,
     MOD_NRF24,
     MOD_PIN_SETTING,
-#ifdef DEVICE_HAS_ST25R3916
-    MOD_ST25R3916,
-#endif
     MOD_COUNT
   };
 
@@ -37,9 +34,6 @@ namespace ModuleRegistry
     "M5 RF433",
     "NRF24L01",
     "Pin Setting",
-#ifdef DEVICE_HAS_ST25R3916
-    "ST25R3916",
-#endif
   };
 
   inline uint32_t hiddenMask()

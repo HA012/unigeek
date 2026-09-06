@@ -9,9 +9,6 @@
 #include "screens/module/SubGHzScreen.h"
 #include "screens/module/M5RF433Screen.h"
 #include "screens/module/NRF24Screen.h"
-#ifdef DEVICE_HAS_ST25R3916
-#include "screens/module/ST25R3916Screen.h"
-#endif
 #include "screens/setting/PinSettingScreen.h"
 
 void ModuleMenuScreen::onInit() {
@@ -42,8 +39,5 @@ void ModuleMenuScreen::onItemSelected(uint8_t index) {
     case ModuleRegistry::MOD_M5_RF433:    Screen.push(new M5RF433Screen());    break;
     case ModuleRegistry::MOD_NRF24:       Screen.push(new NRF24Screen());      break;
     case ModuleRegistry::MOD_PIN_SETTING: Screen.push(new PinSettingScreen()); break;
-#ifdef DEVICE_HAS_ST25R3916
-    case ModuleRegistry::MOD_ST25R3916:    Screen.push(new ST25R3916Screen());   break;
-#endif
   }
 }
