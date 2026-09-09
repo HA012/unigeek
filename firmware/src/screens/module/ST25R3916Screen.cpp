@@ -9,6 +9,7 @@
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
 #include "utils/nfc/NdefBuilder.h"
+#include "utils/nfc/NfcDumpBuilder.h"
 
 #if defined(DEVICE_HAS_ST25R3916)
 #include "utils/nfc/NFCUtility.h"
@@ -146,7 +147,8 @@ void ST25R3916Screen::onRender() {
     return;
   }
   if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
-      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING || _state == STATE_MFU_WRITING) {
+      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING ||
+      _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING) {
     _renderTagPrompt();
     return;
   }
@@ -172,7 +174,7 @@ void ST25R3916Screen::onBack() {
     return;
   }
   if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING || _state == STATE_MFU_WRITE_PREVIEW ||
-      _state == STATE_MFU_WRITING || _state == STATE_MFU_DUMP_SELECT) {
+      _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING || _state == STATE_MFU_DUMP_SELECT) {
     _showMfuTagMenu();
     return;
   }
@@ -231,6 +233,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFU_TAG_MENU) {
     if (index == 0) _readMfuTag();
     else if (index == 1) _openMfuDumpPicker();
+    else if (index == 2) _eraseMfuTag();
     return;
   }
   if (_state == STATE_MFU_DUMP_SELECT) {
@@ -1569,6 +1572,89 @@ bool ST25R3916Screen::_writeMfuDumpToTag() {
   ShowStatusAction::show("Tag written", 1600); _showMfuTagMenu(); return true;
 #else
   ShowStatusAction::show("ST25R3916 not supported"); return false;
+#endif
+}
+
+
+void ST25R3916Screen::_eraseMfuTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFU_ERASING;
+  render();
+
+  ST25R3916Backend dev;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) {
+    ShowStatusAction::show("ST25R3916 not found");
+    _showMfuTagMenu();
+    return;
+  }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected");
+    _showMfuTagMenu();
+    return;
+  }
+  if (tag.sak != 0x00) {
+    dev.deactivate();
+    ShowStatusAction::show("Tag must be NTAG215", 1500);
+    _showMfuTagMenu();
+    return;
+  }
+
+  String type;
+  uint16_t pages = 0;
+  if (!_detectMfuType(dev, type, pages) || type != "NTAG215" || pages != 135 || tag.nfcidLen != 7) {
+    dev.deactivate();
+    ShowStatusAction::show("Tag must be NTAG215", 1500);
+    _showMfuTagMenu();
+    return;
+  }
+
+  uint8_t image[NfcDumpBuilder::NTAG215_SIZE] = {};
+  size_t imageLen = 0;
+  if (!NfcDumpBuilder::buildNtag215(tag.nfcid, nullptr, 0, image, imageLen, sizeof(image)) ||
+      imageLen != NfcDumpBuilder::NTAG215_SIZE) {
+    dev.deactivate();
+    ShowStatusAction::show("Cannot build empty tag", 1500);
+    _showMfuTagMenu();
+    return;
+  }
+
+  static constexpr uint16_t firstPage = 4;
+  static constexpr uint16_t lastPage = 129;
+  static constexpr uint16_t total = 126;
+  ProgressView::init();
+  ProgressView::progress("Erasing pages (0/126)...", 0);
+
+  for (uint16_t page = firstPage; page <= lastPage; ++page) {
+    const uint16_t done = page - firstPage;
+    char msg[40];
+    snprintf(msg, sizeof(msg), "Erasing pages (%u/%u)...",
+             (unsigned)(done + 1), (unsigned)total);
+    ProgressView::progress(msg, (int)((uint32_t)done * 100U / total));
+    if (!dev.type2WritePage((uint8_t)page, &image[page * 4U])) {
+      ProgressView::finish();
+      dev.deactivate();
+      ShowStatusAction::show("Erase failed", 1600);
+      _showMfuTagMenu();
+      return;
+    }
+  }
+
+  ProgressView::progress("Erase complete", 100);
+  ProgressView::finish();
+  dev.deactivate();
+
+  _mfuDumpLen = 0;
+  _mfuPages = 0;
+  _mfuUidLen = 0;
+  _mfuType = "";
+  ShowStatusAction::show("Tag erased", 1600);
+  _showMfuTagMenu();
+#else
+  ShowStatusAction::show("ST25R3916 not supported");
 #endif
 }
 
