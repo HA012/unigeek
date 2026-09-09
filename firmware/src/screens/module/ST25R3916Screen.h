@@ -21,6 +21,12 @@ public:
       case STATE_MFU_WRITE_PREVIEW: return "Write to Tag";
       case STATE_MFU_WRITING: return "Write to Tag";
       case STATE_MFU_ERASING: return "Erase Tag";
+      case STATE_MFU_NDEF_MENU: return "NDEF Operations";
+      case STATE_MFU_NDEF_WRITE_MENU: return "Write NDEF";
+      case STATE_MFU_NDEF_FILE_SELECT: return "NDEF Files";
+      case STATE_MFU_NDEF_READING: return "Read NDEF";
+      case STATE_MFU_NDEF_WRITING: return "Write NDEF";
+      case STATE_MFU_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -72,6 +78,12 @@ private:
     STATE_MFU_WRITE_PREVIEW,
     STATE_MFU_WRITING,
     STATE_MFU_ERASING,
+    STATE_MFU_NDEF_MENU,
+    STATE_MFU_NDEF_WRITE_MENU,
+    STATE_MFU_NDEF_FILE_SELECT,
+    STATE_MFU_NDEF_READING,
+    STATE_MFU_NDEF_WRITING,
+    STATE_MFU_NDEF_DETAILS,
   };
 
   State _state = STATE_MENU;
@@ -99,8 +111,12 @@ private:
     {"Erase NDEF"},
     {"Format NDEF"},
   };
-  ListItem _mfuItems[1] = {
+  ListItem _mfuItems[2] = {
     {"Tag Operations"},
+    {"NDEF Operations"},
+  };
+  ListItem _mfuNdefItems[3] = {
+    {"Read NDEF"}, {"Write NDEF"}, {"Erase NDEF"},
   };
   ListItem _mfuTagItems[3] = {
     {"Read Tag"},
@@ -147,6 +163,7 @@ private:
   bool _hasNdef = false;
   bool _ndefWritePreview = false;
   bool _ndefWritePreviewFromFile = false;
+  bool _ndefMfuTarget = false;
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
   String _dumpPickDir;
@@ -172,6 +189,11 @@ private:
   void _showMfcNdefWriteMenu();
   void _showMfuMenu();
   void _showMfuTagMenu();
+  void _showMfuNdefMenu();
+  void _showMfuNdefWriteMenu();
+  void _readMfuNdef();
+  bool _writeMfuNdef(const uint8_t* ndef, size_t ndefLen);
+  void _eraseMfuNdef();
   void _readMfuTag();
   void _showMfuDumpActions();
   void _openMfuDumpPicker();
