@@ -9,12 +9,26 @@
 #include "screens/module/SubGHzScreen.h"
 #include "screens/module/M5RF433Screen.h"
 #include "screens/module/NRF24Screen.h"
+#include "screens/module/ST25R3916Screen.h"
 #include "screens/setting/PinSettingScreen.h"
 
 void ModuleMenuScreen::onInit() {
   _visibleCount = 0;
   for (uint8_t id = 0; id < ModuleRegistry::MOD_COUNT; id++) {
+    // Pin Setting is kept last visually without changing its persisted module id.
+    if (id == ModuleRegistry::MOD_PIN_SETTING) continue;
+#ifndef DEVICE_HAS_ST25R3916
+    if (id == ModuleRegistry::MOD_ST25R3916) continue;
+#endif
     if (ModuleRegistry::isHidden(id)) continue;
+    _items[_visibleCount].label    = ModuleRegistry::LABELS[id];
+    _items[_visibleCount].sublabel = nullptr;
+    _ids[_visibleCount]            = id;
+    _visibleCount++;
+  }
+
+  if (!ModuleRegistry::isHidden(ModuleRegistry::MOD_PIN_SETTING)) {
+    const uint8_t id = ModuleRegistry::MOD_PIN_SETTING;
     _items[_visibleCount].label    = ModuleRegistry::LABELS[id];
     _items[_visibleCount].sublabel = nullptr;
     _ids[_visibleCount]            = id;
@@ -39,5 +53,8 @@ void ModuleMenuScreen::onItemSelected(uint8_t index) {
     case ModuleRegistry::MOD_M5_RF433:    Screen.push(new M5RF433Screen());    break;
     case ModuleRegistry::MOD_NRF24:       Screen.push(new NRF24Screen());      break;
     case ModuleRegistry::MOD_PIN_SETTING: Screen.push(new PinSettingScreen()); break;
+#ifdef DEVICE_HAS_ST25R3916
+    case ModuleRegistry::MOD_ST25R3916:    Screen.push(new ST25R3916Screen());   break;
+#endif
   }
 }

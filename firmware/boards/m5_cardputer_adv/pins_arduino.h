@@ -59,6 +59,14 @@ static const uint8_t SCL = 15;
 #define NRF24_CSN_PIN   1   // GROVE_SCL
 #define NRF24_CE_PIN    2   // GROVE_SDA
 
+// ─── ST25R3916 NFC ────────────────────────────────────────
+// SPI wiring for the M5Stack Cap CC1101 & NFC. The M5Stack
+// NFC Unit (U216) instead uses the Grove I2C bus at address 0x50.
+#define ST25R3916_CS_PIN   6
+#define ST25R3916_IRQ_PIN  4
+#define ST25R3916_SPI_HZ   10000000U
+#define ST25R3916_I2C_ADDR 0x50
+
 // ─── RGB LED (SK6812) ─────────────────────────────────────
 #define RGB_LED  21
 
@@ -102,6 +110,7 @@ static const uint8_t SCL = 15;
 
 // ─── Firmware Feature Flags ───────────────────────────────
 #define DEVICE_HAS_KEYBOARD       // keyboard attached — enables keyboard input paths
+#define DEVICE_HAS_ST25R3916      // ST25R3916 via Grove I2C or shared SPI bus
 #define DEVICE_HAS_SOUND          // speaker attached — enables audio paths and sound settings
 #define DEVICE_HAS_VOLUME_CONTROL // I2S amp + ES8311 codec support setVolume() — shows Volume slider in Settings
 #define DEVICE_HAS_USB_HID        // ESP32-S3 native USB OTG — enables USB HID keyboard
