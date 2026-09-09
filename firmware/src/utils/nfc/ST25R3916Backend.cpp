@@ -190,6 +190,36 @@ uint32_t ST25R3916Backend::_uid32(const ScanResult& tag) {
   return bytesToU32(p);
 }
 
+bool ST25R3916Backend::_transceiveBytes(const uint8_t* tx, size_t txLen,
+                                         uint8_t* rx, size_t rxMaxLen,
+                                         size_t& rxLen, uint32_t timeoutMs) {
+  rxLen = 0;
+  if (!_hw || !tx || !txLen || !rx || !rxMaxLen) return false;
+
+  uint16_t receivedBits = 0;
+  rfalTransceiveContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.txBuf = const_cast<uint8_t*>(tx);
+  ctx.txBufLen = (uint16_t)(txLen * 8U);
+  ctx.rxBuf = rx;
+  ctx.rxBufLen = (uint16_t)(rxMaxLen * 8U);
+  ctx.rxRcvdLen = &receivedBits;
+  ctx.flags = RFAL_TXRX_FLAGS_DEFAULT;
+  ctx.fwt = rfalConvMsTo1fc(timeoutMs);
+
+  ReturnCode rc = _hw->rfalStartTransceive(&ctx);
+  if (rc != ST_ERR_NONE) return false;
+  do {
+    _hw->rfalWorker();
+    rc = _hw->rfalGetTransceiveStatus();
+  } while (rc == ST_ERR_BUSY);
+  if (rc != ST_ERR_NONE || receivedBits == 0 || (receivedBits & 7U)) return false;
+
+  rxLen = receivedBits / 8U;
+  if (rxLen > rxMaxLen) rxLen = rxMaxLen;
+  return true;
+}
+
 bool ST25R3916Backend::_transceivePacked(const uint8_t* txPacked, size_t txBits,
                                             uint8_t* rxPacked, size_t rxMaxBits,
                                             size_t& rxBits, uint32_t timeoutMs) {
@@ -405,6 +435,24 @@ bool ST25R3916Backend::mifareClassicWriteBlock(uint8_t block, const uint8_t data
   payload[16] = (uint8_t)(dataCrc & 0xFFU);
   payload[17] = (uint8_t)(dataCrc >> 8);
   return sendEncryptedFrame(payload, sizeof(payload));
+}
+
+bool ST25R3916Backend::type2Transceive(const uint8_t* tx, size_t txLen,
+                                          uint8_t* rx, size_t rxMaxLen,
+                                          size_t& rxLen, uint32_t timeoutMs) {
+  if (!_active || _activeTag.technology != Technology::NFC_A) {
+    rxLen = 0;
+    return false;
+  }
+  return _transceiveBytes(tx, txLen, rx, rxMaxLen, rxLen, timeoutMs);
+}
+
+bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
+  if (!data) return false;
+  const uint8_t cmd[2] = {0x30, startPage};
+  size_t rxLen = 0;
+  memset(data, 0, 16);
+  return type2Transceive(cmd, sizeof(cmd), data, 16, rxLen, 20) && rxLen == 16;
 }
 
 void ST25R3916Backend::end() {
