@@ -69,14 +69,10 @@ private:
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
 
-  ListItem _items[9] = {
+  ListItem _items[5] = {
     {"Scan Tag", "Auto I2C / SPI"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
-    {"NFC-A", "ISO14443A"},
-    {"NFC-B", "ISO14443B"},
-    {"NFC-F / FeliCa", "212 kbps"},
-    {"NFC-V / ISO15693"},
     {"Device Info (I2C)", "Grove / U216"},
     {"Device Info (SPI)", "Cap / shared SPI"},
   };
