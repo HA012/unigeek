@@ -78,9 +78,11 @@ private:
     {"Write to Tag"},
     {"Erase Tag"},
   };
-  ListItem _mfcNdefItems[2] = {
+  ListItem _mfcNdefItems[4] = {
     {"Read NDEF"},
     {"Write NDEF"},
+    {"Erase NDEF"},
+    {"Format NDEF"},
   };
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
@@ -137,6 +139,8 @@ private:
   void _showMfcNdefWriteMenu();
   void _readMfcNdef();
   bool _writeMfcNdef(const uint8_t* ndef, size_t ndefLen);
+  void _eraseMfcNdef();
+  bool _formatMfc1kNdef();
   void _showNdefWritePreview(const uint8_t* ndef, size_t ndefLen, bool fromFile);
   void _writeNdefBuilt(uint8_t kind);
   void _writeNdefVcard();
