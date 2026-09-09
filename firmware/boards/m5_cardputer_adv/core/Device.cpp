@@ -21,6 +21,10 @@ Device* Device::createInstance() {
   digitalWrite(LORA_CS, HIGH);    // deselect LoRa so it doesn't interfere with SD
   pinMode(SD_CS, OUTPUT);
   digitalWrite(SD_CS, HIGH);
+#ifdef DEVICE_HAS_ST25R3916
+  pinMode(ST25R3916_CS_PIN, OUTPUT);
+  digitalWrite(ST25R3916_CS_PIN, HIGH);  // keep ST25R deselected until its SPI backend is used
+#endif
   sdSpi.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
 
   Wire.begin(GROVE_SDA, GROVE_SCL);  // Grove I2C (ExI2C) — Wire1 is reserved for keyboard+codec
