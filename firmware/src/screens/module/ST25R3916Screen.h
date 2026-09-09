@@ -17,6 +17,9 @@ public:
       case STATE_MFU_READING: return "Read Tag";
       case STATE_MFU_DETAILS: return "Tag Details";
       case STATE_MFU_DUMP_HEX: return "Memory Dump";
+      case STATE_MFU_DUMP_SELECT: return "Write to Tag";
+      case STATE_MFU_WRITE_PREVIEW: return "Write to Tag";
+      case STATE_MFU_WRITING: return "Write to Tag";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -64,6 +67,9 @@ private:
     STATE_MFU_READING,
     STATE_MFU_DETAILS,
     STATE_MFU_DUMP_HEX,
+    STATE_MFU_DUMP_SELECT,
+    STATE_MFU_WRITE_PREVIEW,
+    STATE_MFU_WRITING,
   };
 
   State _state = STATE_MENU;
@@ -94,8 +100,9 @@ private:
   ListItem _mfuItems[1] = {
     {"Tag Operations"},
   };
-  ListItem _mfuTagItems[1] = {
+  ListItem _mfuTagItems[2] = {
     {"Read Tag"},
+    {"Write to Tag"},
   };
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
@@ -127,6 +134,7 @@ private:
   uint16_t _mfuDumpOffset = 0;
   String _mfuType;
   bool _writePreviewFromFile = false;
+  bool _mfuWritePreviewFromFile = false;
   bool _mfcDumpFromCompleteRead = false;
   uint8_t _writeSourceUid[4] = {};
   static constexpr size_t kMaxNdefBytes = 254;
@@ -144,7 +152,6 @@ private:
   void _scan(uint16_t techMask);
   void _readMfcTag();
   void _showMfcDumpActions();
-  void _showMfcWriteSources();
   void _openMfcDumpPicker();
   void _openMfcDumpFile(uint8_t index);
   void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
@@ -164,6 +171,10 @@ private:
   void _showMfuTagMenu();
   void _readMfuTag();
   void _showMfuDumpActions();
+  void _openMfuDumpPicker();
+  void _openMfuDumpFile(uint8_t index);
+  void _showMfuWritePreview(bool fromFile);
+  bool _writeMfuDumpToTag();
   void _saveMfuDump();
   void _renderMfuDump();
   void _handleMfuDumpNav(INavigation::Direction dir);
