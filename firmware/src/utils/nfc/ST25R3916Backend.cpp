@@ -455,6 +455,32 @@ bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
   return type2Transceive(cmd, sizeof(cmd), data, 16, rxLen, 20) && rxLen == 16;
 }
 
+bool ST25R3916Backend::type2WritePage(uint8_t page, const uint8_t data[4]) {
+  if (!_active || _activeTag.technology != Technology::NFC_A || !_hw || !data) return false;
+
+  uint8_t cmd[6] = {0xA2, page, data[0], data[1], data[2], data[3]};
+  uint8_t rx[1] = {};
+  uint16_t receivedBits = 0;
+  rfalTransceiveContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.txBuf = cmd;
+  ctx.txBufLen = (uint16_t)(sizeof(cmd) * 8U);
+  ctx.rxBuf = rx;
+  ctx.rxBufLen = 4U;
+  ctx.rxRcvdLen = &receivedBits;
+  ctx.flags = RFAL_TXRX_FLAGS_DEFAULT;
+  ctx.fwt = rfalConvMsTo1fc(20);
+
+  ReturnCode rc = _hw->rfalStartTransceive(&ctx);
+  if (rc != ST_ERR_NONE) return false;
+  do {
+    _hw->rfalWorker();
+    rc = _hw->rfalGetTransceiveStatus();
+  } while (rc == ST_ERR_BUSY);
+
+  return rc == ST_ERR_NONE && receivedBits == 4U && (rx[0] & 0x0FU) == 0x0AU;
+}
+
 void ST25R3916Backend::end() {
   if (_crypto) {
     crypto1_destroy(_crypto);
