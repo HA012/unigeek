@@ -190,6 +190,8 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_NDEF_MENU) {
     if (index == 0) _readMfcNdef();
     else if (index == 1) _showMfcNdefWriteMenu();
+    else if (index == 2) _eraseMfcNdef();
+    else if (index == 3) _formatMfc1kNdef();
     return;
   }
   if (_state == STATE_MFC_NDEF_WRITE_MENU) {
@@ -246,7 +248,7 @@ void ST25R3916Screen::_showMfcTagMenu() {
 void ST25R3916Screen::_showMfcNdefMenu() {
   _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
   _state = STATE_MFC_NDEF_MENU;
-  setItems(_mfcNdefItems, 2);
+  setItems(_mfcNdefItems, 4);
   render();
 }
 
@@ -1207,6 +1209,75 @@ bool ST25R3916Screen::_writeMfcNdef(const uint8_t* ndef, size_t ndefLen) {
   ProgressView::finish(); delete[] payload; ShowStatusAction::show(success?"NDEF written":"NDEF write failed"); return success;
 #else
   return false;
+#endif
+}
+
+void ST25R3916Screen::_eraseMfcNdef() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFC_NDEF_WRITING;
+  render();
+  _renderTagPrompt();
+
+  ST25R3916Backend dev;
+  const char* bus = nullptr;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (ready) bus = "I2C";
+  else { ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ); if (ready) bus = "SPI"; }
+  if (!ready) { ShowStatusAction::show("ST25R3916 not found"); _showMfcNdefMenu(); return; }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("No tag detected"); _showMfcNdefMenu(); return; }
+  const uint8_t sectors = tag.sak == 0x09 ? 5 : tag.sak == 0x08 ? 16 : tag.sak == 0x18 ? 40 : 0;
+  if (!sectors) { dev.deactivate(); ShowStatusAction::show("Not MIFARE Classic"); _showMfcNdefMenu(); return; }
+
+  const uint8_t uid[10] = {tag.id[0],tag.id[1],tag.id[2],tag.id[3],tag.id[4],tag.id[5],tag.id[6],tag.id[7],tag.id[8],tag.id[9]};
+  const uint8_t uidLen = tag.idLen;
+  auto reactivate = [&]() { ST25R3916Backend::ScanResult t; if (!dev.scan(ST25R3916Backend::TECH_A,t,600,true)) return false; return t.idLen==uidLen && memcmp(t.id,uid,uidLen)==0; };
+  auto firstBlock = [](uint8_t s)->uint16_t { return s < 32 ? (uint16_t)s*4u : (uint16_t)(128u+(s-32u)*16u); };
+  auto blockCount = [](uint8_t s)->uint8_t { return s < 32 ? 4 : 16; };
+  static const uint8_t madKeys[][6]={{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}};
+  static const uint8_t nfcKey[6]={0xD3,0xF7,0xD3,0xF7,0xD3,0xF7};
+  auto readMad = [&](uint8_t block,uint8_t out[16]) { uint8_t sec=block/4; uint8_t trailer=(uint8_t)(sec*4+3); for(auto &key:madKeys) for(uint8_t kt=0;kt<2;++kt){ if(!dev.hasActiveTag()&&!reactivate()) continue; if(dev.mifareClassicAuthenticate(trailer,key,kt==1)&&dev.mifareClassicReadBlock(block,out)){dev.deactivate();return true;} dev.deactivate(); } return false; };
+  uint8_t b1[16]={}, b2[16]={};
+  if(!readMad(1,b1)||!readMad(2,b2)){ShowStatusAction::show("Not NDEF formatted");_showMfcNdefMenu();return;}
+  uint8_t ndefSector=0xFF;
+  for(uint8_t sec=1;sec<16 && sec<sectors;++sec){uint8_t off=(uint8_t)(2u*(sec-1u));uint8_t a=off<15?b1[off+1]:b2[off-15];uint8_t c=off+1<15?b1[off+2]:b2[off-14];if(a==0x03&&c==0xE1){ndefSector=sec;break;}}
+  if(ndefSector==0xFF){ShowStatusAction::show("Not NDEF formatted");_showMfcNdefMenu();return;}
+  uint16_t block=firstBlock(ndefSector); uint8_t trailer=(uint8_t)(block+blockCount(ndefSector)-1); uint8_t data[16]={};
+  if(!reactivate()||!dev.mifareClassicAuthenticate(trailer,nfcKey,false)||!dev.mifareClassicReadBlock((uint8_t)block,data)){dev.deactivate();ShowStatusAction::show("NDEF sector locked");_showMfcNdefMenu();return;}
+  dev.deactivate(); data[0]=0x03; data[1]=0x00; data[2]=0xFE;
+  if(!reactivate()||!dev.mifareClassicAuthenticate(trailer,nfcKey,false)||!dev.mifareClassicWriteBlock((uint8_t)block,data)){dev.deactivate();ShowStatusAction::show("NDEF erase failed");_showMfcNdefMenu();return;}
+  dev.deactivate(); _hasNdef=false; _ndefLen=0; ShowStatusAction::show("NDEF erased"); _showMfcNdefMenu();
+#else
+  ShowStatusAction::show("ST25R3916 not supported");
+#endif
+}
+
+bool ST25R3916Screen::_formatMfc1kNdef() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFC_NDEF_WRITING; render(); _renderTagPrompt();
+  ST25R3916Backend dev; bool ready=dev.beginI2C(Uni.ExI2C,ST25R3916_I2C_ADDR); if(!ready) ready=dev.beginSPI(Uni.Spi,ST25R3916_CS_PIN,ST25R3916_IRQ_PIN,ST25R3916_SPI_HZ);
+  if(!ready){ShowStatusAction::show("ST25R3916 not found");_showMfcNdefMenu();return false;}
+  ST25R3916Backend::ScanResult tag; if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){ShowStatusAction::show("No tag detected");_showMfcNdefMenu();return false;}
+  if(tag.sak!=0x08){dev.deactivate();ShowStatusAction::show("Format supports Classic 1K");_showMfcNdefMenu();return false;}
+  uint8_t uid[10]={}; memcpy(uid,tag.id,tag.idLen); uint8_t uidLen=tag.idLen;
+  auto reactivate=[&](){ST25R3916Backend::ScanResult t;if(!dev.scan(ST25R3916Backend::TECH_A,t,600,true))return false;return t.idLen==uidLen&&!memcmp(t.id,uid,uidLen);};
+  const auto defaults=NFCUtility::getDefaultKeys();
+  uint8_t sectorKey[3][6]={}; bool sectorKeyB[3]={};
+  for(uint8_t sec=0;sec<3;++sec){bool found=false;uint8_t trailer=(uint8_t)(sec*4+3);for(uint8_t kt=0;kt<2&&!found;++kt)for(const auto& c:defaults){const auto& k=c.value();if(!dev.hasActiveTag()&&!reactivate())continue;if(dev.mifareClassicAuthenticate(trailer,k.data(),kt==1)){memcpy(sectorKey[sec],k.data(),6);sectorKeyB[sec]=kt==1;found=true;}dev.deactivate();if(found)break;}if(!found){ShowStatusAction::show("Format: unknown sector key");_showMfcNdefMenu();return false;}}
+  uint8_t madPayload[31]={}; madPayload[0]=0x01; madPayload[1]=0x03;madPayload[2]=0xE1;madPayload[3]=0x03;madPayload[4]=0xE1;
+  auto crc8=[](const uint8_t* d,size_t n){uint8_t c=0xC7;for(size_t i=0;i<n;++i){c^=d[i];for(uint8_t b=0;b<8;++b)c=(c&0x80)?(uint8_t)((c<<1)^0x1D):(uint8_t)(c<<1);}return c;};
+  uint8_t mad1[16]={},mad2[16]={};mad1[0]=crc8(madPayload,31);memcpy(mad1+1,madPayload,15);memcpy(mad2,madPayload+15,16);
+  static const uint8_t madTrailer[16]={0xA0,0xA1,0xA2,0xA3,0xA4,0xA5,0x78,0x77,0x88,0xC1,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+  static const uint8_t nfcTrailer[16]={0xD3,0xF7,0xD3,0xF7,0xD3,0xF7,0x7F,0x07,0x88,0x40,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+  uint8_t zero[16]={}; uint8_t empty[16]={0x03,0x00,0xFE};
+  auto writeKnown=[&](uint8_t block,const uint8_t data[16]){uint8_t sec=block/4;for(uint8_t pass=0;pass<2;++pass){bool kb=pass==0?true:sectorKeyB[sec];const uint8_t* key=pass==0?sectorKey[sec]:sectorKey[sec];if(!dev.hasActiveTag()&&!reactivate())continue;if(dev.mifareClassicAuthenticate((uint8_t)(sec*4+3),key,kb)&&dev.mifareClassicWriteBlock(block,data)){dev.deactivate();return true;}dev.deactivate();}for(uint8_t kt=0;kt<2;++kt)for(const auto& c:defaults){const auto& k=c.value();if(!dev.hasActiveTag()&&!reactivate())continue;if(dev.mifareClassicAuthenticate((uint8_t)(sec*4+3),k.data(),kt==1)&&dev.mifareClassicWriteBlock(block,data)){dev.deactivate();return true;}dev.deactivate();}return false;};
+  ProgressView::init(); bool ok=true; uint8_t done=0; const uint8_t total=11;
+  auto put=[&](uint8_t b,const uint8_t d[16]){char msg[40];snprintf(msg,sizeof(msg),"Formatting blocks (%u/%u)...",(unsigned)(done+1),(unsigned)total);ProgressView::progress(msg,(int)((uint16_t)done*100/total));bool r=writeKnown(b,d);if(r)++done;return r;};
+  ok=put(1,mad1)&&put(2,mad2); for(uint8_t sec=1;sec<=2&&ok;++sec)for(uint8_t bi=0;bi<3&&ok;++bi)ok=put((uint8_t)(sec*4+bi),(sec==1&&bi==0)?empty:zero); if(ok)ok=put(3,madTrailer);if(ok)ok=put(7,nfcTrailer);if(ok)ok=put(11,nfcTrailer);
+  if(ok)ProgressView::progress("Format complete",100);ProgressView::finish();ShowStatusAction::show(ok?"NDEF formatted":"NDEF format failed");_showMfcNdefMenu();return ok;
+#else
+  ShowStatusAction::show("ST25R3916 not supported"); return false;
 #endif
 }
 
