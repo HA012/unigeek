@@ -261,12 +261,8 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
     case 1: _showMfcMenu(); break;
     case 2: _showMfuMenu(); break;
-    case 3: _scan(ST25R3916Backend::TECH_A); break;
-    case 4: _scan(ST25R3916Backend::TECH_B); break;
-    case 5: _scan(ST25R3916Backend::TECH_F); break;
-    case 6: _scan(ST25R3916Backend::TECH_V); break;
-    case 7: _showI2CInfo(); break;
-    case 8: _showSPIInfo(); break;
+    case 3: _showI2CInfo(); break;
+    case 4: _showSPIInfo(); break;
   }
 #else
   (void)index;
@@ -276,7 +272,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
 
 void ST25R3916Screen::_showMenu() {
   _state = STATE_MENU;
-  setItems(_items, 9);
+  setItems(_items, 5);
 }
 
 void ST25R3916Screen::_showMfcMenu() {
