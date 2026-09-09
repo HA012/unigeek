@@ -14,7 +14,10 @@ public:
       case STATE_MFC_MENU: return "MIFARE Classic";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
+      case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
+      case STATE_MFC_NDEF_FILE_SELECT: return "NDEF Files";
       case STATE_MFC_NDEF_READING: return "Read NDEF";
+      case STATE_MFC_NDEF_WRITING: return "Write NDEF";
       case STATE_MFC_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_READING: return "Read Tag";
       case STATE_MFC_DUMP_HEX: return "Memory Dump";
@@ -39,7 +42,10 @@ private:
     STATE_MFC_MENU,
     STATE_MFC_TAG_MENU,
     STATE_MFC_NDEF_MENU,
+    STATE_MFC_NDEF_WRITE_MENU,
+    STATE_MFC_NDEF_FILE_SELECT,
     STATE_MFC_NDEF_READING,
+    STATE_MFC_NDEF_WRITING,
     STATE_MFC_NDEF_DETAILS,
     STATE_MFC_READING,
     STATE_MFC_DETAILS,
@@ -72,6 +78,13 @@ private:
     {"Write to Tag"},
     {"Erase Tag"},
   };
+  ListItem _mfcNdefItems[2] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+  };
+  ListItem _mfcNdefWriteItems[6] = {
+    {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
+  };
 
   static constexpr uint8_t kMaxRows = 48;
   ScrollListView _scrollView;
@@ -96,9 +109,12 @@ private:
   size_t _ndefLen = 0;
   size_t _ndefCapacity = 0;
   bool _hasNdef = false;
+  bool _ndefWritePreview = false;
+  bool _ndefWritePreviewFromFile = false;
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
   String _dumpPickDir;
+  String _ndefPickDir;
 
   void _scan(uint16_t techMask);
   void _readMfcTag();
@@ -118,7 +134,14 @@ private:
   void _showMfcMenu();
   void _showMfcTagMenu();
   void _showMfcNdefMenu();
+  void _showMfcNdefWriteMenu();
   void _readMfcNdef();
+  bool _writeMfcNdef(const uint8_t* ndef, size_t ndefLen);
+  void _showNdefWritePreview(const uint8_t* ndef, size_t ndefLen, bool fromFile);
+  void _writeNdefBuilt(uint8_t kind);
+  void _writeNdefVcard();
+  void _openNdefFilePicker();
+  void _openNdefFile(uint8_t index);
   void _showNdefDetails(const uint8_t* uid, uint8_t uidLen, const uint8_t* ndef, size_t ndefLen);
   void _addWrappedRow(const String& label, const String& value);
   void _renderTagPrompt();

@@ -8,6 +8,7 @@
 #include "core/ConfigManager.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
+#include "utils/nfc/NdefBuilder.h"
 
 #if defined(DEVICE_HAS_ST25R3916)
 #include "utils/nfc/NFCUtility.h"
@@ -66,7 +67,8 @@ void ST25R3916Screen::onInit() {
 
 void ST25R3916Screen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_DUMP_SELECT) {
+      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
+      _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onUpdate();
     return;
   }
@@ -79,7 +81,11 @@ void ST25R3916Screen::onUpdate() {
       _state = STATE_MFC_DETAILS;
       render();
     } else if (_state == STATE_MFC_NDEF_DETAILS) {
-      _showMfcNdefMenu();
+      if (_ndefWritePreview) {
+        const bool fromFile = _ndefWritePreviewFromFile;
+        _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
+        if (fromFile) _openNdefFilePicker(); else _showMfcNdefWriteMenu();
+      } else _showMfcNdefMenu();
     } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
                _state == STATE_MFC_WRITING) {
       _showMfcTagMenu();
@@ -100,6 +106,11 @@ void ST25R3916Screen::onUpdate() {
     _showMfcDumpActions();
     return;
   }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_NDEF_DETAILS && _ndefWritePreview) {
+    if (_writeMfcNdef(_ndefBuf, _ndefLen)) _showMfcNdefMenu();
+    else render();
+    return;
+  }
   if (_state == STATE_MFC_DUMP_HEX) {
     _handleMfcDumpNav(dir);
     return;
@@ -109,12 +120,13 @@ void ST25R3916Screen::onUpdate() {
 
 void ST25R3916Screen::onRender() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_DUMP_SELECT) {
+      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
+      _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onRender();
     return;
   }
   if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_NDEF_READING ||
-      _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
+      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _renderTagPrompt();
     return;
   }
@@ -139,10 +151,16 @@ void ST25R3916Screen::onBack() {
     _showMfcTagMenu();
     return;
   }
-  if (_state == STATE_MFC_NDEF_DETAILS || _state == STATE_MFC_NDEF_READING) {
-    _showMfcNdefMenu();
+  if (_state == STATE_MFC_NDEF_DETAILS) {
+    if (_ndefWritePreview) {
+      const bool fromFile = _ndefWritePreviewFromFile;
+      _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
+      if (fromFile) _openNdefFilePicker(); else _showMfcNdefWriteMenu();
+    } else _showMfcNdefMenu();
     return;
   }
+  if (_state == STATE_MFC_NDEF_READING || _state == STATE_MFC_NDEF_WRITING) { _showMfcNdefMenu(); return; }
+  if (_state == STATE_MFC_NDEF_WRITE_MENU || _state == STATE_MFC_NDEF_FILE_SELECT) { _showMfcNdefMenu(); return; }
   if (_state == STATE_MFC_NDEF_MENU) {
     _showMfcMenu();
     return;
@@ -171,8 +189,16 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   }
   if (_state == STATE_MFC_NDEF_MENU) {
     if (index == 0) _readMfcNdef();
+    else if (index == 1) _showMfcNdefWriteMenu();
     return;
   }
+  if (_state == STATE_MFC_NDEF_WRITE_MENU) {
+    if (index < 4) _writeNdefBuilt(index);
+    else if (index == 4) _writeNdefVcard();
+    else if (index == 5) _openNdefFilePicker();
+    return;
+  }
+  if (_state == STATE_MFC_NDEF_FILE_SELECT) { _openNdefFile(index); return; }
   if (_state == STATE_MFC_TAG_MENU) {
     if (index == 0) _readMfcTag();
     else if (index == 1) _showMfcWriteSources();
@@ -218,9 +244,16 @@ void ST25R3916Screen::_showMfcTagMenu() {
 }
 
 void ST25R3916Screen::_showMfcNdefMenu() {
-  static ListItem items[1] = {{"Read NDEF"}};
+  _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
   _state = STATE_MFC_NDEF_MENU;
-  setItems(items, 1);
+  setItems(_mfcNdefItems, 2);
+  render();
+}
+
+void ST25R3916Screen::_showMfcNdefWriteMenu() {
+  _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
+  _state = STATE_MFC_NDEF_WRITE_MENU;
+  setItems(_mfcNdefWriteItems, 6);
   render();
 }
 
@@ -1077,6 +1110,104 @@ void ST25R3916Screen::_showNdefDetails(const uint8_t* uid, uint8_t uidLen,
   _scrollView.setRows(_rows, _rowCount);
   _state = STATE_MFC_NDEF_DETAILS;
   render();
+}
+
+
+void ST25R3916Screen::_showNdefWritePreview(const uint8_t* ndef, size_t ndefLen, bool fromFile) {
+  if (!ndef || !ndefLen || ndefLen > kMaxNdefBytes) { ShowStatusAction::show("Invalid NDEF"); _showMfcNdefWriteMenu(); return; }
+  memcpy(_ndefBuf, ndef, ndefLen); _ndefLen = ndefLen; _hasNdef = true;
+  _ndefWritePreview = true; _ndefWritePreviewFromFile = fromFile; _ndefCapacity = 0;
+  _showNdefDetails(nullptr, 0, _ndefBuf, _ndefLen);
+  if (_rowCount < kMaxRows) {
+    _rowLabels[_rowCount] = "[Press]"; _rowValues[_rowCount] = "Write to Tag";
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]}; ++_rowCount;
+    _scrollView.setRows(_rows, _rowCount); render();
+  }
+}
+
+void ST25R3916Screen::_writeNdefBuilt(uint8_t kind) {
+  const char* label = kind == 0 ? "Text" : kind == 1 ? "URL" : kind == 2 ? "Phone" : "Email";
+  String initial = kind == 1 ? "https://" : "";
+  String value = InputTextAction::popup(label, initial, kind == 2 ? InputTextAction::INPUT_PHONE : InputTextAction::INPUT_TEXT);
+  if (InputTextAction::wasCancelled() || !value.length()) { _showMfcNdefWriteMenu(); return; }
+  uint8_t b[kMaxNdefBytes] = {}; size_t n = 0;
+  bool ok = kind == 0 ? NdefBuilder::buildText(value, b, n, sizeof(b)) :
+            kind == 1 ? NdefBuilder::buildUrl(value, b, n, sizeof(b)) :
+            kind == 2 ? NdefBuilder::buildPhone(value, b, n, sizeof(b)) :
+                        NdefBuilder::buildEmail(value, b, n, sizeof(b));
+  if (!ok) { ShowStatusAction::show("NDEF too large"); _showMfcNdefWriteMenu(); return; }
+  _showNdefWritePreview(b, n, false);
+}
+
+void ST25R3916Screen::_writeNdefVcard() {
+  String contact = InputTextAction::popup("Contact name", ""); if (InputTextAction::wasCancelled() || !contact.length()) { _showMfcNdefWriteMenu(); return; }
+  String company = InputTextAction::popup("Company", ""); if (InputTextAction::wasCancelled()) { _showMfcNdefWriteMenu(); return; }
+  String address = InputTextAction::popup("Address", ""); if (InputTextAction::wasCancelled()) { _showMfcNdefWriteMenu(); return; }
+  String phone = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE); if (InputTextAction::wasCancelled()) { _showMfcNdefWriteMenu(); return; }
+  String email = InputTextAction::popup("Mail", ""); if (InputTextAction::wasCancelled()) { _showMfcNdefWriteMenu(); return; }
+  String website = InputTextAction::popup("Website", "https://"); if (InputTextAction::wasCancelled()) { _showMfcNdefWriteMenu(); return; }
+  uint8_t b[kMaxNdefBytes] = {}; size_t n = 0;
+  if (!NdefBuilder::buildVcard(contact, company, address, phone, email, website, b, n, sizeof(b))) {
+    ShowStatusAction::show("vCard too large"); _showMfcNdefWriteMenu(); return;
+  }
+  _showNdefWritePreview(b, n, false);
+}
+
+void ST25R3916Screen::_openNdefFilePicker() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable"); _showMfcNdefWriteMenu(); return; }
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc"); Uni.Storage->makeDir("/unigeek/nfc/ndefs");
+  if (!_ndefPickDir.startsWith("/unigeek/nfc/ndefs")) _ndefPickDir = "/unigeek/nfc/ndefs";
+  _browser.root = "/unigeek/nfc/ndefs"; _state = STATE_MFC_NDEF_FILE_SELECT;
+  uint8_t n = _browser.load(this, _ndefPickDir, BrowseFileView::Mode(".ndef", 1, kMaxNdefBytes));
+  if (!n && _ndefPickDir == _browser.root) { ShowStatusAction::show("No NDEF files"); _showMfcNdefWriteMenu(); return; }
+  setItems(_browser.items(), n); render();
+}
+
+void ST25R3916Screen::_openNdefFile(uint8_t index) {
+  if (index >= _browser.count()) return; const auto& e = _browser.entry(index);
+  if (e.isDir) { _ndefPickDir = e.path; _openNdefFilePicker(); return; }
+  fs::File f = Uni.Storage->open(e.path.c_str(), "r"); if (!f || f.size() == 0 || f.size() > kMaxNdefBytes) { if (f) f.close(); ShowStatusAction::show("Invalid NDEF file"); _openNdefFilePicker(); return; }
+  size_t n = f.size(); uint8_t b[kMaxNdefBytes] = {}; bool ok = f.read(b, n) == (int)n; f.close();
+  if (!ok) { ShowStatusAction::show("Read failed"); _openNdefFilePicker(); return; }
+  _showNdefWritePreview(b, n, true);
+}
+
+bool ST25R3916Screen::_writeMfcNdef(const uint8_t* ndef, size_t ndefLen) {
+#if defined(DEVICE_HAS_ST25R3916)
+  if (!ndef || !ndefLen || ndefLen > kMaxNdefBytes) { ShowStatusAction::show("NDEF too large"); return false; }
+  _state = STATE_MFC_NDEF_WRITING; render();
+  ST25R3916Backend dev; bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) { ShowStatusAction::show("ST25R3916 not found"); return false; }
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("No tag detected"); return false; }
+  if (!isMifareClassic(tag.sak)) { ShowStatusAction::show("Not MIFARE Classic"); return false; }
+  size_t totalSectors=0,totalBlocks=0; mfcDimensions(tag.sak,totalSectors,totalBlocks);
+  auto reactivate=[&](){ dev.deactivate(); ST25R3916Backend::ScanResult cur; return dev.scan(ST25R3916Backend::TECH_A,cur,1200,true)&&sameTag(tag,cur); };
+  static const uint8_t madKeys[][6]={{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},{0xD3,0xF7,0xD3,0xF7,0xD3,0xF7}};
+  auto readMad=[&](uint8_t block,uint8_t out[16]){ uint8_t sec=block<128?block/4:(uint8_t)(32+(block-128)/16); uint8_t trailer=(uint8_t)(sectorFirstBlock(sec)+sectorBlockCount(sec)-1); for(auto& key:madKeys) for(uint8_t kt=0;kt<2;++kt){ if(!dev.hasActiveTag()&&!reactivate()) continue; if(dev.mifareClassicAuthenticate(trailer,key,kt==1)&&dev.mifareClassicReadBlock(block,out)){dev.deactivate();return true;} dev.deactivate(); } return false; };
+  uint8_t sectors[39]={}; size_t sectorCount=0; auto add=[&](uint8_t sec,uint8_t a,uint8_t c){ if(sec<totalSectors&&sectorCount<sizeof(sectors)&&((a==0x03&&c==0xE1)||(a==0xE1&&c==0x03))) sectors[sectorCount++]=sec; };
+  uint8_t b1[16]={},b2[16]={}; if(!readMad(1,b1)||!readMad(2,b2)){ShowStatusAction::show("Not NDEF formatted");return false;}
+  for(uint8_t sec=1;sec<=7;++sec){size_t o=2+(sec-1)*2;add(sec,b1[o],b1[o+1]);} for(uint8_t sec=8;sec<=15;++sec){size_t o=(sec-8)*2;add(sec,b2[o],b2[o+1]);}
+  if(totalSectors>16){uint8_t m0[16]={},m1[16]={},m2[16]={}; if(readMad(64,m0)&&readMad(65,m1)&&readMad(66,m2)){for(uint8_t sec=17;sec<=23;++sec){size_t o=2+(sec-17)*2;add(sec,m0[o],m0[o+1]);}for(uint8_t sec=24;sec<=31;++sec){size_t o=(sec-24)*2;add(sec,m1[o],m1[o+1]);}for(uint8_t sec=32;sec<=39;++sec){size_t o=(sec-32)*2;add(sec,m2[o],m2[o+1]);}}}
+  if(!sectorCount){ShowStatusAction::show("Not NDEF formatted");return false;}
+  size_t capacity=0; for(size_t i=0;i<sectorCount;++i) capacity += sectors[i]<32?48:240;
+  size_t payloadLen=ndefLen+3; if(payloadLen>capacity){ShowStatusAction::show("NDEF does not fit");return false;}
+  uint8_t* payload=new uint8_t[payloadLen]; if(!payload){ShowStatusAction::show("Out of memory");return false;} payload[0]=0x03;payload[1]=(uint8_t)ndefLen;memcpy(payload+2,ndef,ndefLen);payload[2+ndefLen]=0xFE;
+  static const uint8_t keyA[6]={0xD3,0xF7,0xD3,0xF7,0xD3,0xF7}; size_t off=0; bool success=true; uint8_t firstFinal[16]={},firstStaged[16]={}; uint8_t firstBlockNo=0; bool haveFirst=false;
+  ProgressView::init();
+  size_t totalData=0; for(size_t i=0;i<sectorCount;++i) totalData+=sectors[i]<32?3:15; size_t done=0;
+  for(size_t si=0;si<sectorCount&&off<payloadLen&&success;++si){ uint8_t sec=sectors[si]; size_t first=sectorFirstBlock(sec); uint8_t dataBlocks=sec<32?3:15; uint8_t trailer=(uint8_t)(first+sectorBlockCount(sec)-1);
+    for(uint8_t bi=0;bi<dataBlocks&&off<payloadLen&&success;++bi){ uint8_t blockNo=(uint8_t)(first+bi); char msg[40]; snprintf(msg,sizeof(msg),"Writing blocks (%u/%u)...",(unsigned)(done+1),(unsigned)totalData);ProgressView::progress(msg,totalData?(int)(done*100/totalData):0);
+      if(!dev.hasActiveTag()&&!reactivate()){success=false;break;} if(!dev.mifareClassicAuthenticate(trailer,keyA,false)){dev.deactivate();success=false;break;} uint8_t block[16]={}; if(!dev.mifareClassicReadBlock(blockNo,block)){dev.deactivate();success=false;break;} dev.deactivate();
+      size_t take=min((size_t)16,payloadLen-off); memcpy(block,payload+off,take); if(!haveFirst){memcpy(firstFinal,block,16);memcpy(firstStaged,block,16);firstStaged[1]=0x00;firstBlockNo=blockNo;haveFirst=true;memcpy(block,firstStaged,16);} if(!dev.hasActiveTag()&&!reactivate()){success=false;break;} if(!dev.mifareClassicAuthenticate(trailer,keyA,false)||!dev.mifareClassicWriteBlock(blockNo,block)){dev.deactivate();success=false;break;} dev.deactivate(); off+=take;++done;
+    }
+  }
+  if(success&&haveFirst){uint8_t sec=firstBlockNo<128?firstBlockNo/4:(uint8_t)(32+(firstBlockNo-128)/16);uint8_t trailer=(uint8_t)(sectorFirstBlock(sec)+sectorBlockCount(sec)-1);if(!dev.hasActiveTag()&&!reactivate())success=false;else if(!dev.mifareClassicAuthenticate(trailer,keyA,false)||!dev.mifareClassicWriteBlock(firstBlockNo,firstFinal))success=false;dev.deactivate();}
+  ProgressView::finish(); delete[] payload; ShowStatusAction::show(success?"NDEF written":"NDEF write failed"); return success;
+#else
+  return false;
+#endif
 }
 
 void ST25R3916Screen::_readMfcNdef() {
