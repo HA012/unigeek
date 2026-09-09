@@ -77,3 +77,12 @@ if root.exists():
         re.S,
         already="while (int_pin >= 0 && digitalRead(int_pin) == HIGH);",
     )
+    # MIFARE Classic uses 9-bit ISO14443A frames (8 data bits + explicit
+    # parity). When RFAL is asked to keep parity, the final partial FIFO byte
+    # is intentional and must not be reported as an incomplete-byte error.
+    patch(
+        "rfal_rfst25r3916.cpp",
+        r"(?P<comment>/\* Check if the reception ends with an incomplete byte \(residual bits\) \*/\s*)if\s*\(\s*rfalFIFOStatusIsIncompleteByte\(\)\s*\)\s*\{",
+        r"\g<comment>if (rfalFIFOStatusIsIncompleteByte() && !(gRFAL.TxRx.ctx.flags & RFAL_TXRX_FLAGS_PAR_RX_KEEP)) {",
+        already="rfalFIFOStatusIsIncompleteByte() && !(gRFAL.TxRx.ctx.flags & RFAL_TXRX_FLAGS_PAR_RX_KEEP)",
+    )
