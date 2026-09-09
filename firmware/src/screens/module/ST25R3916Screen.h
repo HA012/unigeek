@@ -16,6 +16,7 @@ public:
       case STATE_MFU_TAG_MENU: return "Tag Operations";
       case STATE_MFU_READING: return "Read Tag";
       case STATE_MFU_DETAILS: return "Tag Details";
+      case STATE_MFU_DUMP_HEX: return "Memory Dump";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -62,6 +63,7 @@ private:
     STATE_MFU_TAG_MENU,
     STATE_MFU_READING,
     STATE_MFU_DETAILS,
+    STATE_MFU_DUMP_HEX,
   };
 
   State _state = STATE_MENU;
@@ -126,6 +128,7 @@ private:
   uint8_t _mfuUidLen = 0;
   uint8_t _mfuAtqa[2] = {};
   uint8_t _mfuSak = 0;
+  uint16_t _mfuDumpOffset = 0;
   String _mfuType;
   bool _writePreviewFromFile = false;
   bool _mfcDumpFromCompleteRead = false;
@@ -164,6 +167,10 @@ private:
   void _showMfuMenu();
   void _showMfuTagMenu();
   void _readMfuTag();
+  void _showMfuDumpActions();
+  void _saveMfuDump();
+  void _renderMfuDump();
+  void _handleMfuDumpNav(INavigation::Direction dir);
   bool _detectMfuType(class ST25R3916Backend& dev, String& type, uint16_t& pages);
   void _readMfcNdef();
   bool _writeMfcNdef(const uint8_t* ndef, size_t ndefLen);
