@@ -7,11 +7,65 @@
 #include "utils/nfc/ST25R3916Backend.h"
 #endif
 
+namespace {
+const char* inferNfcAType(uint8_t sak, const uint8_t atqa[2]) {
+  if (sak == 0x01) return "MF Classic Mini";
+  if (sak == 0x08) return "MF Classic 1K";
+  if (sak == 0x18) return "MF Classic 4K";
+  if (sak == 0x28) return "MF Plus / SmartMX";
+  if (sak == 0x20) {
+    if (atqa[0] == 0x03) return "MIFARE DESFire";
+    return "ISO14443-4";
+  }
+  if (sak == 0x00) {
+    if (atqa[1] == 0x44) return "MIFARE UL / NTAG";
+    return "ISO14443A T2";
+  }
+  return "ISO14443A";
+}
+}
+
 void ST25R3916Screen::onInit() {
-  setItems(_items, 7);
+  _showMenu();
+}
+
+void ST25R3916Screen::onUpdate() {
+  if (_state == STATE_MENU) {
+    ListScreen::onUpdate();
+    return;
+  }
+
+  if (!Uni.Nav->wasPressed()) return;
+
+  auto dir = Uni.Nav->readDirection();
+  if (dir == INavigation::DIR_BACK) {
+    _showMenu();
+    return;
+  }
+  if (dir == INavigation::DIR_PRESS) {
+    _scan(_lastTechMask);
+    return;
+  }
+  _scrollView.onNav(dir);
+}
+
+void ST25R3916Screen::onRender() {
+  if (_state == STATE_MENU) {
+    ListScreen::onRender();
+    return;
+  }
+  if (_state == STATE_SCANNING) {
+    _renderTagPrompt();
+    return;
+  }
+  _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
 }
 
 void ST25R3916Screen::onBack() {
+  if (_state == STATE_DETAILS) {
+    _showMenu();
+    return;
+  }
   Screen.goBack();
 }
 
@@ -32,9 +86,27 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
 #endif
 }
 
+void ST25R3916Screen::_showMenu() {
+  _state = STATE_MENU;
+  setItems(_items, 7);
+}
+
+void ST25R3916Screen::_renderTagPrompt() {
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+}
+
 void ST25R3916Screen::_scan(uint16_t techMask) {
 #if defined(DEVICE_HAS_ST25R3916)
-  ShowStatusAction::show("Scanning...", 0);
+  _lastTechMask = techMask;
+  const State previousState = _state;
+  _state = STATE_SCANNING;
+  render();
 
   ST25R3916Backend dev;
   const char* bus = nullptr;
@@ -48,44 +120,90 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
 
   if (!ready) {
     ShowStatusAction::show("ST25R3916 not found");
-    render();
+    if (previousState == STATE_DETAILS) {
+      _state = STATE_DETAILS;
+      render();
+    } else {
+      _showMenu();
+    }
     return;
   }
 
   ST25R3916Backend::ScanResult result;
   if (!dev.scan(techMask, result, 1800)) {
-    ShowStatusAction::show("No tag found");
-    render();
+    ShowStatusAction::show("No tag detected", 1200);
+    if (previousState == STATE_DETAILS) {
+      _state = STATE_DETAILS;
+      render();
+    } else {
+      _showMenu();
+    }
     return;
   }
 
   const char* tech = "Unknown";
+  const char* protocol = "Unknown";
   switch (result.technology) {
-    case ST25R3916Backend::Technology::NFC_A: tech = "NFC-A"; break;
-    case ST25R3916Backend::Technology::NFC_B: tech = "NFC-B"; break;
-    case ST25R3916Backend::Technology::NFC_F: tech = "NFC-F"; break;
-    case ST25R3916Backend::Technology::NFC_V: tech = "NFC-V"; break;
-    default: break;
+    case ST25R3916Backend::Technology::NFC_A:
+      tech = inferNfcAType(result.sak, result.atqa);
+      protocol = "ISO14443A";
+      break;
+    case ST25R3916Backend::Technology::NFC_B:
+      tech = "NFC-B";
+      protocol = "ISO14443B";
+      break;
+    case ST25R3916Backend::Technology::NFC_F:
+      tech = "NFC-F / FeliCa";
+      protocol = "NFC-F";
+      break;
+    case ST25R3916Backend::Technology::NFC_V:
+      tech = "NFC-V / ISO15693";
+      protocol = "ISO15693";
+      break;
+    default:
+      break;
   }
 
-  char uid[31] = {};
-  size_t pos = 0;
-  for (uint8_t i = 0; i < result.nfcidLen && pos + 3 < sizeof(uid); i++) {
-    int n = snprintf(uid + pos, sizeof(uid) - pos, i ? " %02X" : "%02X", result.nfcid[i]);
-    if (n <= 0) break;
-    pos += (size_t)n;
+  String id;
+  for (uint8_t i = 0; i < result.nfcidLen; i++) {
+    char h[4];
+    snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", result.nfcid[i]);
+    id += h;
   }
+  if (!id.length()) id = "--";
 
-  char msg[160];
+  _rowCount = 0;
+  auto addRow = [&](const char* label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label;
+    _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    _rowCount++;
+  };
+
+  addRow(result.technology == ST25R3916Backend::Technology::NFC_A ? "UID" : "NFCID", id);
+  addRow("Type", tech);
+
   if (result.technology == ST25R3916Backend::Technology::NFC_A) {
-    snprintf(msg, sizeof(msg), "%s via %s | UID %s | ATQA %02X %02X | SAK %02X%s",
-             tech, bus, uid[0] ? uid : "--", result.atqa[0], result.atqa[1], result.sak,
-             result.isoDep ? " | ISO-DEP" : "");
-  } else {
-    snprintf(msg, sizeof(msg), "%s via %s | NFCID %s%s", tech, bus, uid[0] ? uid : "--",
-             result.isoDep ? " | ISO-DEP" : "");
+    char atqa[8];
+    snprintf(atqa, sizeof(atqa), "%02X:%02X", result.atqa[0], result.atqa[1]);
+    addRow("ATQA", atqa);
+
+    char sak[4];
+    snprintf(sak, sizeof(sak), "%02X", result.sak);
+    addRow("SAK", sak);
   }
-  ShowStatusAction::show(msg);
+
+  addRow(result.technology == ST25R3916Backend::Technology::NFC_A ? "UID Len" : "NFCID Len",
+         String(result.nfcidLen) + " bytes");
+  addRow("Protocol", protocol);
+  if (result.isoDep) addRow("ISO-DEP", "Yes");
+  addRow("Reader", bus ? bus : "--");
+  addRow("[Press]", "Scan again");
+
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_DETAILS;
   render();
 #endif
 }
