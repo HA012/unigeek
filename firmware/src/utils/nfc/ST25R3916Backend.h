@@ -56,6 +56,7 @@ public:
   // an NFC-A Classic tag before authenticate/read are used.
   bool mifareClassicAuthenticate(uint8_t block, const uint8_t key[6], bool keyB = false);
   bool mifareClassicReadBlock(uint8_t block, uint8_t data[16]);
+  bool mifareClassicWriteBlock(uint8_t block, const uint8_t data[16]);
 
   const Info& info() const { return _info; }
   uint16_t lastScanCode() const { return _lastScanCode; }
@@ -65,6 +66,8 @@ public:
 
 private:
   bool _finishBegin();
+  bool _transceivePacked(const uint8_t* txPacked, size_t txBits, uint8_t* rxPacked,
+                         size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 8);
   bool _transceiveRaw9(const uint8_t* txData, const uint8_t* txParity, size_t txLen,
                        uint8_t* rxData, uint8_t* rxParity, size_t rxMaxLen,
                        size_t& rxLen, uint32_t timeoutMs = 8);

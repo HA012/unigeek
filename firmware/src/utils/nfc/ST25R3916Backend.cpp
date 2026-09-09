@@ -190,32 +190,20 @@ uint32_t ST25R3916Backend::_uid32(const ScanResult& tag) {
   return bytesToU32(p);
 }
 
-bool ST25R3916Backend::_transceiveRaw9(const uint8_t* txData, const uint8_t* txParity,
-                                       size_t txLen, uint8_t* rxData, uint8_t* rxParity,
-                                       size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
-  rxLen = 0;
-  if (!_hw || !txData || !txParity || !txLen || !rxData || !rxParity || !rxMaxLen) return false;
-  if (txLen > 24 || rxMaxLen > 24) return false;
+bool ST25R3916Backend::_transceivePacked(const uint8_t* txPacked, size_t txBits,
+                                            uint8_t* rxPacked, size_t rxMaxBits,
+                                            size_t& rxBits, uint32_t timeoutMs) {
+  rxBits = 0;
+  if (!_hw || !txPacked || !txBits || !rxPacked || !rxMaxBits) return false;
 
-  uint8_t txPacked[27] = {};
-  uint8_t rxPacked[27] = {};
-  const size_t txBits = txLen * 9U;
-  const size_t rxMaxBits = rxMaxLen * 9U;
-
-  for (size_t i = 0; i < txLen; ++i) {
-    const size_t base = i * 9U;
-    for (uint8_t bit = 0; bit < 8; ++bit) setPackedBit(txPacked, base + bit, (txData[i] >> bit) & 1U);
-    setPackedBit(txPacked, base + 8U, txParity[i] & 1U);
-  }
-
-  uint16_t rxBits = 0;
+  uint16_t receivedBits = 0;
   rfalTransceiveContext ctx;
   memset(&ctx, 0, sizeof(ctx));
-  ctx.txBuf = txPacked;
+  ctx.txBuf = const_cast<uint8_t*>(txPacked);
   ctx.txBufLen = (uint16_t)txBits;
   ctx.rxBuf = rxPacked;
   ctx.rxBufLen = (uint16_t)rxMaxBits;
-  ctx.rxRcvdLen = &rxBits;
+  ctx.rxRcvdLen = &receivedBits;
   ctx.flags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
               RFAL_TXRX_FLAGS_CRC_RX_MANUAL |
               RFAL_TXRX_FLAGS_CRC_RX_KEEP |
@@ -230,7 +218,33 @@ bool ST25R3916Backend::_transceiveRaw9(const uint8_t* txData, const uint8_t* txP
     _hw->rfalWorker();
     rc = _hw->rfalGetTransceiveStatus();
   } while (rc == ST_ERR_BUSY);
-  if (rc != ST_ERR_NONE || rxBits < 9U) return false;
+  if (rc != ST_ERR_NONE || receivedBits == 0) return false;
+  rxBits = receivedBits;
+  return true;
+}
+
+bool ST25R3916Backend::_transceiveRaw9(const uint8_t* txData, const uint8_t* txParity,
+                                       size_t txLen, uint8_t* rxData, uint8_t* rxParity,
+                                       size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
+  rxLen = 0;
+  if (!txData || !txParity || !txLen || !rxData || !rxParity || !rxMaxLen) return false;
+  if (txLen > 24 || rxMaxLen > 24) return false;
+
+  uint8_t txPacked[27] = {};
+  uint8_t rxPacked[27] = {};
+  const size_t txBits = txLen * 9U;
+  const size_t rxMaxBits = rxMaxLen * 9U;
+
+  for (size_t i = 0; i < txLen; ++i) {
+    const size_t base = i * 9U;
+    for (uint8_t bit = 0; bit < 8; ++bit) setPackedBit(txPacked, base + bit, (txData[i] >> bit) & 1U);
+    setPackedBit(txPacked, base + 8U, txParity[i] & 1U);
+  }
+
+  size_t rxBits = 0;
+  if (!_transceivePacked(txPacked, txBits, rxPacked, rxMaxBits, rxBits, timeoutMs) || rxBits < 9U) {
+    return false;
+  }
 
   rxLen = rxBits / 9U;
   if (rxLen > rxMaxLen) rxLen = rxMaxLen;
@@ -350,6 +364,47 @@ bool ST25R3916Backend::mifareClassicReadBlock(uint8_t block, uint8_t data[16]) {
 
   memcpy(data, decoded, 16);
   return true;
+}
+
+bool ST25R3916Backend::mifareClassicWriteBlock(uint8_t block, const uint8_t data[16]) {
+  if (!_active || !_crypto || !data) return false;
+
+  auto sendEncryptedFrame = [&](const uint8_t* plain, size_t len) -> bool {
+    uint8_t enc[18] = {};
+    uint8_t par[18] = {};
+    uint8_t txPacked[21] = {};
+    uint8_t rxPacked[2] = {};
+    for (size_t i = 0; i < len; ++i) {
+      enc[i] = crypto1_byte(_crypto, 0, 0) ^ plain[i];
+      par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+      const size_t base = i * 9U;
+      for (uint8_t bit = 0; bit < 8; ++bit) setPackedBit(txPacked, base + bit, (enc[i] >> bit) & 1U);
+      setPackedBit(txPacked, base + 8U, par[i]);
+    }
+
+    size_t rxBits = 0;
+    if (!_transceivePacked(txPacked, len * 9U, rxPacked, 4U, rxBits) || rxBits != 4U) return false;
+    uint8_t ack = 0;
+    for (uint8_t bit = 0; bit < 4; ++bit) {
+      const uint8_t encryptedBit = getPackedBit(rxPacked, bit);
+      const uint8_t plainBit = (uint8_t)(encryptedBit ^ crypto1_bit(_crypto, 0, 0));
+      ack |= (uint8_t)(plainBit << bit);
+    }
+    return ack == 0x0AU;
+  };
+
+  uint8_t cmd[4] = {0xA0, block, 0, 0};
+  const uint16_t cmdCrc = _crcA(cmd, 2);
+  cmd[2] = (uint8_t)(cmdCrc & 0xFFU);
+  cmd[3] = (uint8_t)(cmdCrc >> 8);
+  if (!sendEncryptedFrame(cmd, sizeof(cmd))) return false;
+
+  uint8_t payload[18] = {};
+  memcpy(payload, data, 16);
+  const uint16_t dataCrc = _crcA(payload, 16);
+  payload[16] = (uint8_t)(dataCrc & 0xFFU);
+  payload[17] = (uint8_t)(dataCrc >> 8);
+  return sendEncryptedFrame(payload, sizeof(payload));
 }
 
 void ST25R3916Backend::end() {

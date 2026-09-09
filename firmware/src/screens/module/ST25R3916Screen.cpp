@@ -64,7 +64,8 @@ void ST25R3916Screen::onInit() {
 }
 
 void ST25R3916Screen::onUpdate() {
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU) {
+  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+      _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onUpdate();
     return;
   }
@@ -76,7 +77,8 @@ void ST25R3916Screen::onUpdate() {
     if (_state == STATE_MFC_DUMP_HEX) {
       _state = STATE_MFC_DETAILS;
       render();
-    } else if (_state == STATE_MFC_DETAILS) {
+    } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
+               _state == STATE_MFC_WRITING) {
       _showMfcTagMenu();
     } else {
       _showMenu();
@@ -85,6 +87,10 @@ void ST25R3916Screen::onUpdate() {
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
     _scan(_lastTechMask);
+    return;
+  }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
+    _writeMfcDumpToTag();
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_DETAILS) {
@@ -99,11 +105,12 @@ void ST25R3916Screen::onUpdate() {
 }
 
 void ST25R3916Screen::onRender() {
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU) {
+  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+      _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onRender();
     return;
   }
-  if (_state == STATE_SCANNING || _state == STATE_MFC_READING) {
+  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_WRITING) {
     _renderTagPrompt();
     return;
   }
@@ -122,6 +129,10 @@ void ST25R3916Screen::onBack() {
   if (_state == STATE_MFC_DUMP_HEX) {
     _state = STATE_MFC_DETAILS;
     render();
+    return;
+  }
+  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_WRITING) {
+    _showMfcTagMenu();
     return;
   }
   if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_READING) {
@@ -147,6 +158,11 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   }
   if (_state == STATE_MFC_TAG_MENU) {
     if (index == 0) _readMfcTag();
+    else if (index == 1) _showMfcWriteSources();
+    return;
+  }
+  if (_state == STATE_MFC_DUMP_SELECT) {
+    _openMfcDumpFile(index);
     return;
   }
 
@@ -179,7 +195,7 @@ void ST25R3916Screen::_showMfcMenu() {
 
 void ST25R3916Screen::_showMfcTagMenu() {
   _state = STATE_MFC_TAG_MENU;
-  setItems(_mfcTagItems, 1);
+  setItems(_mfcTagItems, 2);
   render();
 }
 
@@ -347,6 +363,7 @@ void ST25R3916Screen::_readMfcTag() {
     return;
   }
   memset(_mfcDump, 0, sizeof(_mfcDump));
+  _mfcDumpFromCompleteRead = false;
   _mfcDumpLen = dumpLen;
   _mfcDumpBlocks = (uint16_t)blocks;
   _mfcDumpOffset = 0;
@@ -407,6 +424,7 @@ void ST25R3916Screen::_readMfcTag() {
     if (sectorHasKey) ++sectorsWithKey;
   }
   ProgressView::finish();
+  _mfcDumpFromCompleteRead = (blocksRead == blocks);
 
   String uid;
   for (uint8_t i = 0; i < tag.nfcidLen; ++i) {
@@ -457,8 +475,9 @@ void ST25R3916Screen::_showMfcDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump", "view"},
     {"Save Dump", "save"},
+    {"Write to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
   if (!r) { render(); return; }
 
   render();
@@ -468,7 +487,198 @@ void ST25R3916Screen::_showMfcDumpActions() {
     render();
   } else if (strcmp(r, "save") == 0) {
     _saveMfcDump();
+  } else if (strcmp(r, "write") == 0) {
+    _showMfcWritePreview(_mfcDump, _mfcDumpLen, false);
   }
+}
+
+
+void ST25R3916Screen::_showMfcWriteSources() {
+  static const InputSelectAction::Option withRead[] = {
+    {"From File", "file"},
+    {"From Last Read", "read"},
+  };
+  static const InputSelectAction::Option fileOnly[] = {
+    {"From File", "file"},
+  };
+  const bool hasRead = _mfcDumpFromCompleteRead &&
+                       (_mfcDumpLen == 320 || _mfcDumpLen == 1024 || _mfcDumpLen == 4096);
+  const char* r = InputSelectAction::popup("Write to Tag", hasRead ? withRead : fileOnly,
+                                           hasRead ? 2 : 1, nullptr);
+  if (!r) { render(); return; }
+  render();
+  if (strcmp(r, "read") == 0) _showMfcWritePreview(_mfcDump, _mfcDumpLen, false);
+  else _openMfcDumpPicker();
+}
+
+void ST25R3916Screen::_openMfcDumpPicker() {
+  _state = STATE_MFC_DUMP_SELECT;
+  if (_dumpPickDir.length() == 0) _dumpPickDir = "/unigeek/nfc/dumps";
+  _browser.root = "/unigeek/nfc/dumps";
+  uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(".bin", 320, 1024, 4096));
+  if (n == 0 && _dumpPickDir == _browser.root) {
+    ShowStatusAction::show("No compatible Classic .bin");
+    _showMfcTagMenu();
+    return;
+  }
+  setItems(_browser.items(), n);
+}
+
+void ST25R3916Screen::_openMfcDumpFile(uint8_t index) {
+  if (index >= _browser.count()) return;
+  const auto& e = _browser.entry(index);
+  if (e.isDir) {
+    _dumpPickDir = e.path;
+    _openMfcDumpPicker();
+    return;
+  }
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable");
+    _showMfcTagMenu();
+    return;
+  }
+  fs::File f = Uni.Storage->open(e.path.c_str(), "r");
+  if (!f) { ShowStatusAction::show("Open failed"); _showMfcTagMenu(); return; }
+  const size_t len = f.size();
+  if (len != 320 && len != 1024 && len != 4096) {
+    f.close(); ShowStatusAction::show("Unsupported dump size"); _showMfcTagMenu(); return;
+  }
+  const size_t got = f.read(_mfcDump, len);
+  f.close();
+  if (got != len) { ShowStatusAction::show("Read failed"); _showMfcTagMenu(); return; }
+  _mfcDumpLen = len;
+  _mfcDumpBlocks = (uint16_t)(len / 16U);
+  _mfcDumpFromCompleteRead = false;
+  _showMfcWritePreview(_mfcDump, len, true);
+}
+
+void ST25R3916Screen::_showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile) {
+  if (!dump || (len != 320 && len != 1024 && len != 4096)) {
+    ShowStatusAction::show("Invalid dump");
+    _showMfcTagMenu();
+    return;
+  }
+  if (dump != _mfcDump) memcpy(_mfcDump, dump, len);
+  _mfcDumpLen = len;
+  _mfcDumpBlocks = (uint16_t)(len / 16U);
+  _writePreviewFromFile = fromFile;
+  memcpy(_writeSourceUid, _mfcDump, sizeof(_writeSourceUid));
+  _writeSourceUidKnown = _mfcDump[4] == (uint8_t)(_writeSourceUid[0] ^ _writeSourceUid[1] ^
+                                                  _writeSourceUid[2] ^ _writeSourceUid[3]);
+
+  _rowCount = 0;
+  auto addRow = [&](const char* label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label;
+    _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    _rowCount++;
+  };
+  addRow("Source", fromFile ? "File" : "Read Tag");
+  addRow("Type", len == 320 ? "MIFARE Classic Mini" :
+                 (len == 4096 ? "MIFARE Classic 4K" : "MIFARE Classic 1K"));
+  String uid = "Unknown";
+  if (_writeSourceUidKnown) {
+    uid = "";
+    for (uint8_t i = 0; i < 4; ++i) {
+      char h[4];
+      snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", _writeSourceUid[i]);
+      uid += h;
+    }
+  }
+  addRow("UID", uid);
+  addRow("UID Action", "Preserved");
+  addRow("Blocks", String((unsigned)(len / 16U)));
+  addRow("Dump", String((unsigned)len) + " bytes");
+  addRow("[Press]", "Write to Tag");
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_MFC_WRITE_PREVIEW;
+  render();
+}
+
+bool ST25R3916Screen::_writeMfcDumpToTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  if (_mfcDumpLen != 320 && _mfcDumpLen != 1024 && _mfcDumpLen != 4096) {
+    ShowStatusAction::show("Invalid dump");
+    _showMfcTagMenu();
+    return false;
+  }
+
+  _state = STATE_MFC_WRITING;
+  render();
+  ST25R3916Backend dev;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) { ShowStatusAction::show("ST25R3916 not found"); _showMfcTagMenu(); return false; }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected"); _showMfcTagMenu(); return false;
+  }
+  if (!isMifareClassic(tag.sak)) {
+    ShowStatusAction::show("Not MIFARE Classic"); _showMfcTagMenu(); return false;
+  }
+  size_t sectors = 0, blocks = 0;
+  mfcDimensions(tag.sak, sectors, blocks);
+  if (blocks * 16U != _mfcDumpLen) {
+    ShowStatusAction::show("Tag size mismatch"); _showMfcTagMenu(); return false;
+  }
+
+  const auto defaults = NFCUtility::getDefaultKeys();
+  size_t written = 0;
+  const size_t totalWritable = blocks > 0 ? blocks - 1U : 0;
+
+  auto reactivate = [&]() -> bool {
+    dev.deactivate();
+    ST25R3916Backend::ScanResult current;
+    return dev.scan(ST25R3916Backend::TECH_A, current, 1200, true) &&
+           isMifareClassic(current.sak) && sameTag(tag, current);
+  };
+
+  ProgressView::init();
+  for (size_t sector = 0; sector < sectors; ++sector) {
+    const size_t first = sectorFirstBlock(sector);
+    const size_t count = sectorBlockCount(sector);
+    const uint8_t trailer = (uint8_t)(first + count - 1U);
+    for (size_t off = 0; off < count; ++off) {
+      const size_t block = first + off;
+      if (block == 0) continue;
+      char msg[42];
+      snprintf(msg, sizeof(msg), "Writing blocks (%u/%u)...",
+               (unsigned)(written + 1U), (unsigned)totalWritable);
+      ProgressView::progress(msg, totalWritable ? (int)(written * 100U / totalWritable) : 0);
+
+      bool ok = false;
+      for (uint8_t keyType = 0; keyType < 2 && !ok; ++keyType) {
+        for (const auto& candidate : defaults) {
+          if (!dev.hasActiveTag() && !reactivate()) continue;
+          const auto& key = candidate.value();
+          if (!dev.mifareClassicAuthenticate(trailer, key.data(), keyType == 1)) {
+            dev.deactivate();
+            continue;
+          }
+          ok = dev.mifareClassicWriteBlock((uint8_t)block, _mfcDump + block * 16U);
+          dev.deactivate();
+          if (ok) break;
+        }
+      }
+      if (!ok) {
+        ProgressView::finish();
+        ShowStatusAction::show("Write failed");
+        _showMfcTagMenu();
+        return false;
+      }
+      ++written;
+    }
+  }
+  ProgressView::finish();
+  ShowStatusAction::show("Write complete", 1500);
+  _showMfcTagMenu();
+  return true;
+#else
+  return false;
+#endif
 }
 
 void ST25R3916Screen::_saveMfcDump() {
