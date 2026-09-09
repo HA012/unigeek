@@ -67,7 +67,7 @@ void ST25R3916Screen::onInit() {
 
 void ST25R3916Screen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU ||
+      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_DUMP_SELECT ||
       _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
       _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onUpdate();
@@ -108,6 +108,10 @@ void ST25R3916Screen::onUpdate() {
     _showMfuDumpActions();
     return;
   }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_WRITE_PREVIEW) {
+    _writeMfuDumpToTag();
+    return;
+  }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
     _writeMfcDumpToTag();
     return;
@@ -135,14 +139,14 @@ void ST25R3916Screen::onUpdate() {
 
 void ST25R3916Screen::onRender() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU ||
+      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_DUMP_SELECT ||
       _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
       _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onRender();
     return;
   }
   if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
-      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
+      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING || _state == STATE_MFU_WRITING) {
     _renderTagPrompt();
     return;
   }
@@ -167,7 +171,8 @@ void ST25R3916Screen::onBack() {
     render();
     return;
   }
-  if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING) {
+  if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING || _state == STATE_MFU_WRITE_PREVIEW ||
+      _state == STATE_MFU_WRITING || _state == STATE_MFU_DUMP_SELECT) {
     _showMfuTagMenu();
     return;
   }
@@ -225,6 +230,11 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   }
   if (_state == STATE_MFU_TAG_MENU) {
     if (index == 0) _readMfuTag();
+    else if (index == 1) _openMfuDumpPicker();
+    return;
+  }
+  if (_state == STATE_MFU_DUMP_SELECT) {
+    _openMfuDumpFile(index);
     return;
   }
   if (_state == STATE_MFC_MENU) {
@@ -248,7 +258,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_NDEF_FILE_SELECT) { _openNdefFile(index); return; }
   if (_state == STATE_MFC_TAG_MENU) {
     if (index == 0) _readMfcTag();
-    else if (index == 1) _showMfcWriteSources();
+    else if (index == 1) _openMfcDumpPicker();
     else if (index == 2) _eraseMfcTag();
     return;
   }
@@ -309,7 +319,7 @@ void ST25R3916Screen::_showMfuMenu() {
 
 void ST25R3916Screen::_showMfuTagMenu() {
   _state = STATE_MFU_TAG_MENU;
-  setItems(_mfuTagItems, 1);
+  setItems(_mfuTagItems, 2);
   render();
 }
 
@@ -625,23 +635,6 @@ void ST25R3916Screen::_showMfcDumpActions() {
 }
 
 
-void ST25R3916Screen::_showMfcWriteSources() {
-  static const InputSelectAction::Option withRead[] = {
-    {"From File", "file"},
-    {"From Last Read", "read"},
-  };
-  static const InputSelectAction::Option fileOnly[] = {
-    {"From File", "file"},
-  };
-  const bool hasRead = _mfcDumpFromCompleteRead &&
-                       (_mfcDumpLen == 320 || _mfcDumpLen == 1024 || _mfcDumpLen == 4096);
-  const char* r = InputSelectAction::popup("Write to Tag", hasRead ? withRead : fileOnly,
-                                           hasRead ? 2 : 1, nullptr);
-  if (!r) { render(); return; }
-  render();
-  if (strcmp(r, "read") == 0) _showMfcWritePreview(_mfcDump, _mfcDumpLen, false);
-  else _openMfcDumpPicker();
-}
 
 void ST25R3916Screen::_openMfcDumpPicker() {
   _state = STATE_MFC_DUMP_SELECT;
@@ -706,7 +699,7 @@ void ST25R3916Screen::_showMfcWritePreview(const uint8_t* dump, size_t len, bool
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
   };
-  addRow("Source", fromFile ? "File" : "Read Tag");
+  addRow("Source", "File");
   addRow("Type", len == 320 ? "MIFARE Classic Mini" :
                  (len == 4096 ? "MIFARE Classic 4K" : "MIFARE Classic 1K"));
   String uid = "Unknown";
@@ -1456,8 +1449,9 @@ void ST25R3916Screen::_showMfuDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump", "view"},
     {"Save Dump", "save"},
+    {"Write to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
   if (!r) { render(); return; }
 
   render();
@@ -1467,7 +1461,115 @@ void ST25R3916Screen::_showMfuDumpActions() {
     render();
   } else if (strcmp(r, "save") == 0) {
     _saveMfuDump();
+  } else if (strcmp(r, "write") == 0) {
+    if (_mfuType != "NTAG215" || _mfuPages != 135 || _mfuDumpLen != 540) {
+      ShowStatusAction::show("Write supports NTAG215", 1400);
+      render();
+      return;
+    }
+    _showMfuWritePreview(false);
   }
+}
+
+
+void ST25R3916Screen::_openMfuDumpPicker() {
+  _state = STATE_MFU_DUMP_SELECT;
+  if (_dumpPickDir.length() == 0) _dumpPickDir = "/unigeek/nfc/dumps";
+  _browser.root = "/unigeek/nfc/dumps";
+  uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin", 540));
+  if (n == 0 && _dumpPickDir == _browser.root) {
+    ShowStatusAction::show("No NTAG215 .bin", 1500);
+    _showMfuTagMenu();
+    return;
+  }
+  setItems(_browser.items(), n);
+}
+
+void ST25R3916Screen::_openMfuDumpFile(uint8_t index) {
+  if (index >= _browser.count()) return;
+  const auto& e = _browser.entry(index);
+  if (e.isDir) { _dumpPickDir = e.path; _openMfuDumpPicker(); return; }
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable"); _showMfuTagMenu(); return;
+  }
+  fs::File f = Uni.Storage->open(e.path.c_str(), "r");
+  if (!f) { ShowStatusAction::show("Open failed"); _showMfuTagMenu(); return; }
+  if (f.size() != 540) { f.close(); ShowStatusAction::show("Invalid NTAG215 dump"); _showMfuTagMenu(); return; }
+  const size_t got = f.read(_mfuDump, 540);
+  f.close();
+  if (got != 540) { ShowStatusAction::show("Read failed"); _showMfuTagMenu(); return; }
+  _mfuDumpLen = 540; _mfuPages = 135; _mfuType = "NTAG215";
+  _showMfuWritePreview(true);
+}
+
+void ST25R3916Screen::_showMfuWritePreview(bool fromFile) {
+  _mfuWritePreviewFromFile = fromFile;
+  if (_mfuType != "NTAG215" || _mfuPages != 135 || _mfuDumpLen != 540) {
+    ShowStatusAction::show("Write supports NTAG215", 1400); _showMfuTagMenu(); return;
+  }
+  _rowCount = 0;
+  auto addRow = [&](const String& label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label; _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]}; ++_rowCount;
+  };
+  addRow("Source", fromFile ? "File" : "Read Tag");
+  addRow("Type", "NTAG215");
+  String uid;
+  const uint8_t fileUid[7] = {_mfuDump[0], _mfuDump[1], _mfuDump[2], _mfuDump[4], _mfuDump[5], _mfuDump[6], _mfuDump[7]};
+  for (uint8_t i = 0; i < 7; ++i) { char h[4]; snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", fileUid[i]); uid += h; }
+  addRow("UID", uid);
+  addRow("UID Action", "Preserved");
+  addRow("Pages", "135");
+  addRow("Dump", "540 bytes");
+  const uint8_t* ndef = nullptr; size_t ndefLen = 0; NdefParser::Result parsed;
+  if (NdefParser::extractType2Ndef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) && NdefParser::parse(ndef, ndefLen, parsed)) {
+    switch (parsed.kind) {
+      case NdefParser::RECORD_TEXT: addRow("NDEF", "Text"); break;
+      case NdefParser::RECORD_URL: addRow("NDEF", "URL"); break;
+      case NdefParser::RECORD_PHONE: addRow("NDEF", "Phone"); break;
+      case NdefParser::RECORD_EMAIL: addRow("NDEF", "Email"); break;
+      case NdefParser::RECORD_VCARD: addRow("NDEF", "vCard"); break;
+      default: addRow("NDEF", "Unsupported"); break;
+    }
+  } else addRow("NDEF", "Not found");
+  addRow("[Press]", "Write to Tag");
+  _scrollView.resetScroll(); _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_MFU_WRITE_PREVIEW; render();
+}
+
+bool ST25R3916Screen::_writeMfuDumpToTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  if (_mfuDumpLen != 540 || _mfuPages != 135 || _mfuType != "NTAG215") {
+    ShowStatusAction::show("Invalid NTAG215 dump"); _showMfuTagMenu(); return false;
+  }
+  _state = STATE_MFU_WRITING; render();
+  ST25R3916Backend dev; bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) { ShowStatusAction::show("ST25R3916 not found"); _showMfuTagMenu(); return false; }
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("No tag detected"); _showMfuTagMenu(); return false; }
+  if (tag.sak != 0x00) { dev.deactivate(); ShowStatusAction::show("Tag must be NTAG215", 1500); _showMfuTagMenu(); return false; }
+  String type; uint16_t pages = 0;
+  if (!_detectMfuType(dev, type, pages) || type != "NTAG215" || pages != 135) {
+    dev.deactivate(); ShowStatusAction::show("Tag must be NTAG215", 1500); _showMfuTagMenu(); return false;
+  }
+  static constexpr uint16_t firstPage = 4, lastPage = 129, total = 126;
+  ProgressView::init();
+  for (uint16_t page = firstPage; page <= lastPage; ++page) {
+    char msg[36]; const uint16_t done = page - firstPage;
+    snprintf(msg, sizeof(msg), "Writing pages (%u/%u)...", (unsigned)(done + 1), (unsigned)total);
+    ProgressView::progress(msg, (int)((uint32_t)done * 100U / total));
+    if (!dev.type2WritePage((uint8_t)page, &_mfuDump[page * 4U])) {
+      ProgressView::finish(); dev.deactivate(); _showMfuWritePreview(_mfuWritePreviewFromFile);
+      ShowStatusAction::show("Tag write failed", 1600); render(); return false;
+    }
+  }
+  ProgressView::progress("Write complete", 100); ProgressView::finish(); dev.deactivate();
+  ShowStatusAction::show("Tag written", 1600); _showMfuTagMenu(); return true;
+#else
+  ShowStatusAction::show("ST25R3916 not supported"); return false;
+#endif
 }
 
 void ST25R3916Screen::_saveMfuDump() {
