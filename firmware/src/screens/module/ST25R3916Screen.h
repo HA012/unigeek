@@ -13,6 +13,7 @@ public:
       case STATE_MFC_MENU: return "MIFARE Classic";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_READING: return "Read Tag";
+      case STATE_MFC_DUMP_HEX: return "Memory Dump";
       default: return "ST25R3916";
     }
   }
@@ -31,6 +32,7 @@ private:
     STATE_MFC_TAG_MENU,
     STATE_MFC_READING,
     STATE_MFC_DETAILS,
+    STATE_MFC_DUMP_HEX,
   };
 
   State _state = STATE_MENU;
@@ -53,15 +55,28 @@ private:
     {"Read Tag"},
   };
 
-  static constexpr uint8_t kMaxRows = 10;
+  static constexpr uint8_t kMaxRows = 12;
   ScrollListView _scrollView;
   ScrollListView::Row _rows[kMaxRows];
   String _rowLabels[kMaxRows];
   String _rowValues[kMaxRows];
   uint8_t _rowCount = 0;
 
+  static constexpr size_t kMfcMaxDumpLen = 4096;
+  uint8_t _mfcDump[kMfcMaxDumpLen] = {};
+  size_t _mfcDumpLen = 0;
+  uint16_t _mfcDumpBlocks = 0;
+  uint16_t _mfcDumpOffset = 0;
+  uint8_t _mfcUid[10] = {};
+  uint8_t _mfcUidLen = 0;
+  uint8_t _mfcSak = 0;
+
   void _scan(uint16_t techMask);
   void _readMfcTag();
+  void _showMfcDumpActions();
+  void _saveMfcDump();
+  void _renderMfcDump();
+  void _handleMfcDumpNav(INavigation::Direction dir);
   void _showI2CInfo();
   void _showSPIInfo();
   void _showMenu();
