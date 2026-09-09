@@ -20,6 +20,7 @@ public:
       case STATE_MFU_DUMP_SELECT: return "Write to Tag";
       case STATE_MFU_WRITE_PREVIEW: return "Write to Tag";
       case STATE_MFU_WRITING: return "Write to Tag";
+      case STATE_MFU_ERASING: return "Erase Tag";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -70,6 +71,7 @@ private:
     STATE_MFU_DUMP_SELECT,
     STATE_MFU_WRITE_PREVIEW,
     STATE_MFU_WRITING,
+    STATE_MFU_ERASING,
   };
 
   State _state = STATE_MENU;
@@ -100,9 +102,10 @@ private:
   ListItem _mfuItems[1] = {
     {"Tag Operations"},
   };
-  ListItem _mfuTagItems[2] = {
+  ListItem _mfuTagItems[3] = {
     {"Read Tag"},
     {"Write to Tag"},
+    {"Erase Tag"},
   };
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
@@ -175,6 +178,7 @@ private:
   void _openMfuDumpFile(uint8_t index);
   void _showMfuWritePreview(bool fromFile);
   bool _writeMfuDumpToTag();
+  void _eraseMfuTag();
   void _saveMfuDump();
   void _renderMfuDump();
   void _handleMfuDumpNav(INavigation::Direction dir);
