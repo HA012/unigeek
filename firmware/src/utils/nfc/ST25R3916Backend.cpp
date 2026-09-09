@@ -5,6 +5,23 @@
 #include <rfal_nfc.h>
 #include <rfal_rfst25r3916.h>
 
+#include "utils/crypto/crapto1.h"
+
+namespace {
+uint32_t bytesToU32(const uint8_t* p) {
+  return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+         ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+void setPackedBit(uint8_t* buf, size_t bit, uint8_t value) {
+  if (value) buf[bit >> 3] |= (uint8_t)(1U << (bit & 7U));
+}
+
+uint8_t getPackedBit(const uint8_t* buf, size_t bit) {
+  return (uint8_t)((buf[bit >> 3] >> (bit & 7U)) & 1U);
+}
+}
+
 ST25R3916Backend::~ST25R3916Backend() {
   end();
 }
@@ -57,8 +74,15 @@ bool ST25R3916Backend::_finishBegin() {
   return true;
 }
 
-bool ST25R3916Backend::scan(uint16_t techMask, ScanResult& result, uint32_t timeoutMs) {
+bool ST25R3916Backend::scan(uint16_t techMask, ScanResult& result, uint32_t timeoutMs,
+                            bool keepActive) {
   result = ScanResult{};
+  _activeTag = ScanResult{};
+  _active = false;
+  if (_crypto) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+  }
   _lastScanCode = 0xFFFF;
   if (!_nfc || !_hw || !_info.initialized || techMask == 0) return false;
 
@@ -103,18 +127,239 @@ bool ST25R3916Backend::scan(uint16_t techMask, ScanResult& result, uint32_t time
         result.atqa[1] = dev->dev.nfca.sensRes.platformInfo;
       }
 
-      _nfc->rfalNfcDeactivate(false);
       _lastScanCode = ST_ERR_NONE;
+      if (keepActive) {
+        _activeTag = result;
+        _active = true;
+      } else {
+        deactivate();
+      }
       return true;
     }
     delay(5);
   }
 
-  _nfc->rfalNfcDeactivate(false);
+  deactivate();
   return false;
 }
 
+void ST25R3916Backend::deactivate() {
+  if (_crypto) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+  }
+  _active = false;
+  _activeTag = ScanResult{};
+  if (!_nfc) return;
+
+  _nfc->rfalNfcDeactivate(false);
+  const uint32_t started = millis();
+  while ((uint32_t)(millis() - started) < 80U) {
+    _nfc->rfalNfcWorker();
+    if (_nfc->rfalNfcGetState() == RFAL_NFC_STATE_IDLE) break;
+    delay(1);
+  }
+}
+
+uint8_t ST25R3916Backend::_oddParity(uint8_t value) {
+  value ^= value >> 4;
+  value ^= value >> 2;
+  value ^= value >> 1;
+  return (uint8_t)((~value) & 1U);
+}
+
+uint16_t ST25R3916Backend::_crcA(const uint8_t* data, size_t len) {
+  uint16_t crc = 0x6363U;
+  while (len--) {
+    uint8_t d = (uint8_t)(*data++ ^ (crc & 0x00FFU));
+    d ^= (uint8_t)(d << 4);
+    crc = (uint16_t)((crc >> 8) ^ ((uint16_t)d << 8) ^ ((uint16_t)d << 3) ^ ((uint16_t)d >> 4));
+  }
+  return crc;
+}
+
+uint64_t ST25R3916Backend::_key48(const uint8_t key[6]) {
+  uint64_t value = 0;
+  for (uint8_t i = 0; i < 6; ++i) value = (value << 8) | key[i];
+  return value;
+}
+
+uint32_t ST25R3916Backend::_uid32(const ScanResult& tag) {
+  if (tag.nfcidLen < 4) return 0;
+  const uint8_t* p = &tag.nfcid[tag.nfcidLen - 4];
+  return bytesToU32(p);
+}
+
+bool ST25R3916Backend::_transceiveRaw9(const uint8_t* txData, const uint8_t* txParity,
+                                       size_t txLen, uint8_t* rxData, uint8_t* rxParity,
+                                       size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
+  rxLen = 0;
+  if (!_hw || !txData || !txParity || !txLen || !rxData || !rxParity || !rxMaxLen) return false;
+  if (txLen > 24 || rxMaxLen > 24) return false;
+
+  uint8_t txPacked[27] = {};
+  uint8_t rxPacked[27] = {};
+  const size_t txBits = txLen * 9U;
+  const size_t rxMaxBits = rxMaxLen * 9U;
+
+  for (size_t i = 0; i < txLen; ++i) {
+    const size_t base = i * 9U;
+    for (uint8_t bit = 0; bit < 8; ++bit) setPackedBit(txPacked, base + bit, (txData[i] >> bit) & 1U);
+    setPackedBit(txPacked, base + 8U, txParity[i] & 1U);
+  }
+
+  uint16_t rxBits = 0;
+  rfalTransceiveContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.txBuf = txPacked;
+  ctx.txBufLen = (uint16_t)txBits;
+  ctx.rxBuf = rxPacked;
+  ctx.rxBufLen = (uint16_t)rxMaxBits;
+  ctx.rxRcvdLen = &rxBits;
+  ctx.flags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
+              RFAL_TXRX_FLAGS_CRC_RX_MANUAL |
+              RFAL_TXRX_FLAGS_CRC_RX_KEEP |
+              RFAL_TXRX_FLAGS_PAR_RX_KEEP |
+              RFAL_TXRX_FLAGS_PAR_TX_NONE |
+              RFAL_TXRX_FLAGS_AGC_ON;
+  ctx.fwt = rfalConvMsTo1fc(timeoutMs);
+
+  ReturnCode rc = _hw->rfalStartTransceive(&ctx);
+  if (rc != ST_ERR_NONE) return false;
+  do {
+    _hw->rfalWorker();
+    rc = _hw->rfalGetTransceiveStatus();
+  } while (rc == ST_ERR_BUSY);
+  if (rc != ST_ERR_NONE || rxBits < 9U) return false;
+
+  rxLen = rxBits / 9U;
+  if (rxLen > rxMaxLen) rxLen = rxMaxLen;
+  for (size_t i = 0; i < rxLen; ++i) {
+    const size_t base = i * 9U;
+    uint8_t value = 0;
+    for (uint8_t bit = 0; bit < 8; ++bit) value |= (uint8_t)(getPackedBit(rxPacked, base + bit) << bit);
+    rxData[i] = value;
+    rxParity[i] = getPackedBit(rxPacked, base + 8U);
+  }
+  return true;
+}
+
+bool ST25R3916Backend::mifareClassicAuthenticate(uint8_t block, const uint8_t key[6], bool keyB) {
+  if (!_active || _activeTag.technology != Technology::NFC_A || !_hw || !key) return false;
+  if (_crypto) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+  }
+
+  uint8_t cmd[4] = {(uint8_t)(keyB ? 0x61 : 0x60), block, 0, 0};
+  const uint16_t authCrc = _crcA(cmd, 2);
+  cmd[2] = (uint8_t)(authCrc & 0xFFU);
+  cmd[3] = (uint8_t)(authCrc >> 8);
+  uint8_t cmdPar[4] = {};
+  for (uint8_t i = 0; i < sizeof(cmd); ++i) cmdPar[i] = _oddParity(cmd[i]);
+
+  // The Classic authentication nonce is a four-byte frame without a CRC.
+  // Use explicit ISO14443A parity from the first exchange onward so RFAL does
+  // not try to CRC-check the nonce response.
+  uint8_t nonceBytes[4] = {};
+  uint8_t noncePar[4] = {};
+  size_t nonceLen = 0;
+  if (!_transceiveRaw9(cmd, cmdPar, sizeof(cmd), nonceBytes, noncePar,
+                       sizeof(nonceBytes), nonceLen) || nonceLen != 4) {
+    return false;
+  }
+  for (uint8_t i = 0; i < sizeof(nonceBytes); ++i) {
+    if (noncePar[i] != _oddParity(nonceBytes[i])) return false;
+  }
+
+  const uint32_t nt = bytesToU32(nonceBytes);
+  _crypto = crypto1_create(_key48(key));
+  if (!_crypto) return false;
+  crypto1_word(_crypto, nt ^ _uid32(_activeTag), 0);
+
+  uint8_t plain[8] = {};
+  uint8_t enc[8] = {};
+  uint8_t par[8] = {};
+  uint32_t ntp = prng_successor(nt, 32);
+
+  // A zero reader nonce is sufficient for normal mutual authentication and
+  // matches the existing UniGeek Crypto1 attack implementation.
+  for (uint8_t i = 0; i < 4; ++i) {
+    enc[i] = crypto1_byte(_crypto, plain[i], 0) ^ plain[i];
+    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+  }
+  for (uint8_t i = 4; i < 8; ++i) {
+    ntp = prng_successor(ntp, 8);
+    plain[i] = (uint8_t)(ntp & 0xFFU);
+    enc[i] = crypto1_byte(_crypto, plain[i], 0) ^ plain[i];
+    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+  }
+
+  uint8_t answer[4] = {};
+  uint8_t answerPar[4] = {};
+  size_t answerLen = 0;
+  if (!_transceiveRaw9(enc, par, sizeof(enc), answer, answerPar, sizeof(answer), answerLen) || answerLen != 4) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+    return false;
+  }
+
+  const uint32_t encryptedAt = bytesToU32(answer);
+  const uint32_t expectedAt = prng_successor(ntp, 32);
+  const uint32_t at = crypto1_word(_crypto, 0, 0) ^ encryptedAt;
+  if (at != expectedAt) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+    return false;
+  }
+  return true;
+}
+
+bool ST25R3916Backend::mifareClassicReadBlock(uint8_t block, uint8_t data[16]) {
+  if (!_active || !_crypto || !data) return false;
+
+  uint8_t plain[4] = {0x30, block, 0, 0};
+  const uint16_t crc = _crcA(plain, 2);
+  plain[2] = (uint8_t)(crc & 0xFFU);
+  plain[3] = (uint8_t)(crc >> 8);
+
+  uint8_t enc[4] = {};
+  uint8_t par[4] = {};
+  for (uint8_t i = 0; i < sizeof(plain); ++i) {
+    enc[i] = crypto1_byte(_crypto, 0, 0) ^ plain[i];
+    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+  }
+
+  uint8_t response[18] = {};
+  uint8_t responsePar[18] = {};
+  size_t responseLen = 0;
+  if (!_transceiveRaw9(enc, par, sizeof(enc), response, responsePar,
+                       sizeof(response), responseLen) || responseLen != sizeof(response)) {
+    return false;
+  }
+
+  uint8_t decoded[18] = {};
+  for (uint8_t i = 0; i < sizeof(decoded); ++i) {
+    decoded[i] = response[i] ^ crypto1_byte(_crypto, 0, 0);
+    const uint8_t decodedParity = (uint8_t)(filter(_crypto->odd) ^ responsePar[i]);
+    if (decodedParity != _oddParity(decoded[i])) return false;
+  }
+  const uint16_t expectedCrc = _crcA(decoded, 16);
+  const uint16_t gotCrc = (uint16_t)decoded[16] | ((uint16_t)decoded[17] << 8);
+  if (expectedCrc != gotCrc) return false;
+
+  memcpy(data, decoded, 16);
+  return true;
+}
+
 void ST25R3916Backend::end() {
+  if (_crypto) {
+    crypto1_destroy(_crypto);
+    _crypto = nullptr;
+  }
+  _active = false;
+  _activeTag = ScanResult{};
+
   if (_hw && _info.initialized) {
     _hw->rfalFieldOff();
     _hw->rfalDeinitialize();
