@@ -67,6 +67,7 @@ void ST25R3916Screen::onInit() {
 
 void ST25R3916Screen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU ||
       _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
       _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onUpdate();
@@ -86,6 +87,8 @@ void ST25R3916Screen::onUpdate() {
         _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
         if (fromFile) _openNdefFilePicker(); else _showMfcNdefWriteMenu();
       } else _showMfcNdefMenu();
+    } else if (_state == STATE_MFU_DETAILS) {
+      _showMfuTagMenu();
     } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
                _state == STATE_MFC_WRITING) {
       _showMfcTagMenu();
@@ -96,6 +99,10 @@ void ST25R3916Screen::onUpdate() {
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
     _scan(_lastTechMask);
+    return;
+  }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_DETAILS) {
+    _readMfuTag();
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
@@ -121,12 +128,13 @@ void ST25R3916Screen::onUpdate() {
 
 void ST25R3916Screen::onRender() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+      _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU ||
       _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_NDEF_WRITE_MENU ||
       _state == STATE_MFC_NDEF_FILE_SELECT || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onRender();
     return;
   }
-  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_NDEF_READING ||
+  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
       _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _renderTagPrompt();
     return;
@@ -140,6 +148,18 @@ void ST25R3916Screen::onRender() {
 
 void ST25R3916Screen::onBack() {
   if (_state == STATE_DETAILS) {
+    _showMenu();
+    return;
+  }
+  if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING) {
+    _showMfuTagMenu();
+    return;
+  }
+  if (_state == STATE_MFU_TAG_MENU) {
+    _showMfuMenu();
+    return;
+  }
+  if (_state == STATE_MFU_MENU) {
     _showMenu();
     return;
   }
@@ -183,6 +203,14 @@ void ST25R3916Screen::onBack() {
 
 void ST25R3916Screen::onItemSelected(uint8_t index) {
 #if defined(DEVICE_HAS_ST25R3916)
+  if (_state == STATE_MFU_MENU) {
+    if (index == 0) _showMfuTagMenu();
+    return;
+  }
+  if (_state == STATE_MFU_TAG_MENU) {
+    if (index == 0) _readMfuTag();
+    return;
+  }
   if (_state == STATE_MFC_MENU) {
     if (index == 0) _showMfcTagMenu();
     else if (index == 1) _showMfcNdefMenu();
@@ -216,12 +244,13 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
     case 1: _showMfcMenu(); break;
-    case 2: _scan(ST25R3916Backend::TECH_A); break;
-    case 3: _scan(ST25R3916Backend::TECH_B); break;
-    case 4: _scan(ST25R3916Backend::TECH_F); break;
-    case 5: _scan(ST25R3916Backend::TECH_V); break;
-    case 6: _showI2CInfo(); break;
-    case 7: _showSPIInfo(); break;
+    case 2: _showMfuMenu(); break;
+    case 3: _scan(ST25R3916Backend::TECH_A); break;
+    case 4: _scan(ST25R3916Backend::TECH_B); break;
+    case 5: _scan(ST25R3916Backend::TECH_F); break;
+    case 6: _scan(ST25R3916Backend::TECH_V); break;
+    case 7: _showI2CInfo(); break;
+    case 8: _showSPIInfo(); break;
   }
 #else
   (void)index;
@@ -231,7 +260,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
 
 void ST25R3916Screen::_showMenu() {
   _state = STATE_MENU;
-  setItems(_items, 8);
+  setItems(_items, 9);
 }
 
 void ST25R3916Screen::_showMfcMenu() {
@@ -257,6 +286,18 @@ void ST25R3916Screen::_showMfcNdefWriteMenu() {
   _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
   _state = STATE_MFC_NDEF_WRITE_MENU;
   setItems(_mfcNdefWriteItems, 6);
+  render();
+}
+
+void ST25R3916Screen::_showMfuMenu() {
+  _state = STATE_MFU_MENU;
+  setItems(_mfuItems, 1);
+  render();
+}
+
+void ST25R3916Screen::_showMfuTagMenu() {
+  _state = STATE_MFU_TAG_MENU;
+  setItems(_mfuTagItems, 1);
   render();
 }
 
@@ -1584,6 +1625,193 @@ void ST25R3916Screen::_readMfcNdef() {
 #else
   ShowStatusAction::show("ST25R3916 not supported");
   _showMfcNdefMenu();
+#endif
+}
+
+bool ST25R3916Screen::_detectMfuType(ST25R3916Backend& dev, String& type, uint16_t& pages) {
+#if defined(DEVICE_HAS_ST25R3916)
+  type = "MIFARE Ultralight / NTAG";
+  pages = 0;
+
+  // GET_VERSION identifies NTAG21x and Ultralight EV1 without relying on
+  // memory-boundary guesses.
+  const uint8_t getVersion = 0x60;
+  uint8_t version[16] = {};
+  size_t versionLen = 0;
+  if (dev.type2Transceive(&getVersion, 1, version, sizeof(version), versionLen, 20) &&
+      versionLen >= 8 && version[0] == 0x00 && version[1] == 0x04) {
+    if (version[2] == 0x04) {
+      switch (version[6]) {
+        case 0x0B: type = "NTAG210"; pages = 20; return true;
+        case 0x0E: type = "NTAG212"; pages = 41; return true;
+        case 0x0F: type = "NTAG213"; pages = 45; return true;
+        case 0x11: type = "NTAG215"; pages = 135; return true;
+        case 0x13: type = "NTAG216"; pages = 231; return true;
+        default: return false;
+      }
+    }
+    if (version[2] == 0x03) {
+      switch (version[6]) {
+        case 0x0B: type = "Ultralight EV1 11"; pages = 20; return true;
+        case 0x0E: type = "Ultralight EV1 21"; pages = 41; return true;
+        default: return false;
+      }
+    }
+    return false;
+  }
+
+  // Original MIFARE Ultralight has 16 pages and no GET_VERSION. A READ at
+  // page 0 succeeds while page 16 is outside its memory.
+  uint8_t data[16] = {};
+  if (!dev.type2ReadPages(0, data)) return false;
+  if (!dev.type2ReadPages(16, data)) {
+    type = "MIFARE Ultralight";
+    pages = 16;
+    return true;
+  }
+
+  // Ultralight C and other proprietary/unknown Type-2 variants are left for
+  // a later increment rather than guessing a writable memory boundary.
+  return false;
+#else
+  (void)dev; (void)type; (void)pages;
+  return false;
+#endif
+}
+
+void ST25R3916Screen::_readMfuTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFU_READING;
+  render();
+
+  ST25R3916Backend dev;
+  const char* bus = nullptr;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (ready) bus = "I2C";
+  else {
+    ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+    if (ready) bus = "SPI";
+  }
+  if (!ready) {
+    ShowStatusAction::show("ST25R3916 not found");
+    _showMfuTagMenu();
+    return;
+  }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 3000, true)) {
+    ShowStatusAction::show("No tag detected", 1200);
+    _showMfuTagMenu();
+    return;
+  }
+  if (tag.sak != 0x00) {
+    ShowStatusAction::show("Not Ultralight / NTAG");
+    _showMfuTagMenu();
+    return;
+  }
+
+  String type;
+  uint16_t pages = 0;
+  if (!_detectMfuType(dev, type, pages) || pages == 0 || pages * 4U > kMfuMaxDumpLen) {
+    ShowStatusAction::show("Unsupported Type 2 tag", 1400);
+    _showMfuTagMenu();
+    return;
+  }
+
+  _mfuDumpLen = 0;
+  _mfuPages = pages;
+  _mfuType = type;
+  _mfuUidLen = tag.nfcidLen;
+  memcpy(_mfuUid, tag.nfcid, tag.nfcidLen);
+  memcpy(_mfuAtqa, tag.atqa, sizeof(_mfuAtqa));
+  _mfuSak = tag.sak;
+
+  ProgressView::init();
+  bool complete = true;
+  uint16_t page = 0;
+  while (page < pages) {
+    // Type-2 READ always returns four consecutive pages. For a tag whose page
+    // count is not a multiple of four, anchor the final READ at pages - 4 so
+    // the command never asks the tag to cross its physical memory boundary.
+    const uint16_t remaining = pages - page;
+    const uint16_t readPage = remaining >= 4U ? page : (pages - 4U);
+    const uint16_t sourceOffset = page - readPage;
+    const uint16_t copyPages = remaining >= 4U ? 4U : remaining;
+
+    char msg[36];
+    snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...",
+             (unsigned)(page + copyPages), (unsigned)pages);
+    ProgressView::progress(msg, (int)((uint32_t)page * 100U / pages));
+
+    uint8_t fourPages[16] = {};
+    if (!dev.type2ReadPages((uint8_t)readPage, fourPages)) {
+      complete = false;
+      break;
+    }
+    memcpy(&_mfuDump[page * 4U], &fourPages[sourceOffset * 4U], copyPages * 4U);
+    _mfuDumpLen += copyPages * 4U;
+    page += copyPages;
+  }
+  ProgressView::finish();
+  dev.deactivate();
+
+  if (!complete || _mfuDumpLen != (size_t)pages * 4U) {
+    _mfuDumpLen = 0;
+    ShowStatusAction::show("Read failed", 1200);
+    _showMfuTagMenu();
+    return;
+  }
+
+  _rowCount = 0;
+  auto addRow = [&](const String& label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label;
+    _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    ++_rowCount;
+  };
+
+  String uid;
+  for (uint8_t i = 0; i < _mfuUidLen; ++i) {
+    char h[4];
+    snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", _mfuUid[i]);
+    uid += h;
+  }
+  char atqa[8];
+  snprintf(atqa, sizeof(atqa), "%02X:%02X", _mfuAtqa[0], _mfuAtqa[1]);
+  char sak[4];
+  snprintf(sak, sizeof(sak), "%02X", _mfuSak);
+
+  addRow("Type", _mfuType);
+  addRow("UID", uid);
+  addRow("ATQA", atqa);
+  addRow("SAK", sak);
+  addRow("Pages", String(_mfuPages));
+  addRow("Dump", String(_mfuDumpLen) + " bytes");
+
+  const uint8_t* ndef = nullptr;
+  size_t ndefLen = 0;
+  NdefParser::Result parsed;
+  if (NdefParser::extractType2Ndef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) &&
+      NdefParser::parse(ndef, ndefLen, parsed)) {
+    switch (parsed.kind) {
+      case NdefParser::RECORD_TEXT: addRow("NDEF", "Text"); break;
+      case NdefParser::RECORD_URL: addRow("NDEF", "URL"); break;
+      case NdefParser::RECORD_PHONE: addRow("NDEF", "Phone"); break;
+      case NdefParser::RECORD_EMAIL: addRow("NDEF", "Email"); break;
+      case NdefParser::RECORD_VCARD: addRow("NDEF", "vCard"); break;
+      default: addRow("NDEF", "Unsupported"); break;
+    }
+  } else {
+    addRow("NDEF", "Not found");
+  }
+  addRow("Reader", bus ? bus : "--");
+  addRow("[Press]", "Read again");
+
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_MFU_DETAILS;
+  render();
 #endif
 }
 

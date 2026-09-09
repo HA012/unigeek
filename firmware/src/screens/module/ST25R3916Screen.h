@@ -12,6 +12,10 @@ public:
       case STATE_DETAILS:
       case STATE_MFC_DETAILS: return "Tag Details";
       case STATE_MFC_MENU: return "MIFARE Classic";
+      case STATE_MFU_MENU: return "Ultralight / NTAG";
+      case STATE_MFU_TAG_MENU: return "Tag Operations";
+      case STATE_MFU_READING: return "Read Tag";
+      case STATE_MFU_DETAILS: return "Tag Details";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -54,14 +58,19 @@ private:
     STATE_MFC_WRITE_PREVIEW,
     STATE_MFC_WRITING,
     STATE_MFC_ERASING,
+    STATE_MFU_MENU,
+    STATE_MFU_TAG_MENU,
+    STATE_MFU_READING,
+    STATE_MFU_DETAILS,
   };
 
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
 
-  ListItem _items[8] = {
+  ListItem _items[9] = {
     {"Scan Tag", "Auto I2C / SPI"},
     {"MIFARE Classic"},
+    {"Ultralight / NTAG"},
     {"NFC-A", "ISO14443A"},
     {"NFC-B", "ISO14443B"},
     {"NFC-F / FeliCa", "212 kbps"},
@@ -84,6 +93,12 @@ private:
     {"Erase NDEF"},
     {"Format NDEF"},
   };
+  ListItem _mfuItems[1] = {
+    {"Tag Operations"},
+  };
+  ListItem _mfuTagItems[1] = {
+    {"Read Tag"},
+  };
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
   };
@@ -96,6 +111,7 @@ private:
   uint8_t _rowCount = 0;
 
   static constexpr size_t kMfcMaxDumpLen = 4096;
+  static constexpr size_t kMfuMaxDumpLen = 924;
   uint8_t _mfcDump[kMfcMaxDumpLen] = {};
   size_t _mfcDumpLen = 0;
   uint16_t _mfcDumpBlocks = 0;
@@ -103,6 +119,14 @@ private:
   uint8_t _mfcUid[10] = {};
   uint8_t _mfcUidLen = 0;
   uint8_t _mfcSak = 0;
+  uint8_t _mfuDump[kMfuMaxDumpLen] = {};
+  size_t _mfuDumpLen = 0;
+  uint16_t _mfuPages = 0;
+  uint8_t _mfuUid[10] = {};
+  uint8_t _mfuUidLen = 0;
+  uint8_t _mfuAtqa[2] = {};
+  uint8_t _mfuSak = 0;
+  String _mfuType;
   bool _writePreviewFromFile = false;
   bool _mfcDumpFromCompleteRead = false;
   uint8_t _writeSourceUid[4] = {};
@@ -137,6 +161,10 @@ private:
   void _showMfcTagMenu();
   void _showMfcNdefMenu();
   void _showMfcNdefWriteMenu();
+  void _showMfuMenu();
+  void _showMfuTagMenu();
+  void _readMfuTag();
+  bool _detectMfuType(class ST25R3916Backend& dev, String& type, uint16_t& pages);
   void _readMfcNdef();
   bool _writeMfcNdef(const uint8_t* ndef, size_t ndefLen);
   void _eraseMfcNdef();

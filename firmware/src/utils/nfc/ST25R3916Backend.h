@@ -58,6 +58,12 @@ public:
   bool mifareClassicReadBlock(uint8_t block, uint8_t data[16]);
   bool mifareClassicWriteBlock(uint8_t block, const uint8_t data[16]);
 
+  // NFC Forum Type 2 / MIFARE Ultralight / NTAG primitives. scan(...,
+  // keepActive=true) must have activated an NFC-A Type 2 tag first.
+  bool type2Transceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                       size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
+  bool type2ReadPages(uint8_t startPage, uint8_t data[16]);
+
   const Info& info() const { return _info; }
   uint16_t lastScanCode() const { return _lastScanCode; }
   Transport transport() const { return _transport; }
@@ -66,6 +72,8 @@ public:
 
 private:
   bool _finishBegin();
+  bool _transceiveBytes(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                        size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
   bool _transceivePacked(const uint8_t* txPacked, size_t txBits, uint8_t* rxPacked,
                          size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 8);
   bool _transceiveRaw9(const uint8_t* txData, const uint8_t* txParity, size_t txLen,
