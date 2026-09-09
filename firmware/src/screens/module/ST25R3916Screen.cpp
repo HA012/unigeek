@@ -110,7 +110,8 @@ void ST25R3916Screen::onRender() {
     ListScreen::onRender();
     return;
   }
-  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_WRITING) {
+  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_WRITING ||
+      _state == STATE_MFC_ERASING) {
     _renderTagPrompt();
     return;
   }
@@ -159,6 +160,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_TAG_MENU) {
     if (index == 0) _readMfcTag();
     else if (index == 1) _showMfcWriteSources();
+    else if (index == 2) _eraseMfcTag();
     return;
   }
   if (_state == STATE_MFC_DUMP_SELECT) {
@@ -195,7 +197,7 @@ void ST25R3916Screen::_showMfcMenu() {
 
 void ST25R3916Screen::_showMfcTagMenu() {
   _state = STATE_MFC_TAG_MENU;
-  setItems(_mfcTagItems, 2);
+  setItems(_mfcTagItems, 3);
   render();
 }
 
@@ -678,6 +680,154 @@ bool ST25R3916Screen::_writeMfcDumpToTag() {
   return true;
 #else
   return false;
+#endif
+}
+
+
+void ST25R3916Screen::_eraseMfcTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFC_ERASING;
+  render();
+
+  ST25R3916Backend dev;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) {
+    ShowStatusAction::show("ST25R3916 not found");
+    _showMfcTagMenu();
+    return;
+  }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected", 1200);
+    _showMfcTagMenu();
+    return;
+  }
+  if (!isMifareClassic(tag.sak)) {
+    ShowStatusAction::show("Not MIFARE Classic");
+    _showMfcTagMenu();
+    return;
+  }
+
+  size_t sectors = 0, blocks = 0;
+  mfcDimensions(tag.sak, sectors, blocks);
+  if (!sectors || !blocks || sectors > 40) {
+    ShowStatusAction::show("Unsupported MIFARE Classic");
+    _showMfcTagMenu();
+    return;
+  }
+
+  const auto defaults = NFCUtility::getDefaultKeys();
+  uint8_t sectorKeys[40][6] = {};
+  bool sectorUseKeyB[40] = {};
+  bool sectorKeyFound[40] = {};
+
+  auto reactivate = [&]() -> bool {
+    dev.deactivate();
+    ST25R3916Backend::ScanResult current;
+    return dev.scan(ST25R3916Backend::TECH_A, current, 1200, true) &&
+           isMifareClassic(current.sak) && sameTag(tag, current);
+  };
+
+  // Probe every sector first. Do not start erasing unless all sectors can be
+  // authenticated with one of the standard keys, matching the CU/PN532 UX.
+  ProgressView::init();
+  bool keysOk = true;
+  for (size_t sector = 0; sector < sectors; ++sector) {
+    char msg[40];
+    snprintf(msg, sizeof(msg), "Checking keys (%u/%u)...",
+             (unsigned)(sector + 1U), (unsigned)sectors);
+    ProgressView::progress(msg, (int)(sector * 100U / sectors));
+
+    const size_t first = sectorFirstBlock(sector);
+    const size_t count = sectorBlockCount(sector);
+    const uint8_t trailer = (uint8_t)(first + count - 1U);
+
+    for (uint8_t keyType = 0; keyType < 2 && !sectorKeyFound[sector]; ++keyType) {
+      for (const auto& candidate : defaults) {
+        if (!dev.hasActiveTag() && !reactivate()) continue;
+        const auto& key = candidate.value();
+        if (dev.mifareClassicAuthenticate(trailer, key.data(), keyType == 1)) {
+          memcpy(sectorKeys[sector], key.data(), 6);
+          sectorUseKeyB[sector] = (keyType == 1);
+          sectorKeyFound[sector] = true;
+          dev.deactivate();
+          break;
+        }
+        dev.deactivate();
+      }
+    }
+    if (!sectorKeyFound[sector]) {
+      keysOk = false;
+      break;
+    }
+  }
+  ProgressView::finish();
+
+  if (!keysOk) {
+    ShowStatusAction::show("Erase failed: missing key", 1700);
+    _showMfcTagMenu();
+    return;
+  }
+
+  uint8_t zero[16] = {};
+  const size_t totalDataBlocks = blocks - sectors - 1U; // exclude trailers + manufacturer block
+  size_t erased = 0;
+
+  ProgressView::init();
+  for (size_t sector = 0; sector < sectors; ++sector) {
+    const size_t first = sectorFirstBlock(sector);
+    const size_t count = sectorBlockCount(sector);
+    const uint8_t trailer = (uint8_t)(first + count - 1U);
+
+    for (size_t off = 0; off + 1U < count; ++off) {
+      const size_t block = first + off;
+      if (block == 0) continue; // preserve manufacturer block / UID
+
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Erasing blocks (%u/%u)...",
+               (unsigned)(erased + 1U), (unsigned)totalDataBlocks);
+      ProgressView::progress(msg, totalDataBlocks ? (int)(erased * 100U / totalDataBlocks) : 0);
+
+      if (!dev.hasActiveTag() && !reactivate()) {
+        ProgressView::finish();
+        ShowStatusAction::show("Erase failed");
+        _showMfcTagMenu();
+        return;
+      }
+      if (!dev.mifareClassicAuthenticate(trailer, sectorKeys[sector], sectorUseKeyB[sector])) {
+        dev.deactivate();
+        ProgressView::finish();
+        ShowStatusAction::show("Erase failed");
+        _showMfcTagMenu();
+        return;
+      }
+      const bool ok = dev.mifareClassicWriteBlock((uint8_t)block, zero);
+      dev.deactivate();
+      if (!ok) {
+        ProgressView::finish();
+        ShowStatusAction::show("Erase failed");
+        _showMfcTagMenu();
+        return;
+      }
+      ++erased;
+    }
+  }
+  ProgressView::finish();
+
+  // A successful erase invalidates the cached "last read" dump so it cannot
+  // accidentally be offered as a write source after the tag contents changed.
+  _mfcDumpLen = 0;
+  _mfcDumpBlocks = 0;
+  _mfcDumpFromCompleteRead = false;
+  _mfcUidLen = 0;
+  _mfcSak = 0;
+
+  ShowStatusAction::show("Tag erased", 1600);
+  _showMfcTagMenu();
+#else
+  ShowStatusAction::show("ST25R3916 not supported");
 #endif
 }
 
