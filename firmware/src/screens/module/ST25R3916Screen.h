@@ -13,6 +13,9 @@ public:
       case STATE_MFC_DETAILS: return "Tag Details";
       case STATE_MFC_MENU: return "MIFARE Classic";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
+      case STATE_MFC_NDEF_MENU: return "NDEF Operations";
+      case STATE_MFC_NDEF_READING: return "Read NDEF";
+      case STATE_MFC_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_READING: return "Read Tag";
       case STATE_MFC_DUMP_HEX: return "Memory Dump";
       case STATE_MFC_DUMP_SELECT: return "Write to Tag";
@@ -35,6 +38,9 @@ private:
     STATE_DETAILS,
     STATE_MFC_MENU,
     STATE_MFC_TAG_MENU,
+    STATE_MFC_NDEF_MENU,
+    STATE_MFC_NDEF_READING,
+    STATE_MFC_NDEF_DETAILS,
     STATE_MFC_READING,
     STATE_MFC_DETAILS,
     STATE_MFC_DUMP_HEX,
@@ -57,8 +63,9 @@ private:
     {"Device Info (I2C)", "Grove / U216"},
     {"Device Info (SPI)", "Cap / shared SPI"},
   };
-  ListItem _mfcItems[1] = {
+  ListItem _mfcItems[2] = {
     {"Tag Operations"},
+    {"NDEF Operations"},
   };
   ListItem _mfcTagItems[3] = {
     {"Read Tag"},
@@ -66,7 +73,7 @@ private:
     {"Erase Tag"},
   };
 
-  static constexpr uint8_t kMaxRows = 12;
+  static constexpr uint8_t kMaxRows = 48;
   ScrollListView _scrollView;
   ScrollListView::Row _rows[kMaxRows];
   String _rowLabels[kMaxRows];
@@ -84,6 +91,11 @@ private:
   bool _writePreviewFromFile = false;
   bool _mfcDumpFromCompleteRead = false;
   uint8_t _writeSourceUid[4] = {};
+  static constexpr size_t kMaxNdefBytes = 254;
+  uint8_t _ndefBuf[kMaxNdefBytes] = {};
+  size_t _ndefLen = 0;
+  size_t _ndefCapacity = 0;
+  bool _hasNdef = false;
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
   String _dumpPickDir;
@@ -105,5 +117,9 @@ private:
   void _showMenu();
   void _showMfcMenu();
   void _showMfcTagMenu();
+  void _showMfcNdefMenu();
+  void _readMfcNdef();
+  void _showNdefDetails(const uint8_t* uid, uint8_t uidLen, const uint8_t* ndef, size_t ndefLen);
+  void _addWrappedRow(const String& label, const String& value);
   void _renderTagPrompt();
 };
