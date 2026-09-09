@@ -18,6 +18,7 @@ public:
       case STATE_MFC_DUMP_SELECT: return "Write to Tag";
       case STATE_MFC_WRITE_PREVIEW: return "Write to Tag";
       case STATE_MFC_WRITING: return "Write to Tag";
+      case STATE_MFC_ERASING: return "Erase Tag";
       default: return "ST25R3916";
     }
   }
@@ -40,6 +41,7 @@ private:
     STATE_MFC_DUMP_SELECT,
     STATE_MFC_WRITE_PREVIEW,
     STATE_MFC_WRITING,
+    STATE_MFC_ERASING,
   };
 
   State _state = STATE_MENU;
@@ -58,9 +60,10 @@ private:
   ListItem _mfcItems[1] = {
     {"Tag Operations"},
   };
-  ListItem _mfcTagItems[2] = {
+  ListItem _mfcTagItems[3] = {
     {"Read Tag"},
     {"Write to Tag"},
+    {"Erase Tag"},
   };
 
   static constexpr uint8_t kMaxRows = 12;
@@ -93,6 +96,7 @@ private:
   void _openMfcDumpFile(uint8_t index);
   void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
   bool _writeMfcDumpToTag();
+  void _eraseMfcTag();
   void _saveMfcDump();
   void _renderMfcDump();
   void _handleMfcDumpNav(INavigation::Direction dir);
