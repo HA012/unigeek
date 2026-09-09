@@ -87,6 +87,9 @@ void ST25R3916Screen::onUpdate() {
         _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
         if (fromFile) _openNdefFilePicker(); else _showMfcNdefWriteMenu();
       } else _showMfcNdefMenu();
+    } else if (_state == STATE_MFU_DUMP_HEX) {
+      _state = STATE_MFU_DETAILS;
+      render();
     } else if (_state == STATE_MFU_DETAILS) {
       _showMfuTagMenu();
     } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
@@ -102,7 +105,7 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_DETAILS) {
-    _readMfuTag();
+    _showMfuDumpActions();
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
@@ -121,6 +124,10 @@ void ST25R3916Screen::onUpdate() {
   }
   if (_state == STATE_MFC_DUMP_HEX) {
     _handleMfcDumpNav(dir);
+    return;
+  }
+  if (_state == STATE_MFU_DUMP_HEX) {
+    _handleMfuDumpNav(dir);
     return;
   }
   _scrollView.onNav(dir);
@@ -143,12 +150,21 @@ void ST25R3916Screen::onRender() {
     _renderMfcDump();
     return;
   }
+  if (_state == STATE_MFU_DUMP_HEX) {
+    _renderMfuDump();
+    return;
+  }
   _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
 }
 
 void ST25R3916Screen::onBack() {
   if (_state == STATE_DETAILS) {
     _showMenu();
+    return;
+  }
+  if (_state == STATE_MFU_DUMP_HEX) {
+    _state = STATE_MFU_DETAILS;
+    render();
     return;
   }
   if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING) {
@@ -1433,6 +1449,156 @@ bool ST25R3916Screen::_formatMfc1kNdef() {
 #endif
 }
 
+
+void ST25R3916Screen::_showMfuDumpActions() {
+  if (!_mfuDumpLen || !_mfuPages) {
+    ShowStatusAction::show("No dump available");
+    render();
+    return;
+  }
+
+  static const InputSelectAction::Option opts[] = {
+    {"View Dump", "view"},
+    {"Save Dump", "save"},
+  };
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  if (!r) { render(); return; }
+
+  render();
+  if (strcmp(r, "view") == 0) {
+    _mfuDumpOffset = 0;
+    _state = STATE_MFU_DUMP_HEX;
+    render();
+  } else if (strcmp(r, "save") == 0) {
+    _saveMfuDump();
+  }
+}
+
+void ST25R3916Screen::_saveMfuDump() {
+  if (!_mfuDumpLen || !_mfuUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Save failed", 1200);
+    render();
+    return;
+  }
+
+  String typeName = _mfuType;
+  typeName.replace("MIFARE ", "MF-");
+  typeName.replace("Ultralight ", "UL-");
+  typeName.replace(" ", "-");
+  typeName.replace("/", "-");
+
+  String suggested = typeName + "_";
+  for (uint8_t i = 0; i < _mfuUidLen; ++i) {
+    char h[3];
+    snprintf(h, sizeof(h), "%02X", _mfuUid[i]);
+    suggested += h;
+  }
+
+  String name = InputTextAction::popup("Save dump", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) {
+    render();
+    return;
+  }
+  render();
+
+  if (name.endsWith(".bin")) name.remove(name.length() - 4);
+  const String filename = name + ".bin";
+
+  Uni.Storage->makeDir("/unigeek");
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/dumps");
+
+  const String path = String("/unigeek/nfc/dumps/") + filename;
+  fs::File f = Uni.Storage->open(path.c_str(), "w");
+  bool ok = false;
+  if (f) {
+    ok = f.write(_mfuDump, _mfuDumpLen) == _mfuDumpLen;
+    f.close();
+  }
+
+  render();
+  if (ok) {
+    const String msg = String("Saved: ") + filename;
+    ShowStatusAction::show(msg.c_str(), 1500);
+  } else {
+    ShowStatusAction::show("Save failed", 1200);
+  }
+  render();
+}
+
+void ST25R3916Screen::_renderMfuDump() {
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  static constexpr int kRowH = 14;
+  static constexpr int kScrollW = 3;
+  const int fullyVisible = max(1, bh / kRowH);
+  const int visible = fullyVisible + ((bh % kRowH >= 5) ? 1 : 0);
+  const uint16_t totalRows = (_mfuPages + 1U) / 2U;
+  const int textW = bw - kScrollW - 4;
+
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  for (int i = 0; i < visible; ++i) {
+    const uint16_t row = _mfuDumpOffset + (uint16_t)i;
+    if (row >= totalRows) break;
+    const uint16_t firstPage = row * 2U;
+    const size_t off = (size_t)firstPage * 4U;
+    const size_t remaining = _mfuDumpLen > off ? _mfuDumpLen - off : 0;
+    const uint8_t bytes = (uint8_t)min((size_t)8, remaining);
+
+    char label[16];
+    if (firstPage + 1U < _mfuPages) snprintf(label, sizeof(label), "P%u-%u", (unsigned)firstPage, (unsigned)(firstPage + 1U));
+    else snprintf(label, sizeof(label), "P%u", (unsigned)firstPage);
+    char value[24] = {};
+    size_t valuePos = 0;
+    for (uint8_t b = 0; b < bytes; ++b) {
+      valuePos += snprintf(value + valuePos, sizeof(value) - valuePos,
+                           "%02X%s", _mfuDump[off + b], b + 1U == bytes ? "" : " ");
+    }
+
+    const int rowY = by + i * kRowH;
+    const int rowH = min(kRowH, by + bh - rowY);
+    if (rowH <= 0) break;
+    Sprite sp(&lcd);
+    sp.createSprite(bw - kScrollW, rowH);
+    sp.fillSprite(TFT_BLACK);
+    sp.setTextSize(1);
+    sp.setTextDatum(TL_DATUM);
+    sp.setTextColor(TFT_CYAN, TFT_BLACK);
+    sp.drawString(label, 0, 2);
+    sp.setTextColor(TFT_WHITE, TFT_BLACK);
+    sp.drawString(value, min(42, textW / 3), 2);
+    sp.pushSprite(bx, rowY);
+    sp.deleteSprite();
+  }
+
+  if (totalRows > (uint16_t)fullyVisible) {
+    const int trackH = bh;
+    const int thumbH = max(6, (trackH * fullyVisible) / (int)totalRows);
+    const int maxOff = max(1, (int)totalRows - fullyVisible);
+    const int thumbY = by + ((trackH - thumbH) * min((int)_mfuDumpOffset, maxOff)) / maxOff;
+    lcd.fillRect(bx + bw - kScrollW, by, kScrollW, bh, TFT_DARKGREY);
+    lcd.fillRect(bx + bw - kScrollW, thumbY, kScrollW, thumbH, TFT_WHITE);
+  }
+}
+
+void ST25R3916Screen::_handleMfuDumpNav(INavigation::Direction dir) {
+  static constexpr int kRowH = 14;
+  const uint16_t totalRows = (_mfuPages + 1U) / 2U;
+  const uint16_t visible = (uint16_t)max(1, bodyH() / kRowH);
+  const uint16_t maxOffset = totalRows > visible ? totalRows - visible : 0;
+
+  if (dir == INavigation::DIR_UP) {
+    if (_mfuDumpOffset > 0) --_mfuDumpOffset;
+  } else if (dir == INavigation::DIR_DOWN) {
+    if (_mfuDumpOffset < maxOffset) ++_mfuDumpOffset;
+  } else if (dir == INavigation::DIR_LEFT) {
+    _mfuDumpOffset = _mfuDumpOffset > visible ? _mfuDumpOffset - visible : 0;
+  } else if (dir == INavigation::DIR_RIGHT) {
+    _mfuDumpOffset = min((uint16_t)(_mfuDumpOffset + visible), maxOffset);
+  }
+  render();
+}
+
 void ST25R3916Screen::_readMfcNdef() {
 #if defined(DEVICE_HAS_ST25R3916)
   _state = STATE_MFC_NDEF_READING;
@@ -1806,7 +1972,7 @@ void ST25R3916Screen::_readMfuTag() {
     addRow("NDEF", "Not found");
   }
   addRow("Reader", bus ? bus : "--");
-  addRow("[Press]", "Read again");
+  addRow("[Press]", "Actions");
 
   _scrollView.resetScroll();
   _scrollView.setRows(_rows, _rowCount);
