@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "core/ConfigManager.h"
 #include "ui/views/ProgressView.h"
+#include "utils/nfc/NdefParser.h"
 
 #if defined(DEVICE_HAS_ST25R3916)
 #include "utils/nfc/NFCUtility.h"
@@ -65,7 +66,7 @@ void ST25R3916Screen::onInit() {
 
 void ST25R3916Screen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFC_DUMP_SELECT) {
+      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onUpdate();
     return;
   }
@@ -77,6 +78,8 @@ void ST25R3916Screen::onUpdate() {
     if (_state == STATE_MFC_DUMP_HEX) {
       _state = STATE_MFC_DETAILS;
       render();
+    } else if (_state == STATE_MFC_NDEF_DETAILS) {
+      _showMfcNdefMenu();
     } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
                _state == STATE_MFC_WRITING) {
       _showMfcTagMenu();
@@ -106,12 +109,12 @@ void ST25R3916Screen::onUpdate() {
 
 void ST25R3916Screen::onRender() {
   if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
-      _state == STATE_MFC_DUMP_SELECT) {
+      _state == STATE_MFC_NDEF_MENU || _state == STATE_MFC_DUMP_SELECT) {
     ListScreen::onRender();
     return;
   }
-  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_WRITING ||
-      _state == STATE_MFC_ERASING) {
+  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFC_NDEF_READING ||
+      _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _renderTagPrompt();
     return;
   }
@@ -136,6 +139,14 @@ void ST25R3916Screen::onBack() {
     _showMfcTagMenu();
     return;
   }
+  if (_state == STATE_MFC_NDEF_DETAILS || _state == STATE_MFC_NDEF_READING) {
+    _showMfcNdefMenu();
+    return;
+  }
+  if (_state == STATE_MFC_NDEF_MENU) {
+    _showMfcMenu();
+    return;
+  }
   if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_READING) {
     _showMfcTagMenu();
     return;
@@ -155,6 +166,11 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
 #if defined(DEVICE_HAS_ST25R3916)
   if (_state == STATE_MFC_MENU) {
     if (index == 0) _showMfcTagMenu();
+    else if (index == 1) _showMfcNdefMenu();
+    return;
+  }
+  if (_state == STATE_MFC_NDEF_MENU) {
+    if (index == 0) _readMfcNdef();
     return;
   }
   if (_state == STATE_MFC_TAG_MENU) {
@@ -191,13 +207,20 @@ void ST25R3916Screen::_showMenu() {
 
 void ST25R3916Screen::_showMfcMenu() {
   _state = STATE_MFC_MENU;
-  setItems(_mfcItems, 1);
+  setItems(_mfcItems, 2);
   render();
 }
 
 void ST25R3916Screen::_showMfcTagMenu() {
   _state = STATE_MFC_TAG_MENU;
   setItems(_mfcTagItems, 3);
+  render();
+}
+
+void ST25R3916Screen::_showMfcNdefMenu() {
+  static ListItem items[1] = {{"Read NDEF"}};
+  _state = STATE_MFC_NDEF_MENU;
+  setItems(items, 1);
   render();
 }
 
@@ -951,6 +974,304 @@ void ST25R3916Screen::_handleMfcDumpNav(INavigation::Direction dir) {
     return;
   }
   _renderMfcDump();
+}
+
+
+void ST25R3916Screen::_addWrappedRow(const String& label, const String& value) {
+  static constexpr size_t kChunk = 24;
+  if (!value.length()) return;
+  size_t pos = 0;
+  bool first = true;
+  while (pos < value.length() && _rowCount < kMaxRows) {
+    size_t take = min(kChunk, value.length() - pos);
+    _rowLabels[_rowCount] = first ? label : "";
+    _rowValues[_rowCount] = value.substring(pos, pos + take);
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    ++_rowCount;
+    pos += take;
+    first = false;
+  }
+}
+
+void ST25R3916Screen::_showNdefDetails(const uint8_t* uid, uint8_t uidLen,
+                                       const uint8_t* ndef, size_t ndefLen) {
+  _rowCount = 0;
+  _hasNdef = false;
+  _ndefLen = 0;
+
+  auto addRow = [&](const char* label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label;
+    _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    ++_rowCount;
+  };
+
+  if (uid && uidLen) {
+    String id;
+    for (uint8_t i = 0; i < uidLen; ++i) {
+      char h[4];
+      snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", uid[i]);
+      id += h;
+    }
+    addRow("UID", id);
+  }
+
+  if (!ndef) {
+    addRow("NDEF", "Not found");
+  } else {
+    if (ndefLen <= sizeof(_ndefBuf)) {
+      memcpy(_ndefBuf, ndef, ndefLen);
+      _ndefLen = ndefLen;
+      _hasNdef = true;
+    }
+    addRow("NDEF Size", String((unsigned)ndefLen) + " bytes");
+    if (_ndefCapacity) {
+      addRow("Capacity", String((unsigned)_ndefCapacity) + " bytes");
+      addRow("Free", String((unsigned)(_ndefCapacity > ndefLen ? _ndefCapacity - ndefLen : 0)) + " bytes");
+    }
+
+    if (ndefLen == 0) {
+      addRow("NDEF", "Empty");
+    } else {
+      NdefParser::Result parsed;
+      if (!NdefParser::parse(ndef, ndefLen, parsed)) {
+        addRow("NDEF", "Invalid record");
+      } else {
+        switch (parsed.kind) {
+          case NdefParser::RECORD_TEXT:
+            addRow("Record", "Text");
+            if (parsed.language.length()) addRow("Language", parsed.language);
+            _addWrappedRow("Text", parsed.text);
+            break;
+          case NdefParser::RECORD_URL:
+            addRow("Record", "URL");
+            _addWrappedRow("URL", parsed.uri);
+            break;
+          case NdefParser::RECORD_PHONE:
+            addRow("Record", "Phone");
+            _addWrappedRow("Phone", parsed.phone);
+            break;
+          case NdefParser::RECORD_EMAIL:
+            addRow("Record", "Email");
+            _addWrappedRow("Email", parsed.email);
+            break;
+          case NdefParser::RECORD_VCARD:
+            addRow("Record", "vCard");
+            if (parsed.contact.length()) _addWrappedRow("Contact", parsed.contact);
+            if (parsed.company.length()) _addWrappedRow("Company", parsed.company);
+            if (parsed.address.length()) _addWrappedRow("Address", parsed.address);
+            if (parsed.phone.length()) _addWrappedRow("Phone", parsed.phone);
+            if (parsed.email.length()) _addWrappedRow("Email", parsed.email);
+            if (parsed.website.length()) _addWrappedRow("Website", parsed.website);
+            break;
+          default:
+            addRow("Record", "Unsupported");
+            break;
+        }
+      }
+    }
+  }
+
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_MFC_NDEF_DETAILS;
+  render();
+}
+
+void ST25R3916Screen::_readMfcNdef() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_MFC_NDEF_READING;
+  _hasNdef = false;
+  _ndefLen = 0;
+  _ndefCapacity = 0;
+  render();
+
+  ST25R3916Backend dev;
+  bool ready = dev.beginI2C(Uni.ExI2C, ST25R3916_I2C_ADDR);
+  if (!ready) ready = dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
+  if (!ready) {
+    ShowStatusAction::show("ST25R3916 not found");
+    _showMfcNdefMenu();
+    return;
+  }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected");
+    _showMfcNdefMenu();
+    return;
+  }
+  if (!isMifareClassic(tag.sak)) {
+    ShowStatusAction::show("Not MIFARE Classic");
+    _showMfcNdefMenu();
+    return;
+  }
+
+  size_t totalSectors = 0, totalBlocks = 0;
+  mfcDimensions(tag.sak, totalSectors, totalBlocks);
+  if (!totalSectors) {
+    ShowStatusAction::show("Unsupported MIFARE Classic");
+    _showMfcNdefMenu();
+    return;
+  }
+
+  auto reactivate = [&]() -> bool {
+    dev.deactivate();
+    ST25R3916Backend::ScanResult current;
+    return dev.scan(ST25R3916Backend::TECH_A, current, 1200, true) &&
+           isMifareClassic(current.sak) && sameTag(tag, current);
+  };
+
+  static const uint8_t madKeys[][6] = {
+    {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},
+    {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
+    {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7},
+  };
+
+  auto readMadBlock = [&](uint8_t block, uint8_t out[16]) -> bool {
+    const uint8_t sector = block < 128 ? (uint8_t)(block / 4U)
+                                       : (uint8_t)(32U + (block - 128U) / 16U);
+    const uint8_t trailer = (uint8_t)(sectorFirstBlock(sector) + sectorBlockCount(sector) - 1U);
+    for (const auto& key : madKeys) {
+      for (uint8_t keyType = 0; keyType < 2; ++keyType) {
+        if (!dev.hasActiveTag() && !reactivate()) continue;
+        if (dev.mifareClassicAuthenticate(trailer, key, keyType == 1) &&
+            dev.mifareClassicReadBlock(block, out)) {
+          dev.deactivate();
+          return true;
+        }
+        dev.deactivate();
+      }
+    }
+    return false;
+  };
+
+  uint8_t sectors[39] = {};
+  size_t sectorCount = 0;
+  auto addIfNdef = [&](uint8_t sector, uint8_t application, uint8_t cluster) {
+    if (sector >= totalSectors || sectorCount >= sizeof(sectors)) return;
+    if ((application == 0x03 && cluster == 0xE1) ||
+        (application == 0xE1 && cluster == 0x03)) {
+      sectors[sectorCount++] = sector;
+    }
+  };
+
+  uint8_t b1[16] = {}, b2[16] = {};
+  if (!readMadBlock(1, b1) || !readMadBlock(2, b2)) {
+    ShowStatusAction::show("No NDEF sectors in MAD");
+    _showMfcNdefMenu();
+    return;
+  }
+  for (uint8_t sec = 1; sec <= 7; ++sec) {
+    const size_t off = 2U + (size_t)(sec - 1U) * 2U;
+    addIfNdef(sec, b1[off], b1[off + 1U]);
+  }
+  for (uint8_t sec = 8; sec <= 15; ++sec) {
+    const size_t off = (size_t)(sec - 8U) * 2U;
+    addIfNdef(sec, b2[off], b2[off + 1U]);
+  }
+
+  if (totalSectors > 16) {
+    uint8_t m0[16] = {}, m1[16] = {}, m2[16] = {};
+    if (readMadBlock(64, m0) && readMadBlock(65, m1) && readMadBlock(66, m2)) {
+      for (uint8_t sec = 17; sec <= 23; ++sec) {
+        const size_t off = 2U + (size_t)(sec - 17U) * 2U;
+        addIfNdef(sec, m0[off], m0[off + 1U]);
+      }
+      for (uint8_t sec = 24; sec <= 31; ++sec) {
+        const size_t off = (size_t)(sec - 24U) * 2U;
+        addIfNdef(sec, m1[off], m1[off + 1U]);
+      }
+      for (uint8_t sec = 32; sec <= 39; ++sec) {
+        const size_t off = (size_t)(sec - 32U) * 2U;
+        addIfNdef(sec, m2[off], m2[off + 1U]);
+      }
+    }
+  }
+
+  if (!sectorCount) {
+    ShowStatusAction::show("No NDEF sectors in MAD");
+    _showMfcNdefMenu();
+    return;
+  }
+
+  _ndefCapacity = 0;
+  for (size_t i = 0; i < sectorCount; ++i)
+    _ndefCapacity += sectors[i] < 32 ? 48U : 240U;
+
+  uint8_t* area = new uint8_t[_ndefCapacity];
+  if (!area) {
+    ShowStatusAction::show("Out of memory");
+    _showMfcNdefMenu();
+    return;
+  }
+  memset(area, 0, _ndefCapacity);
+
+  static const uint8_t nfcKeyA[6] = {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7};
+  size_t out = 0;
+  size_t totalDataBlocks = 0;
+  for (size_t i = 0; i < sectorCount; ++i) totalDataBlocks += sectors[i] < 32 ? 3U : 15U;
+  size_t done = 0;
+
+  ProgressView::init();
+  for (size_t si = 0; si < sectorCount; ++si) {
+    const uint8_t sector = sectors[si];
+    const size_t first = sectorFirstBlock(sector);
+    const uint8_t dataBlocks = sector < 32 ? 3 : 15;
+    const uint8_t trailer = (uint8_t)(first + sectorBlockCount(sector) - 1U);
+
+    if (!dev.hasActiveTag() && !reactivate()) {
+      ProgressView::finish(); delete[] area;
+      ShowStatusAction::show("Failed to read NDEF sectors"); _showMfcNdefMenu(); return;
+    }
+    if (!dev.mifareClassicAuthenticate(trailer, nfcKeyA, false)) {
+      dev.deactivate();
+      ProgressView::finish(); delete[] area;
+      ShowStatusAction::show("Failed to read NDEF sectors"); _showMfcNdefMenu(); return;
+    }
+
+    for (uint8_t bi = 0; bi < dataBlocks; ++bi) {
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Reading blocks (%u/%u)...",
+               (unsigned)(done + 1U), (unsigned)totalDataBlocks);
+      ProgressView::progress(msg, totalDataBlocks ? (int)(done * 100U / totalDataBlocks) : 0);
+      if (!dev.mifareClassicReadBlock((uint8_t)(first + bi), area + out)) {
+        dev.deactivate();
+        ProgressView::finish(); delete[] area;
+        ShowStatusAction::show("Failed to read NDEF sectors"); _showMfcNdefMenu(); return;
+      }
+      out += 16;
+      ++done;
+    }
+    dev.deactivate();
+  }
+  ProgressView::finish();
+
+  const uint8_t* ndef = nullptr;
+  size_t ndefLen = 0;
+  size_t pos = 0;
+  while (pos < out) {
+    const uint8_t tlv = area[pos++];
+    if (tlv == 0x00) continue;
+    if (tlv == 0xFE || pos >= out) break;
+    size_t len = area[pos++];
+    if (len == 0xFF) {
+      if (pos + 1 >= out) break;
+      len = ((size_t)area[pos] << 8) | area[pos + 1U];
+      pos += 2;
+    }
+    if (pos + len > out) break;
+    if (tlv == 0x03) { ndef = area + pos; ndefLen = len; break; }
+    pos += len;
+  }
+
+  _showNdefDetails(tag.nfcid, tag.nfcidLen, ndef, ndefLen);
+  delete[] area;
+#else
+  ShowStatusAction::show("ST25R3916 not supported");
+  _showMfcNdefMenu();
+#endif
 }
 
 void ST25R3916Screen::_showI2CInfo() {
