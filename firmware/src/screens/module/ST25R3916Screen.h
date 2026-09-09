@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/ScrollListView.h"
+#include "ui/views/BrowseFileView.h"
 
 class ST25R3916Screen : public ListScreen {
 public:
@@ -14,6 +15,9 @@ public:
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_READING: return "Read Tag";
       case STATE_MFC_DUMP_HEX: return "Memory Dump";
+      case STATE_MFC_DUMP_SELECT: return "Write to Tag";
+      case STATE_MFC_WRITE_PREVIEW: return "Write to Tag";
+      case STATE_MFC_WRITING: return "Write to Tag";
       default: return "ST25R3916";
     }
   }
@@ -33,6 +37,9 @@ private:
     STATE_MFC_READING,
     STATE_MFC_DETAILS,
     STATE_MFC_DUMP_HEX,
+    STATE_MFC_DUMP_SELECT,
+    STATE_MFC_WRITE_PREVIEW,
+    STATE_MFC_WRITING,
   };
 
   State _state = STATE_MENU;
@@ -51,8 +58,9 @@ private:
   ListItem _mfcItems[1] = {
     {"Tag Operations"},
   };
-  ListItem _mfcTagItems[1] = {
+  ListItem _mfcTagItems[2] = {
     {"Read Tag"},
+    {"Write to Tag"},
   };
 
   static constexpr uint8_t kMaxRows = 12;
@@ -70,10 +78,21 @@ private:
   uint8_t _mfcUid[10] = {};
   uint8_t _mfcUidLen = 0;
   uint8_t _mfcSak = 0;
+  bool _writePreviewFromFile = false;
+  bool _mfcDumpFromCompleteRead = false;
+  uint8_t _writeSourceUid[4] = {};
+  bool _writeSourceUidKnown = false;
+  BrowseFileView _browser;
+  String _dumpPickDir;
 
   void _scan(uint16_t techMask);
   void _readMfcTag();
   void _showMfcDumpActions();
+  void _showMfcWriteSources();
+  void _openMfcDumpPicker();
+  void _openMfcDumpFile(uint8_t index);
+  void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
+  bool _writeMfcDumpToTag();
   void _saveMfcDump();
   void _renderMfcDump();
   void _handleMfcDumpNav(INavigation::Direction dir);
