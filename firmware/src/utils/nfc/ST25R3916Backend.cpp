@@ -4,6 +4,7 @@
 
 #include <rfal_nfc.h>
 #include <rfal_rfst25r3916.h>
+#include <esp_random.h>
 
 #include "utils/crypto/crapto1.h"
 
@@ -19,6 +20,35 @@ void setPackedBit(uint8_t* buf, size_t bit, uint8_t value) {
 
 uint8_t getPackedBit(const uint8_t* buf, size_t bit) {
   return (uint8_t)((buf[bit >> 3] >> (bit & 7U)) & 1U);
+}
+
+uint16_t mfcPackBits(const uint8_t* data, const uint8_t* parity, size_t count, uint8_t* out) {
+  uint16_t bit = 0;
+  for (size_t i = 0; i < count; ++i) {
+    for (uint8_t b = 0; b < 8; ++b, ++bit)
+      if (data[i] & (1U << b)) out[bit >> 3] |= (uint8_t)(1U << (bit & 7U));
+    if (parity[i] & 1U) out[bit >> 3] |= (uint8_t)(1U << (bit & 7U));
+    ++bit;
+  }
+  return bit;
+}
+
+uint8_t mfcUnpackBits(const uint8_t* in, uint16_t nbits, uint8_t* out, uint8_t maxBytes) {
+  uint8_t n = 0;
+  uint16_t bit = 0;
+  while ((bit + 8U) <= nbits && n < maxBytes) {
+    uint8_t value = 0;
+    for (uint8_t b = 0; b < 8; ++b, ++bit)
+      if (in[bit >> 3] & (1U << (bit & 7U))) value |= (uint8_t)(1U << b);
+    out[n++] = value;
+    if (bit < nbits) ++bit;
+  }
+  return n;
+}
+
+bool mfcRxOk(ReturnCode rc) {
+  return rc == ST_ERR_NONE ||
+         (rc >= ST_ERR_INCOMPLETE_BYTE && rc <= ST_ERR_INCOMPLETE_BYTE_07);
 }
 }
 
@@ -234,8 +264,10 @@ bool ST25R3916Backend::_transceivePacked(const uint8_t* txPacked, size_t txBits,
   ctx.rxBuf = rxPacked;
   ctx.rxBufLen = (uint16_t)rxMaxBits;
   ctx.rxRcvdLen = &receivedBits;
+  // PAR_RX_KEEP disables RFAL's automatic parity/CRC checking and keeps the
+  // raw parity/CRC bits in the receive FIFO.  This fork does not define the
+  // newer RFAL_TXRX_FLAGS_CRC_RX_MANUAL alias, so do not depend on it here.
   ctx.flags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
-              RFAL_TXRX_FLAGS_CRC_RX_MANUAL |
               RFAL_TXRX_FLAGS_CRC_RX_KEEP |
               RFAL_TXRX_FLAGS_PAR_RX_KEEP |
               RFAL_TXRX_FLAGS_PAR_TX_NONE |
@@ -248,7 +280,17 @@ bool ST25R3916Backend::_transceivePacked(const uint8_t* txPacked, size_t txBits,
     _hw->rfalWorker();
     rc = _hw->rfalGetTransceiveStatus();
   } while (rc == ST_ERR_BUSY);
-  if (rc != ST_ERR_NONE || receivedBits == 0) return false;
+
+  // Raw ISO14443A/MIFARE exchanges intentionally bypass the normal CRC and
+  // byte-framing machinery. RFAL may therefore report CRC or incomplete-byte
+  // status even though the response bits in the FIFO are valid and expected
+  // (for example, a 4-bit MIFARE ACK). Treat those statuses as data-bearing
+  // completions whenever bits were actually received.
+  const uint16_t err = (uint16_t)(rc & 0x00FFU);
+  const bool dataBearingStatus =
+      (rc == ST_ERR_NONE) || err == 21U /* ERR_CRC */ ||
+      (err >= 41U && err <= 47U) /* ERR_INCOMPLETE_BYTE_01..07 */;
+  if (!dataBearingStatus || receivedBits == 0) return false;
   rxBits = receivedBits;
   return true;
 }
@@ -288,110 +330,163 @@ bool ST25R3916Backend::_transceiveRaw9(const uint8_t* txData, const uint8_t* txP
   return true;
 }
 
+static ReturnCode mifareTransceiveRaw(RfalRfST25R3916Class* hw, uint8_t* txBuf, uint16_t txBits,
+                                      uint8_t* rxBuf, uint16_t rxCapBytes, uint16_t* rxBits,
+                                      uint32_t fwt, uint32_t flags) {
+  if (!hw || !txBuf || !txBits || !rxBuf || !rxCapBytes || !rxBits) return ST_ERR_PARAM;
+  rfalTransceiveContext ctx;
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.txBuf = txBuf;
+  ctx.txBufLen = txBits;
+  ctx.rxBuf = rxBuf;
+  ctx.rxBufLen = (uint16_t)rfalConvBytesToBits(rxCapBytes);
+  ctx.rxRcvdLen = rxBits;
+  ctx.flags = flags;
+  ctx.fwt = fwt;
+  *rxBits = 0;
+  ReturnCode rc = hw->rfalStartTransceive(&ctx);
+  if (rc != ST_ERR_NONE) return rc;
+  const uint32_t started = millis();
+  do {
+    hw->rfalWorker();
+    rc = hw->rfalGetTransceiveStatus();
+  } while (rc == ST_ERR_BUSY && millis() - started < 60U);
+  return rc;
+}
+
 bool ST25R3916Backend::mifareClassicAuthenticate(uint8_t block, const uint8_t key[6], bool keyB) {
   if (!_active || _activeTag.technology != Technology::NFC_A || !_hw || !key) return false;
-  if (_crypto) {
+
+  const uint32_t encFlags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
+                            RFAL_TXRX_FLAGS_CRC_RX_KEEP |
+                            RFAL_TXRX_FLAGS_NFCIP1_OFF |
+                            RFAL_TXRX_FLAGS_AGC_ON |
+                            RFAL_TXRX_FLAGS_PAR_RX_KEEP |
+                            RFAL_TXRX_FLAGS_PAR_TX_NONE;
+
+  uint8_t cmd[2] = {(uint8_t)(keyB ? 0x61 : 0x60), block};
+  uint32_t nt = 0;
+
+  if (!_crypto) {
+    // First authentication: clear AUTH command with manual CRC and automatic
+    // parity. The nonce response has no CRC and arrives with parity retained.
+    const uint16_t crc = _hw->rfalCrcCalculateCcitt(0x6363, cmd, 2);
+    uint8_t tx[4] = {cmd[0], cmd[1], (uint8_t)(crc & 0xFFU), (uint8_t)(crc >> 8)};
+    uint8_t rx[8] = {};
+    uint16_t rxBits = 0;
+    const uint32_t firstFlags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
+                                RFAL_TXRX_FLAGS_CRC_RX_KEEP |
+                                RFAL_TXRX_FLAGS_NFCIP1_OFF |
+                                RFAL_TXRX_FLAGS_AGC_ON |
+                                RFAL_TXRX_FLAGS_PAR_RX_KEEP |
+                                RFAL_TXRX_FLAGS_PAR_TX_AUTO;
+    ReturnCode rc = mifareTransceiveRaw(_hw, tx, rfalConvBytesToBits(sizeof(tx)), rx, sizeof(rx),
+                                        &rxBits, rfalConvMsTo1fc(20), firstFlags);
+    if (!mfcRxOk(rc) || rxBits < 32U) return false;
+
+    uint8_t ntBytes[4] = {};
+    if (mfcUnpackBits(rx, rxBits, ntBytes, sizeof(ntBytes)) < 4U) return false;
+    nt = bytesToU32(ntBytes);
+  } else {
+    // Nested authentication: while Crypto1 is active, AUTH itself is an
+    // encrypted MIFARE frame. This avoids a full RF deactivate/reselect for
+    // every sector when the next key is known.
+    const uint16_t crc = _hw->rfalCrcCalculateCcitt(0x6363, cmd, 2);
+    uint8_t plain[4] = {cmd[0], cmd[1], (uint8_t)(crc & 0xFFU), (uint8_t)(crc >> 8)};
+    uint8_t enc[4] = {}, parity[4] = {};
+    for (uint8_t i = 0; i < 4; ++i) {
+      enc[i] = (uint8_t)(crypto1_byte(_crypto, 0, 0) ^ plain[i]);
+      parity[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+    }
+    uint8_t packed[8] = {}, rx[8] = {};
+    const uint16_t txBits = mfcPackBits(enc, parity, sizeof(enc), packed);
+    uint16_t rxBits = 0;
+    ReturnCode rc = mifareTransceiveRaw(_hw, packed, txBits, rx, sizeof(rx), &rxBits,
+                                        rfalConvMsTo1fc(20), encFlags);
+    if (!mfcRxOk(rc) || rxBits < 32U) {
+      crypto1_destroy(_crypto); _crypto = nullptr;
+      return false;
+    }
+
+    uint8_t encNt[4] = {};
+    if (mfcUnpackBits(rx, rxBits, encNt, sizeof(encNt)) < 4U) {
+      crypto1_destroy(_crypto); _crypto = nullptr;
+      return false;
+    }
+    for (uint8_t i = 0; i < 4; ++i)
+      nt = (nt << 8) | (uint8_t)(encNt[i] ^ crypto1_byte(_crypto, 0, 0));
+
     crypto1_destroy(_crypto);
     _crypto = nullptr;
   }
 
-  uint8_t cmd[4] = {(uint8_t)(keyB ? 0x61 : 0x60), block, 0, 0};
-  const uint16_t authCrc = _crcA(cmd, 2);
-  cmd[2] = (uint8_t)(authCrc & 0xFFU);
-  cmd[3] = (uint8_t)(authCrc >> 8);
-  uint8_t cmdPar[4] = {};
-  for (uint8_t i = 0; i < sizeof(cmd); ++i) cmdPar[i] = _oddParity(cmd[i]);
-
-  // The Classic authentication nonce is a four-byte frame without a CRC.
-  // Use explicit ISO14443A parity from the first exchange onward so RFAL does
-  // not try to CRC-check the nonce response.
-  uint8_t nonceBytes[4] = {};
-  uint8_t noncePar[4] = {};
-  size_t nonceLen = 0;
-  if (!_transceiveRaw9(cmd, cmdPar, sizeof(cmd), nonceBytes, noncePar,
-                       sizeof(nonceBytes), nonceLen) || nonceLen != 4) {
-    return false;
-  }
-  for (uint8_t i = 0; i < sizeof(nonceBytes); ++i) {
-    if (noncePar[i] != _oddParity(nonceBytes[i])) return false;
-  }
-
-  const uint32_t nt = bytesToU32(nonceBytes);
   _crypto = crypto1_create(_key48(key));
   if (!_crypto) return false;
   crypto1_word(_crypto, nt ^ _uid32(_activeTag), 0);
 
-  uint8_t plain[8] = {};
-  uint8_t enc[8] = {};
-  uint8_t par[8] = {};
-  uint32_t ntp = prng_successor(nt, 32);
-
-  // A zero reader nonce is sufficient for normal mutual authentication and
-  // matches the existing UniGeek Crypto1 attack implementation.
+  const uint32_t nr = esp_random();
+  uint8_t nrPlain[4] = {(uint8_t)(nr >> 24), (uint8_t)(nr >> 16),
+                        (uint8_t)(nr >> 8), (uint8_t)nr};
+  uint8_t enc[8] = {}, parity[8] = {};
   for (uint8_t i = 0; i < 4; ++i) {
-    enc[i] = crypto1_byte(_crypto, plain[i], 0) ^ plain[i];
-    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+    enc[i] = (uint8_t)(crypto1_byte(_crypto, nrPlain[i], 0) ^ nrPlain[i]);
+    parity[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(nrPlain[i]));
   }
-  for (uint8_t i = 4; i < 8; ++i) {
-    ntp = prng_successor(ntp, 8);
-    plain[i] = (uint8_t)(ntp & 0xFFU);
-    enc[i] = crypto1_byte(_crypto, plain[i], 0) ^ plain[i];
-    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
-  }
-
-  uint8_t answer[4] = {};
-  uint8_t answerPar[4] = {};
-  size_t answerLen = 0;
-  if (!_transceiveRaw9(enc, par, sizeof(enc), answer, answerPar, sizeof(answer), answerLen) || answerLen != 4) {
-    crypto1_destroy(_crypto);
-    _crypto = nullptr;
-    return false;
+  const uint32_t ar = prng_successor(nt, 64);
+  for (uint8_t i = 0; i < 4; ++i) {
+    const uint8_t value = (uint8_t)(ar >> (24U - 8U * i));
+    enc[4 + i] = (uint8_t)(crypto1_byte(_crypto, 0, 0) ^ value);
+    parity[4 + i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(value));
   }
 
-  const uint32_t encryptedAt = bytesToU32(answer);
-  const uint32_t expectedAt = prng_successor(ntp, 32);
-  const uint32_t at = crypto1_word(_crypto, 0, 0) ^ encryptedAt;
-  if (at != expectedAt) {
-    crypto1_destroy(_crypto);
-    _crypto = nullptr;
-    return false;
+  uint8_t packed[16] = {}, rx[8] = {};
+  const uint16_t txBits = mfcPackBits(enc, parity, sizeof(enc), packed);
+  uint16_t rxBits = 0;
+  ReturnCode rc = mifareTransceiveRaw(_hw, packed, txBits, rx, sizeof(rx), &rxBits,
+                                      rfalConvMsTo1fc(20), encFlags);
+  if (!mfcRxOk(rc) || rxBits < 32U) { crypto1_destroy(_crypto); _crypto = nullptr; return false; }
+
+  uint8_t atEnc[4] = {};
+  if (mfcUnpackBits(rx, rxBits, atEnc, sizeof(atEnc)) < 4U) {
+    crypto1_destroy(_crypto); _crypto = nullptr; return false;
+  }
+  uint32_t at = 0;
+  for (uint8_t i = 0; i < 4; ++i)
+    at = (at << 8) | (uint8_t)(atEnc[i] ^ crypto1_byte(_crypto, 0, 0));
+  if (at != prng_successor(nt, 96)) {
+    crypto1_destroy(_crypto); _crypto = nullptr; return false;
   }
   return true;
 }
 
 bool ST25R3916Backend::mifareClassicReadBlock(uint8_t block, uint8_t data[16]) {
   if (!_active || !_crypto || !data) return false;
-
   uint8_t plain[4] = {0x30, block, 0, 0};
-  const uint16_t crc = _crcA(plain, 2);
-  plain[2] = (uint8_t)(crc & 0xFFU);
-  plain[3] = (uint8_t)(crc >> 8);
-
-  uint8_t enc[4] = {};
-  uint8_t par[4] = {};
-  for (uint8_t i = 0; i < sizeof(plain); ++i) {
-    enc[i] = crypto1_byte(_crypto, 0, 0) ^ plain[i];
-    par[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
+  const uint16_t crc = _hw->rfalCrcCalculateCcitt(0x6363, plain, 2);
+  plain[2] = (uint8_t)(crc & 0xFFU); plain[3] = (uint8_t)(crc >> 8);
+  uint8_t enc[4] = {}, parity[4] = {};
+  for (uint8_t i = 0; i < 4; ++i) {
+    enc[i] = (uint8_t)(crypto1_byte(_crypto, 0, 0) ^ plain[i]);
+    parity[i] = (uint8_t)(filter(_crypto->odd) ^ _oddParity(plain[i]));
   }
-
-  uint8_t response[18] = {};
-  uint8_t responsePar[18] = {};
-  size_t responseLen = 0;
-  if (!_transceiveRaw9(enc, par, sizeof(enc), response, responsePar,
-                       sizeof(response), responseLen) || responseLen != sizeof(response)) {
-    return false;
-  }
-
+  uint8_t tx[8] = {}, rx[32] = {};
+  const uint16_t txBits = mfcPackBits(enc, parity, sizeof(enc), tx);
+  uint16_t rxBits = 0;
+  const uint32_t flags = RFAL_TXRX_FLAGS_CRC_TX_MANUAL |
+                         RFAL_TXRX_FLAGS_CRC_RX_KEEP |
+                         RFAL_TXRX_FLAGS_NFCIP1_OFF |
+                         RFAL_TXRX_FLAGS_AGC_ON |
+                         RFAL_TXRX_FLAGS_PAR_RX_KEEP |
+                         RFAL_TXRX_FLAGS_PAR_TX_NONE;
+  ReturnCode rc = mifareTransceiveRaw(_hw, tx, txBits, rx, sizeof(rx), &rxBits,
+                                        rfalConvMsTo1fc(20), flags);
+  if (!mfcRxOk(rc) || rxBits < 144U) return false;
   uint8_t decoded[18] = {};
-  for (uint8_t i = 0; i < sizeof(decoded); ++i) {
-    decoded[i] = response[i] ^ crypto1_byte(_crypto, 0, 0);
-    const uint8_t decodedParity = (uint8_t)(filter(_crypto->odd) ^ responsePar[i]);
-    if (decodedParity != _oddParity(decoded[i])) return false;
-  }
-  const uint16_t expectedCrc = _crcA(decoded, 16);
-  const uint16_t gotCrc = (uint16_t)decoded[16] | ((uint16_t)decoded[17] << 8);
-  if (expectedCrc != gotCrc) return false;
-
+  if (mfcUnpackBits(rx, rxBits, decoded, sizeof(decoded)) < 18U) return false;
+  for (uint8_t i = 0; i < 18; ++i) decoded[i] ^= crypto1_byte(_crypto, 0, 0);
+  const uint16_t expected = _hw->rfalCrcCalculateCcitt(0x6363, decoded, 16);
+  const uint16_t got = (uint16_t)decoded[16] | ((uint16_t)decoded[17] << 8);
+  if (expected != got) return false;
   memcpy(data, decoded, 16);
   return true;
 }
@@ -447,6 +542,18 @@ bool ST25R3916Backend::type2Transceive(const uint8_t* tx, size_t txLen,
   return _transceiveBytes(tx, txLen, rx, rxMaxLen, rxLen, timeoutMs);
 }
 
+bool ST25R3916Backend::nfcATransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                                        size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
+  if (!_active || _activeTag.technology != Technology::NFC_A) { rxLen = 0; return false; }
+  return _transceiveBytes(tx, txLen, rx, rxMaxLen, rxLen, timeoutMs);
+}
+
+bool ST25R3916Backend::nfcATransceiveBits(const uint8_t* tx, size_t txBits, uint8_t* rx,
+                                            size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs) {
+  if (!_active || _activeTag.technology != Technology::NFC_A) { rxBits = 0; return false; }
+  return _transceivePacked(tx, txBits, rx, rxMaxBits, rxBits, timeoutMs);
+}
+
 bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
   if (!data) return false;
   const uint8_t cmd[2] = {0x30, startPage};
@@ -456,29 +563,11 @@ bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
 }
 
 bool ST25R3916Backend::type2WritePage(uint8_t page, const uint8_t data[4]) {
-  if (!_active || _activeTag.technology != Technology::NFC_A || !_hw || !data) return false;
-
-  uint8_t cmd[6] = {0xA2, page, data[0], data[1], data[2], data[3]};
-  uint8_t rx[1] = {};
-  uint16_t receivedBits = 0;
-  rfalTransceiveContext ctx;
-  memset(&ctx, 0, sizeof(ctx));
-  ctx.txBuf = cmd;
-  ctx.txBufLen = (uint16_t)(sizeof(cmd) * 8U);
-  ctx.rxBuf = rx;
-  ctx.rxBufLen = 4U;
-  ctx.rxRcvdLen = &receivedBits;
-  ctx.flags = RFAL_TXRX_FLAGS_DEFAULT;
-  ctx.fwt = rfalConvMsTo1fc(20);
-
-  ReturnCode rc = _hw->rfalStartTransceive(&ctx);
-  if (rc != ST_ERR_NONE) return false;
-  do {
-    _hw->rfalWorker();
-    rc = _hw->rfalGetTransceiveStatus();
-  } while (rc == ST_ERR_BUSY);
-
-  return rc == ST_ERR_NONE && receivedBits == 4U && (rx[0] & 0x0FU) == 0x0AU;
+  if (!_active || _activeTag.technology != Technology::NFC_A || !_nfc || !data) return false;
+  // Use RFAL's dedicated Type-2 poller primitive, as Bruce does. It handles
+  // the 4-bit ACK/NAK framing internally; treating WRITE as a normal byte
+  // transceive is unreliable on ST25R3916.
+  return _nfc->rfalT2TPollerWrite(page, const_cast<uint8_t*>(data)) == ST_ERR_NONE;
 }
 
 void ST25R3916Backend::end() {

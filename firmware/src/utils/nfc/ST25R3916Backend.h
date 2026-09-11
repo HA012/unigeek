@@ -65,6 +65,13 @@ public:
   bool type2ReadPages(uint8_t startPage, uint8_t data[16]);
   bool type2WritePage(uint8_t page, const uint8_t data[4]);
 
+  // Raw NFC-A helpers used by ST25-specific diagnostics such as Magic-card
+  // detection. The caller is responsible for framing semantics.
+  bool nfcATransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                      size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
+  bool nfcATransceiveBits(const uint8_t* tx, size_t txBits, uint8_t* rx,
+                          size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 20);
+
   const Info& info() const { return _info; }
   uint16_t lastScanCode() const { return _lastScanCode; }
   Transport transport() const { return _transport; }

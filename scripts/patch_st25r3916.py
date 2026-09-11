@@ -48,11 +48,25 @@ if root.exists():
 
     # Polling makes isISRPending() true on every I2C transaction. Guard the
     # software ISR against recursively re-entering itself while it reads IRQs.
-    patch(
-        "rfal_rfst25r3916.h",
-        r"volatile bool bus_busy;",
-        "volatile bool bus_busy;\\n    volatile bool isr_active;",
+    # Normalize an already-patched header as well, so repeated PlatformIO
+    # builds cannot leave duplicate isr_active declarations behind.
+    header = root / "rfal_rfst25r3916.h"
+    header_text = header.read_text()
+    header_text = re.sub(
+        r"(\s*volatile bool isr_active;){2,}",
+        "\n    volatile bool isr_active;",
+        header_text,
     )
+    if "volatile bool isr_active;" not in header_text:
+        header_text, n = re.subn(
+            r"volatile bool bus_busy;",
+            "volatile bool bus_busy;\n    volatile bool isr_active;",
+            header_text,
+            count=1,
+        )
+        if n != 1:
+            raise RuntimeError(f"ST25R3916 patch: pattern mismatch in {header} (isr_active)")
+    header.write_text(header_text)
     patch(
         "rfal_rfst25r3916.cpp",
         r"bus_busy = false;",
