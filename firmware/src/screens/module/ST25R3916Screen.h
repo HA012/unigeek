@@ -14,6 +14,8 @@ public:
       case STATE_MFC_MENU: return "MIFARE Classic";
       case STATE_MFU_MENU: return "Ultralight / NTAG";
       case STATE_MFU_TAG_MENU: return "Tag Operations";
+      case STATE_MFU_ADVANCED_MENU: return "Advanced";
+      case STATE_MFU_MEMORY: return _advancedOperationTitle.length() ? _advancedOperationTitle.c_str() : "Read Memory";
       case STATE_MFU_READING: return "Read Tag";
       case STATE_MFU_DETAILS: return "Tag Details";
       case STATE_MFU_DUMP_HEX: return "Memory Dump";
@@ -29,6 +31,12 @@ public:
       case STATE_MFU_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
+      case STATE_MFC_ATTACKS_MENU: return "Attacks";
+      case STATE_MFC_KEYS_MENU: return "Keys";
+      case STATE_MFC_KEYS_VIEW: return "Check Known Keys";
+      case STATE_MFC_DICT_SELECT: return "Dictionaries";
+      case STATE_MFC_DICT_VIEW: return _dictViewTitle.length() ? _dictViewTitle.c_str() : "Dictionary";
+      case STATE_MAGIC_DETECT: return "Detect Magic";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
       case STATE_MFC_NDEF_FILE_SELECT: return "NDEF Files";
       case STATE_MFC_NDEF_READING: return "Read NDEF";
@@ -57,6 +65,13 @@ private:
     STATE_MFC_MENU,
     STATE_MFC_TAG_MENU,
     STATE_MFC_NDEF_MENU,
+    STATE_MFC_ATTACKS_MENU,
+    STATE_MFC_KEYS_MENU,
+    STATE_MFC_KEYS_VIEW,
+    STATE_MFC_DICT_SELECT,
+    STATE_MFC_DICT_VIEW,
+    STATE_MFC_DICT_ATTACK_SELECT,
+    STATE_MAGIC_DETECT,
     STATE_MFC_NDEF_WRITE_MENU,
     STATE_MFC_NDEF_FILE_SELECT,
     STATE_MFC_NDEF_READING,
@@ -71,6 +86,8 @@ private:
     STATE_MFC_ERASING,
     STATE_MFU_MENU,
     STATE_MFU_TAG_MENU,
+    STATE_MFU_ADVANCED_MENU,
+    STATE_MFU_MEMORY,
     STATE_MFU_READING,
     STATE_MFU_DETAILS,
     STATE_MFU_DUMP_HEX,
@@ -89,16 +106,28 @@ private:
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
 
-  ListItem _items[5] = {
+  ListItem _items[6] = {
     {"Scan Tag", "Auto I2C / SPI"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
+    {"Detect Magic"},
     {"Device Info (I2C)", "Grove / U216"},
     {"Device Info (SPI)", "Cap / shared SPI"},
   };
-  ListItem _mfcItems[2] = {
+  ListItem _mfcItems[4] = {
     {"Tag Operations"},
     {"NDEF Operations"},
+    {"Attacks"},
+    {"Keys"},
+  };
+  ListItem _mfcAttackItems[3] = {
+    {"Dictionary Attack"},
+    {"Static Nested"},
+    {"Nested Attack"},
+  };
+  ListItem _mfcKeysItems[2] = {
+    {"Check Known Keys"},
+    {"Dictionaries"},
   };
   ListItem _mfcTagItems[3] = {
     {"Read Tag"},
@@ -115,19 +144,27 @@ private:
     {"Tag Operations"},
     {"NDEF Operations"},
   };
-  ListItem _mfuNdefItems[3] = {
-    {"Read NDEF"}, {"Write NDEF"}, {"Erase NDEF"},
+  ListItem _mfuNdefItems[4] = {
+    {"Read NDEF"}, {"Write NDEF"}, {"Erase NDEF"}, {"Format NDEF"},
   };
-  ListItem _mfuTagItems[3] = {
+  ListItem _mfuTagItems[4] = {
     {"Read Tag"},
     {"Write to Tag"},
     {"Erase Tag"},
+    {"Advanced"},
+  };
+  ListItem _mfuAdvancedItems[5] = {
+    {"Read Memory"},
+    {"Edit Memory"},
+    {"Set Password"},
+    {"Remove Password"},
+    {"Lock Tag"},
   };
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
   };
 
-  static constexpr uint8_t kMaxRows = 48;
+  static constexpr uint8_t kMaxRows = 96;
   ScrollListView _scrollView;
   ScrollListView::Row _rows[kMaxRows];
   String _rowLabels[kMaxRows];
@@ -152,6 +189,7 @@ private:
   uint8_t _mfuSak = 0;
   uint16_t _mfuDumpOffset = 0;
   String _mfuType;
+  String _advancedOperationTitle;
   bool _writePreviewFromFile = false;
   bool _mfuWritePreviewFromFile = false;
   bool _mfcDumpFromCompleteRead = false;
@@ -168,6 +206,9 @@ private:
   BrowseFileView _browser;
   String _dumpPickDir;
   String _ndefPickDir;
+  String _dictPickDir;
+  String _dictViewTitle;
+  static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
   void _scan(uint16_t techMask);
   void _readMfcTag();
@@ -187,8 +228,22 @@ private:
   void _showMfcTagMenu();
   void _showMfcNdefMenu();
   void _showMfcNdefWriteMenu();
+  void _showMfcAttacksMenu();
+  void _showMfcKeysMenu();
+  void _showMfcKnownKeys();
+  void _openMfcDictionaries(bool attackMode = false);
+  void _openMfcDictionary(uint8_t index, bool attackMode = false);
+  void _runMfcDictionaryAttack(const String& path);
+  void _detectMagic();
   void _showMfuMenu();
   void _showMfuTagMenu();
+  void _showMfuAdvancedMenu();
+  void _readMfuMemory();
+  void _editMfuMemory();
+  void _setMfuPassword();
+  void _removeMfuPassword();
+  void _lockMfuTag();
+  void _formatMfuNdef();
   void _showMfuNdefMenu();
   void _showMfuNdefWriteMenu();
   void _readMfuNdef();
