@@ -22,6 +22,16 @@ uint8_t getPackedBit(const uint8_t* buf, size_t bit) {
   return (uint8_t)((buf[bit >> 3] >> (bit & 7U)) & 1U);
 }
 
+uint16_t appendPackedBits(uint8_t* dst, uint16_t dstBits, uint16_t dstCapacityBits,
+                          const uint8_t* src, uint16_t srcBits) {
+  if (!dst || !src || dstBits >= dstCapacityBits) return dstBits;
+  const uint16_t room = (uint16_t)(dstCapacityBits - dstBits);
+  const uint16_t copyBits = srcBits < room ? srcBits : room;
+  for (uint16_t i = 0; i < copyBits; ++i)
+    setPackedBit(dst, (size_t)dstBits + i, getPackedBit(src, i));
+  return (uint16_t)(dstBits + copyBits);
+}
+
 uint16_t mfcPackBits(const uint8_t* data, const uint8_t* parity, size_t count, uint8_t* out) {
   uint16_t bit = 0;
   for (size_t i = 0; i < count; ++i) {
@@ -570,7 +580,395 @@ bool ST25R3916Backend::type2WritePage(uint8_t page, const uint8_t data[4]) {
   return _nfc->rfalT2TPollerWrite(page, const_cast<uint8_t*>(data)) == ST_ERR_NONE;
 }
 
+
+bool ST25R3916Backend::_startNfcaListen(const ScanResult& identity) {
+  if (!_hw || !_nfc || !_info.initialized ||
+      (identity.nfcidLen != 4 && identity.nfcidLen != 7)) return false;
+
+  deactivate();
+  if (_hw->rfalSetMode(RFAL_MODE_LISTEN_NFCA, RFAL_BR_106, RFAL_BR_106) != ST_ERR_NONE) return false;
+  _hw->st25r3916OscOn();
+  _hw->st25r3916WriteRegister(
+      ST25R3916_REG_OP_CONTROL,
+      ST25R3916_REG_OP_CONTROL_en | ST25R3916_REG_OP_CONTROL_rx_en |
+          ST25R3916_REG_OP_CONTROL_en_fd_auto_efd);
+  // Match the proven Bruce/Flipper passive-target register sequence.
+  // Using om_targ_nfca here lets the ST25R3916 complete NFC-A anticollision,
+  // but on MIFARE Classic it may keep post-SELECT frames (AUTH/READ) out of
+  // the FIFO. om0 is the target-mode setting used by Bruce on this RFAL fork.
+  _hw->st25r3916WriteRegister(
+      ST25R3916_REG_MODE, ST25R3916_REG_MODE_targ_targ | ST25R3916_REG_MODE_om0);
+  _hw->st25r3916WriteRegister(
+      ST25R3916_REG_PASSIVE_TARGET,
+      ST25R3916_REG_PASSIVE_TARGET_fdel_2 | ST25R3916_REG_PASSIVE_TARGET_fdel_0 |
+          ST25R3916_REG_PASSIVE_TARGET_d_ac_ap2p | ST25R3916_REG_PASSIVE_TARGET_d_212_424_1r);
+  _hw->st25r3916WriteRegister(ST25R3916_REG_MASK_RX_TIMER, 0x02);
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+
+  const uint32_t interrupts = ST25R3916_IRQ_MASK_FWL | ST25R3916_IRQ_MASK_TXE |
+      ST25R3916_IRQ_MASK_RXS | ST25R3916_IRQ_MASK_RXE | ST25R3916_IRQ_MASK_PAR |
+      ST25R3916_IRQ_MASK_CRC | ST25R3916_IRQ_MASK_ERR1 | ST25R3916_IRQ_MASK_ERR2 |
+      ST25R3916_IRQ_MASK_NRE | ST25R3916_IRQ_MASK_EON | ST25R3916_IRQ_MASK_EOF |
+      ST25R3916_IRQ_MASK_WU_A_X | ST25R3916_IRQ_MASK_WU_A;
+  _hw->st25r3916ClearInterrupts();
+  _hw->st25r3916DisableInterrupts(ST25R3916_IRQ_MASK_ALL);
+  _hw->st25r3916EnableInterrupts(interrupts);
+
+  _hw->st25r3916ChangeRegisterBits(
+      ST25R3916_REG_AUX, ST25R3916_REG_AUX_nfc_id_mask,
+      identity.nfcidLen == 4 ? ST25R3916_REG_AUX_nfc_id_4bytes : ST25R3916_REG_AUX_nfc_id_7bytes);
+
+  uint8_t pt[ST25R3916_PTM_A_LEN] = {};
+  memcpy(pt, identity.nfcid, identity.nfcidLen);
+  pt[10] = identity.atqa[0];
+  pt[11] = identity.atqa[1];
+  pt[12] = identity.nfcidLen == 4 ? (uint8_t)(identity.sak & ~0x04U) : 0x04;
+  pt[13] = (uint8_t)(identity.sak & ~0x04U);
+  pt[14] = (uint8_t)(identity.sak & ~0x04U);
+  if (_hw->st25r3916WritePTMem(pt, sizeof(pt)) != ST_ERR_NONE) return false;
+
+  _hw->st25r3916ClrRegisterBits(
+      ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+  return true;
+}
+
+bool ST25R3916Backend::_listenRespond(const uint8_t* data, uint16_t len, bool withCrc) {
+  if (!_hw || !data || !len) return false;
+  _hw->st25r3916ChangeRegisterBits(
+      ST25R3916_REG_ISO14443A_NFC, ST25R3916_REG_ISO14443A_NFC_no_tx_par,
+      ST25R3916_REG_ISO14443A_NFC_no_tx_par_off);
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
+  _hw->st25r3916WriteFifo(data, len);
+  _hw->st25r3916SetNumTxBits((uint16_t)(len * 8U));
+  _hw->st25r3916ExecuteCommand(withCrc ? ST25R3916_CMD_TRANSMIT_WITH_CRC
+                                      : ST25R3916_CMD_TRANSMIT_WITHOUT_CRC);
+  return (_hw->st25r3916WaitForInterruptsTimed(ST25R3916_IRQ_MASK_TXE, 20) &
+          ST25R3916_IRQ_MASK_TXE) != 0U;
+}
+
+bool ST25R3916Backend::_listenRespondBits(const uint8_t* packed, uint16_t bits) {
+  if (!_hw || !packed || !bits) return false;
+  _hw->st25r3916ChangeRegisterBits(
+      ST25R3916_REG_ISO14443A_NFC, ST25R3916_REG_ISO14443A_NFC_no_tx_par,
+      ST25R3916_REG_ISO14443A_NFC_no_tx_par);
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
+  _hw->st25r3916WriteFifo(packed, (uint16_t)((bits + 7U) / 8U));
+  _hw->st25r3916SetNumTxBits(bits);
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITHOUT_CRC);
+  return (_hw->st25r3916WaitForInterruptsTimed(ST25R3916_IRQ_MASK_TXE, 20) &
+          ST25R3916_IRQ_MASK_TXE) != 0U;
+}
+
+uint16_t ST25R3916Backend::_listenRxRaw(uint8_t* out, uint8_t maxBytes, uint32_t timeoutMs) {
+  if (!_hw || !out || !maxBytes) return 0;
+  _hw->st25r3916ChangeRegisterBits(
+      ST25R3916_REG_ISO14443A_NFC, ST25R3916_REG_ISO14443A_NFC_no_rx_par,
+      ST25R3916_REG_ISO14443A_NFC_no_rx_par);
+  const uint32_t irqs = _hw->st25r3916WaitForInterruptsTimed(
+      ST25R3916_IRQ_MASK_RXE | ST25R3916_IRQ_MASK_EOF, timeoutMs);
+  if ((irqs & ST25R3916_IRQ_MASK_RXE) == 0U) return 0;
+  const uint16_t bytes = _hw->st25r3916GetNumFIFOBytes();
+  if (!bytes || bytes > maxBytes) return 0;
+  uint8_t st2 = 0;
+  _hw->st25r3916ReadRegister(ST25R3916_REG_FIFO_STATUS2, &st2);
+  const uint8_t inc = (uint8_t)((st2 & ST25R3916_REG_FIFO_STATUS2_fifo_lb_mask) >>
+                                ST25R3916_REG_FIFO_STATUS2_fifo_lb_shift);
+  _hw->st25r3916ReadFifo(out, bytes);
+  return (uint16_t)(inc ? ((bytes - 1U) * 8U + inc) : bytes * 8U);
+}
+
+void ST25R3916Backend::_listenRestoreParity() {
+  if (!_hw) return;
+  _hw->st25r3916ChangeRegisterBits(
+      ST25R3916_REG_ISO14443A_NFC,
+      ST25R3916_REG_ISO14443A_NFC_no_tx_par | ST25R3916_REG_ISO14443A_NFC_no_rx_par,
+      ST25R3916_REG_ISO14443A_NFC_no_tx_par_off | ST25R3916_REG_ISO14443A_NFC_no_rx_par_off);
+}
+
+bool ST25R3916Backend::startType2Emulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen) {
+  if (!dump || dumpLen < 16 || (dumpLen & 3U)) return false;
+  stopEmulation();
+  _emuIdentity = identity;
+  _emuIdentity.sak = 0x00;
+  if (_emuIdentity.atqa[0] == 0 && _emuIdentity.atqa[1] == 0) _emuIdentity.atqa[1] = 0x44;
+  _emuDump = dump;
+  _emuDumpLen = dumpLen;
+  _emuMfc = false;
+  _emulating = _startNfcaListen(_emuIdentity);
+  return _emulating;
+}
+
+bool ST25R3916Backend::startMfcEmulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen) {
+  if (!dump || (dumpLen != 320 && dumpLen != 1024 && dumpLen != 4096) || identity.nfcidLen < 4) return false;
+  stopEmulation();
+  _emuIdentity = identity;
+  if (_emuIdentity.sak != 0x09 && _emuIdentity.sak != 0x08 && _emuIdentity.sak != 0x18)
+    _emuIdentity.sak = dumpLen == 4096 ? 0x18 : 0x08;
+  if (_emuIdentity.atqa[0] == 0 && _emuIdentity.atqa[1] == 0) _emuIdentity.atqa[0] = 0x04;
+  _emuDump = dump;
+  _emuDumpLen = dumpLen;
+  _emuMfc = true;
+  _emuMfcAuthed = false;
+  _emuMfcPendingWrite = -1;
+  _emuStats = {};
+  _emulating = _startNfcaListen(_emuIdentity);
+  return _emulating;
+}
+
+bool ST25R3916Backend::_handleMfcAuth(const uint8_t* frame, uint16_t len) {
+  if (!_hw || !_emuDump || len < 2 || (frame[0] != 0x60 && frame[0] != 0x61)) return false;
+  ++_emuStats.authReq;
+  const uint8_t block = frame[1];
+  const size_t blocks = _emuDumpLen / 16U;
+  if (block >= blocks) return false;
+  const uint8_t sector = block < 128 ? block / 4U : (uint8_t)(32U + (block - 128U) / 16U);
+  const uint16_t first = sector < 32 ? (uint16_t)sector * 4U : (uint16_t)(128U + (sector - 32U) * 16U);
+  const uint8_t count = sector < 32 ? 4 : 16;
+  const uint16_t trailer = (uint16_t)(first + count - 1U);
+  if (trailer >= blocks) return false;
+  const uint8_t* t = _emuDump + (size_t)trailer * 16U;
+  const uint8_t* key = frame[0] == 0x60 ? t : t + 10;
+  uint64_t k = 0;
+  for (uint8_t i = 0; i < 6; ++i) k = (k << 8) | key[i];
+
+  const uint32_t nt = esp_random();
+  const uint8_t ntBytes[4] = {(uint8_t)(nt >> 24), (uint8_t)(nt >> 16), (uint8_t)(nt >> 8), (uint8_t)nt};
+  if (!_listenRespond(ntBytes, 4, false)) return false;
+
+  if (_emuCrypto) crypto1_destroy(_emuCrypto);
+  _emuCrypto = crypto1_create(k);
+  if (!_emuCrypto) return false;
+  crypto1_word(_emuCrypto, _uid32(_emuIdentity) ^ nt, 0);
+
+  uint8_t raw[16] = {};
+  uint16_t bits = _listenRxRaw(raw, sizeof(raw), 35);
+  _emuStats.lastNrFirstBits = bits;
+  _emuStats.lastNrTailBits = 0;
+  _emuStats.lastNrBytes = 0;
+
+  // Nr||Ar is exactly 8 encrypted bytes plus one parity bit per byte: 72 bits.
+  // Do not concatenate an arbitrary later RXE frame: only complete the current
+  // authentication response and reject anything that still is not exactly 72 bits.
+  if (bits > 0 && bits < 72) {
+    uint8_t tail[16] = {};
+    const uint16_t tailBits = _listenRxRaw(tail, sizeof(tail), 20);
+    _emuStats.lastNrTailBits = tailBits;
+    if (tailBits && (uint32_t)bits + tailBits <= 72U)
+      bits = appendPackedBits(raw, bits, 72, tail, tailBits);
+  }
+
+  _emuStats.lastNrBits = bits;
+  if (bits != 72) {
+    ++_emuStats.noNr;
+    crypto1_destroy(_emuCrypto); _emuCrypto = nullptr; _listenRestoreParity(); return false;
+  }
+  uint8_t enc[8] = {};
+  const uint8_t nrBytes = mfcUnpackBits(raw, bits, enc, sizeof(enc));
+  _emuStats.lastNrBytes = nrBytes;
+  if (nrBytes != 8) {
+    ++_emuStats.nrUnpackFail;
+    crypto1_destroy(_emuCrypto); _emuCrypto = nullptr; _listenRestoreParity(); return false;
+  }
+  // Match Bruce/Flipper listener-side Crypto1 exactly: Nr is fed as
+  // encrypted input, then Ar is recovered from the following keystream.
+  for (uint8_t i = 0; i < 4; ++i) crypto1_byte(_emuCrypto, enc[i], 1);
+  uint32_t ar = 0;
+  for (uint8_t i = 0; i < 4; ++i)
+    ar = (ar << 8) | (uint8_t)(crypto1_byte(_emuCrypto, 0, 0) ^ enc[4 + i]);
+  if (ar != prng_successor(nt, 64)) {
+    ++_emuStats.badAr;
+    crypto1_destroy(_emuCrypto); _emuCrypto = nullptr; _listenRestoreParity(); return false;
+  }
+
+  const uint32_t at = prng_successor(nt, 96);
+  uint8_t atEnc[4] = {}, atPar[4] = {}, packed[8] = {};
+  for (uint8_t i = 0; i < 4; ++i) {
+    const uint8_t b = (uint8_t)(at >> (24U - 8U * i));
+    atEnc[i] = (uint8_t)(crypto1_byte(_emuCrypto, 0, 0) ^ b);
+    atPar[i] = (uint8_t)(filter(_emuCrypto->odd) ^ _oddParity(b));
+  }
+  _listenRespondBits(packed, mfcPackBits(atEnc, atPar, 4, packed));
+  _emuMfcAuthed = true;
+  ++_emuStats.authOk;
+  _emuMfcPendingWrite = -1;
+
+  // Bruce keeps the complete encrypted MFC session in the same tight path
+  // after AUTH. Do the same here: returning to the screen/UI loop between
+  // AT and the first encrypted READ is too slow for many readers.
+  while (_emuMfcAuthed) {
+    vTaskDelay(pdMS_TO_TICKS(1));
+    if (!_handleMfcEncrypted()) break;
+  }
+  _emuMfcAuthed = false;
+  _emuMfcPendingWrite = -1;
+  if (_emuCrypto) {
+    crypto1_destroy(_emuCrypto);
+    _emuCrypto = nullptr;
+  }
+  _listenRestoreParity();
+  return true;
+}
+
+bool ST25R3916Backend::_handleMfcEncrypted() {
+  if (!_emuCrypto || !_emuMfcAuthed) return false;
+  uint8_t raw[40] = {};
+  const uint16_t bits = _listenRxRaw(raw, sizeof(raw), 40);
+  if (bits < 8) return false;
+  uint8_t dec[34] = {};
+  const uint8_t cnt = mfcUnpackBits(raw, bits, dec, sizeof(dec));
+  for (uint8_t i = 0; i < cnt; ++i)
+    dec[i] ^= crypto1_byte(_emuCrypto, 0, 0);
+
+  auto sendAck = [&]() {
+    uint8_t ack = 0;
+    for (uint8_t i = 0; i < 4; ++i)
+      ack |= (uint8_t)((crypto1_bit(_emuCrypto, 0, 0) ^ ((0x0A >> i) & 1U)) << i);
+    _listenRespondBits(&ack, 4);
+  };
+
+  if (_emuMfcPendingWrite >= 0) {
+    if (cnt >= 16 && (size_t)_emuMfcPendingWrite * 16U + 16U <= _emuDumpLen)
+      memcpy(_emuDump + (size_t)_emuMfcPendingWrite * 16U, dec, 16);
+    _emuMfcPendingWrite = -1;
+    sendAck();
+    return true;
+  }
+
+  if (cnt < 2) return false;
+  if (dec[0] == 0x30) {
+    ++_emuStats.reads;
+    const uint8_t block = dec[1];
+    uint8_t plain[18] = {};
+    if ((size_t)block * 16U + 16U <= _emuDumpLen) memcpy(plain, _emuDump + (size_t)block * 16U, 16);
+    const uint16_t crc = _crcA(plain, 16);
+    plain[16] = (uint8_t)(crc & 0xFFU); plain[17] = (uint8_t)(crc >> 8);
+    uint8_t enc[18] = {}, par[18] = {}, packed[24] = {};
+    for (uint8_t i = 0; i < 18; ++i) {
+      enc[i] = (uint8_t)(crypto1_byte(_emuCrypto, 0, 0) ^ plain[i]);
+      par[i] = (uint8_t)(filter(_emuCrypto->odd) ^ _oddParity(plain[i]));
+    }
+    _listenRespondBits(packed, mfcPackBits(enc, par, 18, packed));
+    return true;
+  }
+  if (dec[0] == 0xA0) {
+    ++_emuStats.writes;
+    _emuMfcPendingWrite = dec[1];
+    sendAck();
+    return true;
+  }
+  if (dec[0] == 0x50) return false;
+  return false;
+}
+
+bool ST25R3916Backend::emulationWorker() {
+  if (!_emulating || !_hw) return false;
+
+  // MFC encrypted sessions are handled synchronously inside _handleMfcAuth(),
+  // matching Bruce's listener implementation and its timing requirements.
+
+  const uint32_t irqs = _hw->st25r3916WaitForInterruptsTimed(
+      ST25R3916_IRQ_MASK_WU_A | ST25R3916_IRQ_MASK_WU_A_X |
+          ST25R3916_IRQ_MASK_RXE | ST25R3916_IRQ_MASK_EOF, 3);
+  if (!irqs) return true;
+
+  ++_emuStats.irqEvents;
+  _emuStats.lastIrqs = irqs;
+  if (irqs & (ST25R3916_IRQ_MASK_WU_A | ST25R3916_IRQ_MASK_WU_A_X)) {
+    ++_emuStats.wakeEvents;
+    _hw->st25r3916SetRegisterBits(
+        ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+  }
+
+  if (irqs & ST25R3916_IRQ_MASK_RXE) {
+    ++_emuStats.rxeEvents;
+    const uint16_t n = _hw->st25r3916GetNumFIFOBytes();
+    _emuStats.lastFifoLen = n;
+    uint8_t frame[64] = {};
+    if (n && n <= sizeof(frame)) {
+      _hw->st25r3916ReadFifo(frame, n);
+      ++_emuStats.fifoFrames;
+      _emuStats.lastCmd = frame[0];
+      if (_emuMfc) {
+        _handleMfcAuth(frame, n);
+      } else {
+        const size_t pages = _emuDumpLen / 4U;
+        const uint8_t cmd = frame[0];
+        if (cmd == 0x30 && n >= 2) {
+          uint8_t resp[16] = {};
+          for (uint8_t i = 0; i < 4; ++i) {
+            const size_t p = pages ? ((size_t)frame[1] + i) % pages : 0;
+            memcpy(resp + i * 4U, _emuDump + p * 4U, 4);
+          }
+          _listenRespond(resp, sizeof(resp));
+        } else if (cmd == 0x3A && n >= 3 && frame[2] >= frame[1]) {
+          const uint16_t count = (uint16_t)frame[2] - frame[1] + 1U;
+          if (count <= 64) {
+            uint8_t resp[256] = {}; uint16_t out = 0;
+            for (uint16_t p = frame[1]; p <= frame[2]; ++p) {
+              const size_t pp = pages ? p % pages : 0;
+              memcpy(resp + out, _emuDump + pp * 4U, 4); out += 4;
+            }
+            _listenRespond(resp, out);
+          }
+        } else if (cmd == 0x60) {
+          uint8_t storage = pages <= 45 ? 0x0F : (pages <= 135 ? 0x11 : 0x13);
+          const uint8_t ver[8] = {0x00,0x04,0x04,0x02,0x01,0x00,storage,0x03};
+          _listenRespond(ver, sizeof(ver));
+        } else if (cmd == 0x1B && n >= 5) {
+          const uint8_t pack[2] = {0x00, 0x00};
+          _listenRespond(pack, sizeof(pack));
+        } else if (cmd == 0x3C) {
+          const uint8_t sig[32] = {};
+          _listenRespond(sig, sizeof(sig));
+        } else if (cmd == 0xA2 && n >= 6) {
+          const size_t p = frame[1];
+          if (p < pages) memcpy(_emuDump + p * 4U, frame + 2, 4);
+          uint8_t ack = 0x0A;
+          _hw->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
+          _hw->st25r3916WriteFifo(&ack, 1);
+          _hw->st25r3916SetNumTxBits(4);
+          _hw->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITHOUT_CRC);
+        } else if (cmd == 0x50) {
+          _hw->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SLEEP);
+        }
+      }
+    }
+  }
+
+  if (irqs & ST25R3916_IRQ_MASK_EOF) {
+    ++_emuStats.eofEvents;
+    if (_emuCrypto) { crypto1_destroy(_emuCrypto); _emuCrypto = nullptr; }
+    _emuMfcAuthed = false;
+    _emuMfcPendingWrite = -1;
+    _listenRestoreParity();
+    _hw->st25r3916ClrRegisterBits(
+        ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    _hw->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+  }
+  return true;
+}
+
+void ST25R3916Backend::stopEmulation() {
+  const bool wasEmulating = _emulating || (_emuCrypto != nullptr);
+  if (_emuCrypto) { crypto1_destroy(_emuCrypto); _emuCrypto = nullptr; }
+  _emuMfcAuthed = false;
+  _emuMfcPendingWrite = -1;
+  _emulating = false;
+  _emuMfc = false;
+  _emuDump = nullptr;
+  _emuDumpLen = 0;
+  if (!_hw || !wasEmulating) return;
+  _listenRestoreParity();
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+  _hw->st25r3916DisableInterrupts(ST25R3916_IRQ_MASK_ALL);
+  _hw->st25r3916ClearInterrupts();
+  _hw->rfalSetMode(RFAL_MODE_POLL_NFCA, RFAL_BR_106, RFAL_BR_106);
+  _hw->rfalFieldOff();
+}
+
 void ST25R3916Backend::end() {
+  stopEmulation();
   if (_crypto) {
     crypto1_destroy(_crypto);
     _crypto = nullptr;
