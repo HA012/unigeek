@@ -65,6 +65,36 @@ public:
   bool type2ReadPages(uint8_t startPage, uint8_t data[16]);
   bool type2WritePage(uint8_t page, const uint8_t data[4]);
 
+  // NFC-A passive-target emulation. The dump buffer remains owned by the
+  // caller and must stay valid while emulation is active.
+  bool startType2Emulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen);
+  bool startMfcEmulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen);
+  bool emulationWorker();
+  void stopEmulation();
+  bool emulationActive() const { return _emulating; }
+  struct MfcEmulationStats {
+    uint32_t authReq = 0;
+    uint32_t authOk = 0;
+    uint32_t badAr = 0;
+    uint32_t noNr = 0;
+    uint32_t reads = 0;
+    uint32_t writes = 0;
+    uint16_t lastNrBits = 0;
+    uint16_t lastNrFirstBits = 0;
+    uint16_t lastNrTailBits = 0;
+    uint8_t lastNrBytes = 0;
+    uint32_t nrUnpackFail = 0;
+    uint32_t irqEvents = 0;
+    uint32_t wakeEvents = 0;
+    uint32_t rxeEvents = 0;
+    uint32_t eofEvents = 0;
+    uint32_t fifoFrames = 0;
+    uint32_t lastIrqs = 0;
+    uint16_t lastFifoLen = 0;
+    uint8_t lastCmd = 0;
+  };
+  const MfcEmulationStats& mfcEmulationStats() const { return _emuStats; }
+
   // Raw NFC-A helpers used by ST25-specific diagnostics such as Magic-card
   // detection. The caller is responsible for framing semantics.
   bool nfcATransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
@@ -100,6 +130,24 @@ private:
   ScanResult _activeTag;
   bool _active = false;
   Crypto1State* _crypto = nullptr;
+
+  bool _startNfcaListen(const ScanResult& identity);
+  bool _listenRespond(const uint8_t* data, uint16_t len, bool withCrc = true);
+  bool _listenRespondBits(const uint8_t* packed, uint16_t bits);
+  uint16_t _listenRxRaw(uint8_t* out, uint8_t maxBytes, uint32_t timeoutMs);
+  void _listenRestoreParity();
+  bool _handleMfcAuth(const uint8_t* frame, uint16_t len);
+  bool _handleMfcEncrypted();
+
+  bool _emulating = false;
+  bool _emuMfc = false;
+  bool _emuMfcAuthed = false;
+  int16_t _emuMfcPendingWrite = -1;
+  uint8_t* _emuDump = nullptr;
+  size_t _emuDumpLen = 0;
+  ScanResult _emuIdentity;
+  Crypto1State* _emuCrypto = nullptr;
+  MfcEmulationStats _emuStats;
 };
 
 #endif

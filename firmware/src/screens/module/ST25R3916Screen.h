@@ -4,6 +4,8 @@
 #include "ui/views/ScrollListView.h"
 #include "ui/views/BrowseFileView.h"
 
+class ST25R3916Backend;
+
 class ST25R3916Screen : public ListScreen {
 public:
   const char* title() override {
@@ -29,12 +31,14 @@ public:
       case STATE_MFU_NDEF_READING: return "Read NDEF";
       case STATE_MFU_NDEF_WRITING: return "Write NDEF";
       case STATE_MFU_NDEF_DETAILS: return "NDEF Details";
+      case STATE_EMULATING: return "Emulate Tag";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_ATTACKS_MENU: return "Attacks";
       case STATE_MFC_KEYS_MENU: return "Keys";
       case STATE_MFC_KEYS_VIEW: return "Check Known Keys";
       case STATE_MFC_DICT_SELECT: return "Dictionaries";
+      case STATE_MFC_DICT_ATTACK_SELECT: return "Dictionary Attack";
       case STATE_MFC_DICT_VIEW: return _dictViewTitle.length() ? _dictViewTitle.c_str() : "Dictionary";
       case STATE_MAGIC_DETECT: return "Detect Magic";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
@@ -101,10 +105,15 @@ private:
     STATE_MFU_NDEF_READING,
     STATE_MFU_NDEF_WRITING,
     STATE_MFU_NDEF_DETAILS,
+    STATE_EMULATING,
   };
 
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
+  // Preserve the cursor when returning from child screens/operations.
+  uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcNdef = 0;
+  uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
+  uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0;
 
   ListItem _items[6] = {
     {"Scan Tag", "Auto I2C / SPI"},
@@ -129,9 +138,10 @@ private:
     {"Check Known Keys"},
     {"Dictionaries"},
   };
-  ListItem _mfcTagItems[3] = {
+  ListItem _mfcTagItems[4] = {
     {"Read Tag"},
     {"Write to Tag"},
+    {"Emulate Tag"},
     {"Erase Tag"},
   };
   ListItem _mfcNdefItems[4] = {
@@ -147,9 +157,10 @@ private:
   ListItem _mfuNdefItems[4] = {
     {"Read NDEF"}, {"Write NDEF"}, {"Erase NDEF"}, {"Format NDEF"},
   };
-  ListItem _mfuTagItems[4] = {
+  ListItem _mfuTagItems[5] = {
     {"Read Tag"},
     {"Write to Tag"},
+    {"Emulate Tag"},
     {"Erase Tag"},
     {"Advanced"},
   };
@@ -180,6 +191,7 @@ private:
   uint8_t _mfcUid[10] = {};
   uint8_t _mfcUidLen = 0;
   uint8_t _mfcSak = 0;
+  uint8_t _mfcAtqa[2] = {};
   uint8_t _mfuDump[kMfuMaxDumpLen] = {};
   size_t _mfuDumpLen = 0;
   uint16_t _mfuPages = 0;
@@ -208,10 +220,16 @@ private:
   String _ndefPickDir;
   String _dictPickDir;
   String _dictViewTitle;
+  ST25R3916Backend* _emuDev = nullptr;
+  bool _emuReturnMfc = false;
+  uint32_t _emuDiagLastRefresh = 0;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
   void _scan(uint16_t techMask);
   void _readMfcTag();
+  void _emulateMfcTag();
+  void _emulateMfuTag();
+  void _stopEmulation();
   void _showMfcDumpActions();
   void _openMfcDumpPicker();
   void _openMfcDumpFile(uint8_t index);
