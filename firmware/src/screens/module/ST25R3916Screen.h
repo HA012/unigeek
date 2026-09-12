@@ -41,6 +41,7 @@ public:
       case STATE_MFC_DICT_ATTACK_SELECT: return "Dictionary Attack";
       case STATE_MFC_DICT_VIEW: return _dictViewTitle.length() ? _dictViewTitle.c_str() : "Dictionary";
       case STATE_MAGIC_DETECT: return "Detect Magic";
+      case STATE_DEVICE_INFO: return "Device Info";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
       case STATE_MFC_NDEF_FILE_SELECT: return "NDEF Files";
       case STATE_MFC_NDEF_READING: return "Read NDEF";
@@ -76,6 +77,7 @@ private:
     STATE_MFC_DICT_VIEW,
     STATE_MFC_DICT_ATTACK_SELECT,
     STATE_MAGIC_DETECT,
+    STATE_DEVICE_INFO,
     STATE_MFC_NDEF_WRITE_MENU,
     STATE_MFC_NDEF_FILE_SELECT,
     STATE_MFC_NDEF_READING,
@@ -115,13 +117,12 @@ private:
   uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
   uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0;
 
-  ListItem _items[6] = {
-    {"Scan Tag", "Auto I2C / SPI"},
+  ListItem _items[5] = {
+    {"Scan Tag"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"Detect Magic"},
-    {"Device Info (I2C)", "Grove / U216"},
-    {"Device Info (SPI)", "Cap / shared SPI"},
+    {"Device Info"},
   };
   ListItem _mfcItems[4] = {
     {"Tag Operations"},
@@ -141,21 +142,21 @@ private:
   ListItem _mfcTagItems[4] = {
     {"Read Tag"},
     {"Write to Tag"},
-    {"Emulate Tag"},
     {"Erase Tag"},
+    {"Emulate UID"},
   };
   ListItem _mfcNdefItems[4] = {
     {"Read NDEF"},
     {"Write NDEF"},
-    {"Erase NDEF"},
     {"Format NDEF"},
+    {"Erase NDEF"},
   };
   ListItem _mfuItems[2] = {
     {"Tag Operations"},
     {"NDEF Operations"},
   };
   ListItem _mfuNdefItems[4] = {
-    {"Read NDEF"}, {"Write NDEF"}, {"Erase NDEF"}, {"Format NDEF"},
+    {"Read NDEF"}, {"Write NDEF"}, {"Format NDEF"}, {"Erase NDEF"},
   };
   ListItem _mfuTagItems[5] = {
     {"Read Tag"},
@@ -222,7 +223,6 @@ private:
   String _dictViewTitle;
   ST25R3916Backend* _emuDev = nullptr;
   bool _emuReturnMfc = false;
-  uint32_t _emuDiagLastRefresh = 0;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
   void _scan(uint16_t techMask);
@@ -239,8 +239,7 @@ private:
   void _saveMfcDump();
   void _renderMfcDump();
   void _handleMfcDumpNav(INavigation::Direction dir);
-  void _showI2CInfo();
-  void _showSPIInfo();
+  void _showDeviceInfo();
   void _showMenu();
   void _showMfcMenu();
   void _showMfcTagMenu();
