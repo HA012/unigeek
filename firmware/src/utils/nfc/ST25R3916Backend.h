@@ -64,36 +64,20 @@ public:
                        size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
   bool type2ReadPages(uint8_t startPage, uint8_t data[16]);
   bool type2WritePage(uint8_t page, const uint8_t data[4]);
+  bool type2PwdAuth(const uint8_t pwd[4], uint8_t pack[2] = nullptr);
+  uint16_t lastPwdAuthCode() const { return _lastPwdAuthCode; }
+  uint16_t lastPwdAuthBits() const { return _lastPwdAuthBits; }
 
   // NFC-A passive-target emulation. The dump buffer remains owned by the
   // caller and must stay valid while emulation is active.
   bool startType2Emulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen);
-  bool startMfcEmulation(const ScanResult& identity, uint8_t* dump, size_t dumpLen);
+  // MIFARE Classic card emulation is limited to the passive-target identity
+  // (UID/ATQA/SAK). ST25R3916 cannot expose manual parity in card-emulation
+  // mode, so Crypto1 sector emulation is not implemented here.
+  bool startMfcUidEmulation(const ScanResult& identity);
   bool emulationWorker();
   void stopEmulation();
   bool emulationActive() const { return _emulating; }
-  struct MfcEmulationStats {
-    uint32_t authReq = 0;
-    uint32_t authOk = 0;
-    uint32_t badAr = 0;
-    uint32_t noNr = 0;
-    uint32_t reads = 0;
-    uint32_t writes = 0;
-    uint16_t lastNrBits = 0;
-    uint16_t lastNrFirstBits = 0;
-    uint16_t lastNrTailBits = 0;
-    uint8_t lastNrBytes = 0;
-    uint32_t nrUnpackFail = 0;
-    uint32_t irqEvents = 0;
-    uint32_t wakeEvents = 0;
-    uint32_t rxeEvents = 0;
-    uint32_t eofEvents = 0;
-    uint32_t fifoFrames = 0;
-    uint32_t lastIrqs = 0;
-    uint16_t lastFifoLen = 0;
-    uint8_t lastCmd = 0;
-  };
-  const MfcEmulationStats& mfcEmulationStats() const { return _emuStats; }
 
   // Raw NFC-A helpers used by ST25-specific diagnostics such as Magic-card
   // detection. The caller is responsible for framing semantics.
@@ -113,7 +97,8 @@ private:
   bool _transceiveBytes(const uint8_t* tx, size_t txLen, uint8_t* rx,
                         size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
   bool _transceivePacked(const uint8_t* txPacked, size_t txBits, uint8_t* rxPacked,
-                         size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 8);
+                         size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 8,
+                         bool autoTxParity = false);
   bool _transceiveRaw9(const uint8_t* txData, const uint8_t* txParity, size_t txLen,
                        uint8_t* rxData, uint8_t* rxParity, size_t rxMaxLen,
                        size_t& rxLen, uint32_t timeoutMs = 8);
@@ -127,27 +112,20 @@ private:
   RfalRfST25R3916Class* _hw = nullptr;
   RfalNfcClass* _nfc = nullptr;
   uint16_t _lastScanCode = 0xFFFF;
+  uint16_t _lastPwdAuthCode = 0xFFFF;
+  uint16_t _lastPwdAuthBits = 0;
   ScanResult _activeTag;
   bool _active = false;
   Crypto1State* _crypto = nullptr;
 
   bool _startNfcaListen(const ScanResult& identity);
   bool _listenRespond(const uint8_t* data, uint16_t len, bool withCrc = true);
-  bool _listenRespondBits(const uint8_t* packed, uint16_t bits);
-  uint16_t _listenRxRaw(uint8_t* out, uint8_t maxBytes, uint32_t timeoutMs);
-  void _listenRestoreParity();
-  bool _handleMfcAuth(const uint8_t* frame, uint16_t len);
-  bool _handleMfcEncrypted();
 
   bool _emulating = false;
   bool _emuMfc = false;
-  bool _emuMfcAuthed = false;
-  int16_t _emuMfcPendingWrite = -1;
   uint8_t* _emuDump = nullptr;
   size_t _emuDumpLen = 0;
   ScanResult _emuIdentity;
-  Crypto1State* _emuCrypto = nullptr;
-  MfcEmulationStats _emuStats;
 };
 
 #endif
