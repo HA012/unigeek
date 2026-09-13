@@ -116,7 +116,7 @@ private:
   ListItem _mfAdvancedItems[4] = {
     {"Read Memory"},
     {"Edit Memory"},
-    {"Edit UID (Gen3)"},
+    {"Edit UID (Gen1A and Gen3)"},
     {"Lock UID (Gen3)"},
   };
 
@@ -299,7 +299,7 @@ private:
                       uint8_t sourceUidLen, const uint8_t block0[16]);
   bool _resetAndReselect();
   void _doDetectMagic();
-  void _doGen3SetUid();
+  void _doEditUid();
   void _doGen3LockUid();
   void _doSaveDump();
 

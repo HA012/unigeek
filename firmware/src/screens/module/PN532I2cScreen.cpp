@@ -658,7 +658,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       switch (index) {
         case 0: _doMifareReadMemory(); break;
         case 1: _doMifareEditMemory(); break;
-        case 2: _doGen3SetUid(); break;
+        case 2: _doEditUid(); break;
         case 3: _doGen3LockUid(); break;
       }
       break;
@@ -4517,50 +4517,206 @@ void PN532I2cScreen::_doDetectMagic() {
   render();
 }
 
-void PN532I2cScreen::_doGen3SetUid() {
-  ShowStatusAction::show("Place Gen3 tag...", 0);
-  uint8_t uid[7]; uint8_t uidLen;
+void PN532I2cScreen::_doEditUid() {
+  Header header;
+  header.render("Edit UID");
+  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+
+  uint8_t currentUid[7] = {};
+  uint8_t currentUidLen = 0;
   uint32_t start = millis();
-  bool ok = false;
+  bool found = false;
   while (millis() - start < 5000) {
     Uni.update();
     if (Uni.Nav->wasPressed() &&
-        Uni.Nav->readDirection() == INavigation::DIR_BACK) { _goMifareAdvanced(); return; }
-    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) { ok = true; break; }
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _goMifareAdvanced();
+      return;
+    }
+    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                                  currentUid, &currentUidLen, 200)) {
+      found = true;
+      break;
+    }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No tag detected"); _goMifareAdvanced(); return; }
-
-  // Fail early instead of asking for a UID that cannot be applied to this tag.
-  if (_detectMagicType() != MagicCardType::GEN3) {
-    ShowStatusAction::show("Tag is not Gen3");
+  if (!found) {
+    ShowStatusAction::show("No tag detected");
     _goMifareAdvanced();
     return;
   }
 
-  String hex = InputTextAction::popup("New UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
-  if (InputTextAction::wasCancelled()) { _goMifareAdvanced(); return; }
-  hex.replace(" ", ""); hex.replace(":", "");
+  const MagicCardType magic = _detectMagicType();
+  if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
+    ShowStatusAction::show("Failed: Tag is not Gen1A or Gen3", 1800);
+    _goMifareAdvanced();
+    return;
+  }
+
+  // _detectMagicType() performs fresh activations. Read the currently presented
+  // UID again so the editor/preview always reflects the tag we are about to edit.
+  if (!_resetAndReselect()) {
+    ShowStatusAction::show("Edit UID failed");
+    _goMifareAdvanced();
+    return;
+  }
+  currentUidLen = 0;
+  if (!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                                 currentUid, &currentUidLen, 300) ||
+      (currentUidLen != 4 && currentUidLen != 7)) {
+    ShowStatusAction::show("Edit UID failed");
+    _goMifareAdvanced();
+    return;
+  }
+
+  uint8_t block0[16] = {};
+  if (magic == MagicCardType::GEN1A) {
+    if (currentUidLen != 4 || !_resetAndReselect()) {
+      ShowStatusAction::show("Edit UID failed");
+      _goMifareAdvanced();
+      return;
+    }
+
+    // Open the Gen1A backdoor and read block 0 so Edit UID preserves the
+    // manufacturer bytes instead of replacing the whole manufacturer block.
+    uint8_t resp[20] = {};
+    uint8_t rlen = sizeof(resp);
+    const bool rawMode =
+        _nfcWriteReg(_nfc, _wire, 0x6302, 0x00) &&
+        _nfcWriteReg(_nfc, _wire, 0x6303, 0x00);
+    bool block0Ok = false;
+    if (rawMode) {
+      static const uint8_t halt[] = {0x50, 0x00, 0x57, 0xCD};
+      (void)_nfcCommThru(_nfc, _wire, halt, sizeof(halt), resp, rlen, 200);
+      if (_nfcWriteReg(_nfc, _wire, 0x633D, 0x07)) {
+        static const uint8_t wake[] = {0x40};
+        rlen = sizeof(resp);
+        const bool ack1 = _nfcCommThru(_nfc, _wire, wake, sizeof(wake),
+                                       resp, rlen, 250) &&
+                          rlen >= 1 && (resp[0] & 0x0F) == 0x0A;
+        _nfcWriteReg(_nfc, _wire, 0x633D, 0x00);
+        if (ack1) {
+          static const uint8_t unlock[] = {0x43};
+          rlen = sizeof(resp);
+          const bool ack2 = _nfcCommThru(_nfc, _wire, unlock, sizeof(unlock),
+                                         resp, rlen, 250) &&
+                            rlen >= 1 && (resp[0] & 0x0F) == 0x0A;
+          if (ack2) {
+            _nfcWriteReg(_nfc, _wire, 0x6302, 0x80);
+            _nfcWriteReg(_nfc, _wire, 0x6303, 0x80);
+            static const uint8_t read0[] = {0x30, 0x00};
+            rlen = sizeof(resp);
+            if (_nfcCommThru(_nfc, _wire, read0, sizeof(read0), resp, rlen, 500) &&
+                rlen >= 16) {
+              memcpy(block0, resp, 16);
+              block0Ok = true;
+            }
+          }
+        }
+      }
+    }
+    _nfcWriteReg(_nfc, _wire, 0x633D, 0x00);
+    _nfcWriteReg(_nfc, _wire, 0x6302, 0x80);
+    _nfcWriteReg(_nfc, _wire, 0x6303, 0x80);
+    _resetAndReselect();
+    if (!block0Ok) {
+      ShowStatusAction::show("Edit UID failed");
+      _goMifareAdvanced();
+      return;
+    }
+  }
+
+  String initial = _hexUid(currentUid, currentUidLen);
+  initial.replace(":", "");
+  String hex = InputTextAction::popup("New UID (8 or 14 hex)", initial.c_str(),
+                                      InputTextAction::INPUT_HEX);
+  if (InputTextAction::wasCancelled()) {
+    _goMifareAdvanced();
+    return;
+  }
+  hex.replace(" ", "");
+  hex.replace(":", "");
   if (hex.length() != 8 && hex.length() != 14) {
     ShowStatusAction::show("UID must be 4 or 7 bytes");
     _goMifareAdvanced();
     return;
   }
 
-  uint8_t newUid[7] = {0};
-  uint8_t newUidLen = hex.length() / 2;
-  for (uint8_t i = 0; i < newUidLen; i++) {
-    char b[3] = { hex[i * 2], hex[i * 2 + 1], 0 };
-    char* end; unsigned long v = strtoul(b, &end, 16);
-    if (*end != 0) { ShowStatusAction::show("Bad hex"); _goMifareAdvanced(); return; }
+  const uint8_t newUidLen = (uint8_t)(hex.length() / 2);
+  if (magic == MagicCardType::GEN1A && newUidLen != 4) {
+    ShowStatusAction::show("Gen1A UID must be 4 bytes", 1600);
+    _goMifareAdvanced();
+    return;
+  }
+
+  uint8_t newUid[7] = {};
+  for (uint8_t i = 0; i < newUidLen; ++i) {
+    char b[3] = {hex[i * 2], hex[i * 2 + 1], 0};
+    char* end = nullptr;
+    const unsigned long v = strtoul(b, &end, 16);
+    if (!end || *end) {
+      ShowStatusAction::show("Bad hex");
+      _goMifareAdvanced();
+      return;
+    }
     newUid[i] = (uint8_t)v;
   }
 
-  // Use the same verified Gen3 UID writer as Write to Tag. It performs a
-  // fresh activation before the command and verifies the new UID afterwards.
-  render();
-  const bool ok2 = _writeMagicUid(MagicCardType::GEN3, newUid, newUidLen, nullptr);
-  ShowStatusAction::show(ok2 ? "Gen3 UID edited" : "Edit UID failed", 1600);
+  // Final preview/confirmation. No RF write occurs until Press.
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  header.render("Edit UID");
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(TL_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
+  lcd.drawString("Current UID", bx + 4, by + 8);
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString(_hexUid(currentUid, currentUidLen), bx + 4, by + 24);
+  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
+  lcd.drawString("New UID", bx + 4, by + 48);
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString(_hexUid(newUid, newUidLen), bx + 4, by + 64);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("[Press] Write", bx + 4, by + bh - 18);
+
+  while (true) {
+    Uni.update();
+    if (!Uni.Nav->wasPressed()) {
+      delay(10);
+      continue;
+    }
+    const auto dir = Uni.Nav->readDirection();
+    if (dir == INavigation::DIR_BACK) {
+      _goMifareAdvanced();
+      return;
+    }
+    if (dir == INavigation::DIR_PRESS) break;
+  }
+
+  // Revalidate the physical tag immediately before writing. This matters
+  // especially for Gen1A: block0 belongs to the tag captured above and must
+  // never be reused if the user swapped cards while the editor/preview was open.
+  if (!_nfc->SAMConfig()) {
+    ShowStatusAction::show("Edit UID failed", 1600);
+    _goMifareAdvanced();
+    return;
+  }
+  uint8_t verifyUid[7] = {};
+  uint8_t verifyUidLen = 0;
+  if (!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                                 verifyUid, &verifyUidLen, 300) ||
+      verifyUidLen != currentUidLen ||
+      memcmp(verifyUid, currentUid, currentUidLen) != 0 ||
+      _detectMagicType() != magic) {
+    ShowStatusAction::show("Edit UID failed", 1600);
+    _goMifareAdvanced();
+    return;
+  }
+
+  const bool ok = _writeMagicUid(magic, newUid, newUidLen,
+                                 magic == MagicCardType::GEN1A ? block0 : nullptr);
+  ShowStatusAction::show(ok ? "UID edited" : "Edit UID failed", 1600);
   _goMifareAdvanced();
 }
 

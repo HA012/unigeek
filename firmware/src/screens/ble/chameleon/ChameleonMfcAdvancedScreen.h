@@ -20,7 +20,7 @@ private:
   uint16_t _rowCount = 0;
   void _readMemory();
   void _editMemory();
-  void _editUidGen3();
+  void _editUid();
   void _lockUidGen3();
   void _addRow(const String& label, const String& value);
 };
