@@ -2498,9 +2498,27 @@ void PN532I2cScreen::_doMifareReadMemory() {
           _nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,sectorKeyB[sector],sectorKey[sector]))
         ok=_nfc->mifareclassic_ReadDataBlock(block,data);
     }
-    _pushRow("B"+String(block), ok ? _hexBlock(data,16) : String("Unreadable (key)"));
+    if (ok) {
+      String first, second;
+      char hex[3];
+      for (uint8_t i = 0; i < 8; ++i) {
+        snprintf(hex, sizeof(hex), "%02X", data[i]);
+        first += hex;
+      }
+      for (uint8_t i = 8; i < 16; ++i) {
+        snprintf(hex, sizeof(hex), "%02X", data[i]);
+        second += hex;
+      }
+      _pushRow("B" + String(block) + " 0-7", first);
+      _pushRow("B" + String(block) + " 8-F", second);
+    } else {
+      _pushRow("B" + String(block), "Unreadable (key)");
+    }
   }
-  ProgressView::finish(); _scrollView.setRows(_rows,_rowCount); render();
+  ProgressView::finish();
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows,_rowCount);
+  render();
 }
 
 void PN532I2cScreen::_doMifareEditMemory() {
@@ -4665,8 +4683,11 @@ void PN532I2cScreen::_doEditUid() {
   // Final preview/confirmation. No RF write occurs until Press.
   auto& lcd = Uni.Lcd;
   const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  // InputTextAction may leave pixels outside the body rectangle (notably the
+  // bottom strip reserved by BaseScreen). Clear the complete display before
+  // drawing the preview so no keyboard/popup artefacts remain.
+  lcd.fillScreen(TFT_BLACK);
   header.render("Edit UID");
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_CYAN, TFT_BLACK);

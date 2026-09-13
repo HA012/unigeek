@@ -14,9 +14,12 @@ private:
   ListItem _items[4];
   bool _showingMemory = false;
   ScrollListView _view;
-  ScrollListView::Row _rows[260];
-  String _labels[260];
-  String _values[260];
+  // Keep the same capacity as PN532: 3 header rows + 2 rows for each
+  // of the 256 MIFARE Classic 4K blocks.
+  static constexpr size_t MAX_ROWS = 520;
+  ScrollListView::Row _rows[MAX_ROWS];
+  String _labels[MAX_ROWS];
+  String _values[MAX_ROWS];
   uint16_t _rowCount = 0;
   void _readMemory();
   void _editMemory();

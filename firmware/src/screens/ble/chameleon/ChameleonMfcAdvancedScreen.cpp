@@ -9,6 +9,14 @@
 #include "ui/views/ProgressView.h"
 
 namespace {
+static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
+  auto& lcd = Uni.Lcd;
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+}
 static const uint8_t kKeys[][6] = {
   {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},
   {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7},{0,0,0,0,0,0},{0xB0,0xB1,0xB2,0xB3,0xB4,0xB5},
@@ -21,7 +29,7 @@ static bool findKey(ChameleonClient& c,uint8_t block,uint8_t out[6],uint8_t& typ
   if(c.mf1CheckKeysOfBlock(block,0x61,&kKeys[0][0],count,out)){type=0x61;return true;}
   return false;
 }
-static String hex16(const uint8_t* d){ String s; char b[4]; for(int i=0;i<16;++i){snprintf(b,sizeof(b),"%s%02X",i?" ":"",d[i]);s+=b;} return s; }
+static String hex8(const uint8_t* d){ String s; char b[3]; for(int i=0;i<8;++i){snprintf(b,sizeof(b),"%02X",d[i]);s+=b;} return s; }
 }
 
 void ChameleonMfcAdvancedScreen::onInit(){
@@ -31,7 +39,7 @@ void ChameleonMfcAdvancedScreen::onInit(){
   _items[3] = {"Lock UID (Gen3)"};
   setItems(_items);
 }
-void ChameleonMfcAdvancedScreen::_addRow(const String& l,const String& v){ if(_rowCount>=260)return; _labels[_rowCount]=l;_values[_rowCount]=v;_rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount].c_str()};++_rowCount; }
+void ChameleonMfcAdvancedScreen::_addRow(const String& l,const String& v){ if(_rowCount>=MAX_ROWS)return; _labels[_rowCount]=l;_values[_rowCount]=v;_rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount].c_str()};++_rowCount; }
 void ChameleonMfcAdvancedScreen::onItemSelected(uint8_t i){
   if (i == 0) _readMemory();
   else if (i == 1) _editMemory();
@@ -58,9 +66,14 @@ void ChameleonMfcAdvancedScreen::_readMemory(){
     uint8_t sec=sectorForBlock(b); if(!have[sec])have[sec]=findKey(c,(uint8_t)b,keys[sec],types[sec]);
     uint8_t data[16]={}; bool ok=have[sec]&&c.mf1ReadBlock((uint8_t)b,types[sec],keys[sec],data);
     char msg[36];snprintf(msg,sizeof(msg),"Reading blocks (%u/%u)...",(unsigned)(b+1),(unsigned)blocks);ProgressView::progress(msg,(int)((uint32_t)b*100u/blocks));
-    _addRow("B"+String(b),ok?hex16(data):String("Unreadable (key)"));
+    if(ok){
+      _addRow("B"+String(b)+" 0-7",hex8(data));
+      _addRow("B"+String(b)+" 8-F",hex8(data+8));
+    } else {
+      _addRow("B"+String(b),"Unreadable (key)");
+    }
   }
-  ProgressView::finish(); restore(); _view.setRows(_rows,_rowCount); _showingMemory=true; render();
+  ProgressView::finish(); restore(); _view.resetScroll(); _view.setRows(_rows,_rowCount); _showingMemory=true; render();
 }
 
 void ChameleonMfcAdvancedScreen::_editMemory(){
@@ -86,14 +99,10 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   c.setMode(1);
   auto restore = [&](){ if (restoreMode) c.setMode(previousMode); };
 
-  // Use the same tag-placement UX as the other CU HF operations.
+  // Match the PN532 tag-placement UX.
   auto& lcd = Uni.Lcd;
   const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  renderTagPrompt("Place tag on reader...", bx, by, bw, bh);
 
   uint8_t currentUid[7] = {}, currentUidLen = 0, atqa[2] = {}, sak = 0;
   if (!c.scan14A(currentUid, &currentUidLen, atqa, &sak)) {
@@ -197,8 +206,10 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   }
 
   // Final preview/confirmation. Back cancels; Press performs the write.
+  // InputTextAction may leave pixels outside the body rectangle. Clear the
+  // whole display before drawing the preview to avoid stale popup artefacts.
+  lcd.fillScreen(TFT_BLACK);
   header.render("Edit UID");
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_CYAN, TFT_BLACK);
