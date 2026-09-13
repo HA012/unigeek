@@ -178,8 +178,40 @@ static uint16_t st25MfuDynamicLock(const String& type) {
   return 0xFFFF;
 }
 
-static bool st25PwdFromText(const String& text, uint8_t pwd[4]) {
+static bool st25PwdFromText(const String& input, uint8_t pwd[4]) {
+  String text = input;
+  text.trim();
   if (!text.length()) return false;
+
+  // Preserve the existing UniGeek/PN532/CU convention for ordinary text:
+  // PWD = first four bytes of MD5(text).  Additionally accept an explicit
+  // raw password as 0xXXXXXXXX (or 4 hex bytes separated by ':', '-' or
+  // spaces).  This is needed for tags provisioned by phones/other readers,
+  // where the actual 4-byte NTAG PWD is usually known directly.
+  String raw = text;
+  bool explicitRaw = false;
+  if (raw.startsWith("0x") || raw.startsWith("0X")) {
+    raw = raw.substring(2);
+    explicitRaw = true;
+  }
+  if (raw.indexOf(':') >= 0 || raw.indexOf('-') >= 0 || raw.indexOf(' ') >= 0) {
+    explicitRaw = true;
+    raw.replace(":", "");
+    raw.replace("-", "");
+    raw.replace(" ", "");
+  }
+  if (explicitRaw) {
+    if (raw.length() != 8) return false;
+    for (uint8_t i = 0; i < 4; ++i) {
+      char byteText[3] = {raw[(unsigned)i * 2U], raw[(unsigned)i * 2U + 1U], 0};
+      char* end = nullptr;
+      unsigned long v = strtoul(byteText, &end, 16);
+      if (!end || *end) return false;
+      pwd[i] = (uint8_t)v;
+    }
+    return true;
+  }
+
   const mbedtls_md_info_t* md = mbedtls_md_info_from_type(MBEDTLS_MD_MD5);
   if (!md) return false;
   uint8_t digest[16] = {};
@@ -188,10 +220,10 @@ static bool st25PwdFromText(const String& text, uint8_t pwd[4]) {
   return true;
 }
 
-static bool st25PromptPwd(uint8_t pwd[4], const char* title = "Password") {
+static bool st25PromptPwd(uint8_t pwd[4], const char* title = "Password / 0xXXXXXXXX") {
   String text = InputTextAction::popup(title, "", InputTextAction::INPUT_TEXT);
   if (InputTextAction::wasCancelled()) return false;
-  if (!st25PwdFromText(text, pwd)) { ShowStatusAction::show("Password required"); return false; }
+  if (!st25PwdFromText(text, pwd)) { ShowStatusAction::show("Invalid password"); return false; }
   return true;
 }
 
@@ -205,13 +237,37 @@ static bool st25ReadPage(ST25R3916Backend& dev, uint16_t page, uint8_t out[4]) {
   memcpy(out, buf, 4); return true;
 }
 
-static bool st25WritePageVerified(ST25R3916Backend& dev, uint16_t page, const uint8_t data[4]) {
+// Type-2 READ always returns four pages. Starting a READ on one of the final
+// three pages can therefore cross the physical end of an NTAG21x and be NAKed.
+// Read a four-page window that ends at the tag boundary and extract the page
+// the caller actually requested. This mirrors the tail-safe PN532 path.
+static bool st25ReadPageTailSafe(ST25R3916Backend& dev, uint16_t page,
+                                 uint16_t totalPages, uint8_t out[4]) {
+  if (!out || !totalPages || page >= totalPages || totalPages > 256) return false;
+  uint16_t start = page;
+  uint8_t skip = 0;
+  if (page + 3U >= totalPages) {
+    start = totalPages >= 4U ? totalPages - 4U : 0U;
+    skip = (uint8_t)(page - start);
+  }
+  uint8_t buf[16] = {};
+  if (!dev.type2ReadPages((uint8_t)start, buf)) return false;
+  memcpy(out, buf + (size_t)skip * 4U, 4);
+  return true;
+}
+
+static bool st25WritePageVerified(ST25R3916Backend& dev, uint16_t page,
+                                  const uint8_t data[4], uint16_t totalPages = 0) {
   if (dev.type2WritePage((uint8_t)page, data)) return true;
   // Some Type-2 tags complete the EEPROM write but the RFAL primitive misses
   // the short ACK/field timing and reports a failure. Confirm the persistent
-  // result before surfacing an error to the user.
+  // result before surfacing an error to the user. Configuration pages live at
+  // the tail of NTAG21x memory, so their verification must be tail-safe.
   uint8_t verify[4] = {};
-  return st25ReadPage(dev, page, verify) && memcmp(verify, data, 4) == 0;
+  const bool readOk = totalPages
+      ? st25ReadPageTailSafe(dev, page, totalPages, verify)
+      : st25ReadPage(dev, page, verify);
+  return readOk && memcmp(verify, data, 4) == 0;
 }
 
 static bool st25EnsureMfuAuth(ST25R3916Backend& dev, const String& type, uint16_t pages,
@@ -219,7 +275,8 @@ static bool st25EnsureMfuAuth(ST25R3916Backend& dev, const String& type, uint16_
   const uint16_t cfg = st25MfuConfig0(type);
   if (cfg == 0xFFFF || cfg + 1 >= pages) return true;
   uint8_t c0[4] = {}, c1[4] = {};
-  bool readable = st25ReadPage(dev, cfg, c0) && st25ReadPage(dev, cfg + 1, c1);
+  bool readable = st25ReadPageTailSafe(dev, cfg, pages, c0) &&
+                  st25ReadPageTailSafe(dev, cfg + 1, pages, c1);
   bool need = !readable;
   if (readable) {
     uint8_t auth0 = c0[3];
@@ -229,21 +286,20 @@ static bool st25EnsureMfuAuth(ST25R3916Backend& dev, const String& type, uint16_
   uint8_t pwd[4] = {};
   if (!st25PromptPwd(pwd)) return false;
 
-  // A protected config READ may leave the Type-2 target in a state where a
-  // following PWD_AUTH is rejected. Re-select the tag before authenticating,
-  // matching the PN532/CU protected-tag flow.
-  if (!readable) {
-    dev.deactivate();
-    ST25R3916Backend::ScanResult current;
-    if (!dev.scan(ST25R3916Backend::TECH_A, current, 600, true)) {
-      Uni.Lcd.fillScreen(TFT_BLACK);
-      ShowStatusAction::show("Authentication failed", 1400);
-      return false;
-    }
+  // Always establish a fresh Type-2 selection immediately before PWD_AUTH.
+  // This removes any RFAL/tag state left by the config READ and mirrors the
+  // known-good PN532 flow, which selects the target before authentication.
+  dev.deactivate();
+  ST25R3916Backend::ScanResult current;
+  if (!dev.scan(ST25R3916Backend::TECH_A, current, 600, true)) {
+    ShowStatusAction::show("Authentication select failed", 1400);
+    return false;
   }
   if (!st25PwdAuth(dev, pwd)) {
-    Uni.Lcd.fillScreen(TFT_BLACK);
-    ShowStatusAction::show("Authentication failed", 1400);
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Auth failed rc=%u bits=%u",
+             (unsigned)dev.lastPwdAuthCode(), (unsigned)dev.lastPwdAuthBits());
+    ShowStatusAction::show(msg, 1800);
     return false;
   }
   return true;
@@ -3506,74 +3562,239 @@ void ST25R3916Screen::_editMfuMemory() {
 void ST25R3916Screen::_setMfuPassword() {
 #if defined(DEVICE_HAS_ST25R3916)
   _advancedOperationTitle = "Set Password";
-  _state=STATE_MFU_MEMORY;render();_renderTagPrompt();
-  ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showMfuAdvancedMenu();return;}
-  ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){ShowStatusAction::show("No tag detected");_showMfuAdvancedMenu();return;}
-  String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)){dev.deactivate();ShowStatusAction::show("Tag not supported");_showMfuAdvancedMenu();return;}
-  uint16_t cfg=st25MfuConfig0(type);if(cfg==0xFFFF||cfg+3>=pages){dev.deactivate();ShowStatusAction::show("Password not supported");_showMfuAdvancedMenu();return;}
-  uint8_t c0[4]={},c1[4]={};
-  bool protectionReadable=st25ReadPage(dev,cfg,c0)&&st25ReadPage(dev,cfg+1,c1);
-  bool wasProtected=!protectionReadable||(c0[3]!=0xFF&&c0[3]<pages);
-  if(wasProtected&&!st25EnsureMfuAuth(dev,type,pages,cfg,cfg+3,false)){dev.deactivate();_showMfuAdvancedMenu();return;}
-  if(!st25ReadPage(dev,cfg,c0)||!st25ReadPage(dev,cfg+1,c1)){dev.deactivate();ShowStatusAction::show("Read config failed");_showMfuAdvancedMenu();return;}
-  uint8_t pwd[4]={};if(!st25PromptPwd(pwd,"New Password")){dev.deactivate();_showMfuAdvancedMenu();return;}
-  static const InputSelectAction::Option modes[]={{"Write Only","w"},{"Read & Write","rw"}};
-  const char* mode=InputSelectAction::popup("Protection",modes,2,nullptr);if(!mode){dev.deactivate();_showMfuAdvancedMenu();return;}
-  const uint8_t desiredAccess=(uint8_t)((c1[0]&~0x87u)|(strcmp(mode,"rw")==0?0x80u:0u));
-  const bool configLocked=(c1[0]&0x40u)!=0;
-  if(configLocked&&(c0[3]!=4||(c1[0]&0x87u)!=(desiredAccess&0x87u))){dev.deactivate();ShowStatusAction::show("Configuration locked");_showMfuAdvancedMenu();return;}
-  bool ok=true;
-  if(!configLocked){
-    c1[0]=desiredAccess; c0[3]=4;
-    ok=st25WritePageVerified(dev,cfg+1,c1);
-  }
-  // PWD is write-only on NTAG21x and takes effect immediately. After writing
-  // it, perform a clean NFC-A reselect before PWD_AUTH. This mirrors the
-  // PN532/CU paths and avoids depending on RFAL state left by T2T WRITE.
-  if(ok) ok = dev.type2WritePage((uint8_t)(cfg+2),pwd);
-  if(!ok){
-    dev.deactivate();ShowStatusAction::show("Password write failed",1800);_showMfuAdvancedMenu();return;
+  _state = STATE_MFU_MEMORY;
+  render();
+  _renderTagPrompt();
+
+  // Show operation results over a freshly rendered menu, then redraw the
+  // menu after the transient overlay wipes itself. This avoids remnants from
+  // the "Place tag on reader..." working screen around/under status boxes.
+  auto showAdvancedStatus = [this](const char* message, int32_t durationMs) {
+    _showMfuAdvancedMenu();
+    ShowStatusAction::show(message, durationMs);
+    _showMfuAdvancedMenu();
+  };
+
+  ST25R3916Backend dev;
+  if (!st25Begin(dev)) { showAdvancedStatus("ST25R3916 not found", 1600); return; }
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    showAdvancedStatus("No tag detected", 1600); return;
   }
 
+  String type;
+  uint16_t pages = 0;
+  if (!_detectMfuType(dev, type, pages)) {
+    dev.deactivate(); showAdvancedStatus("Tag not supported", 1600); return;
+  }
+  const uint16_t cfg = st25MfuConfig0(type);
+  if (cfg == 0xFFFF || cfg + 3 >= pages) {
+    dev.deactivate(); showAdvancedStatus("Password not supported", 1600); return;
+  }
+
+  uint8_t c0[4] = {}, c1[4] = {};
+  const bool protectionReadable = st25ReadPageTailSafe(dev, cfg, pages, c0) &&
+                                  st25ReadPageTailSafe(dev, cfg + 1, pages, c1);
+  const bool wasProtected = !protectionReadable || (c0[3] != 0xFF && c0[3] < pages);
+  if (wasProtected && !st25EnsureMfuAuth(dev, type, pages, cfg, cfg + 3, false)) {
+    dev.deactivate(); _showMfuAdvancedMenu(); return;
+  }
+  if (!st25ReadPageTailSafe(dev, cfg, pages, c0) ||
+      !st25ReadPageTailSafe(dev, cfg + 1, pages, c1)) {
+    dev.deactivate(); showAdvancedStatus("Read config failed", 1600); return;
+  }
+
+  uint8_t newPwd[4] = {};
+  if (!st25PromptPwd(newPwd, "New Password")) {
+    dev.deactivate(); _showMfuAdvancedMenu(); return;
+  }
+  static const InputSelectAction::Option modes[] = {{"Write Only", "w"}, {"Read & Write", "rw"}};
+  const char* mode = InputSelectAction::popup("Protection", modes, 2, nullptr);
+  if (!mode) { dev.deactivate(); _showMfuAdvancedMenu(); return; }
+
+  const uint8_t desiredAccess = (uint8_t)((c1[0] & ~0x87u) | (strcmp(mode, "rw") == 0 ? 0x80u : 0u));
+  const bool configLocked = (c1[0] & 0x40u) != 0;
+  if (configLocked && (c0[3] != 4 || (c1[0] & 0x87u) != (desiredAccess & 0x87u))) {
+    dev.deactivate(); showAdvancedStatus("Configuration locked", 1600); return;
+  }
+
+  // NTAG21x deliberately masks PWD and PACK on READ/FAST_READ: the real
+  // values can never be read back. Therefore Set Password must not try to
+  // discover or verify PACK by reading page cfg+3. Preserve the existing
+  // PACK value and use successful PWD_AUTH itself as the credential check.
+
+  if (!configLocked) {
+    const uint8_t oldAccess = c1[0];
+    c1[0] = desiredAccess;
+    c0[3] = 4; // protect the complete user area only after credential verify
+    if (c1[0] != oldAccess && !st25WritePageVerified(dev, cfg + 1, c1, pages)) {
+      dev.deactivate(); showAdvancedStatus("ACCESS write failed", 1800); return;
+    }
+  }
+
+  // Preserve PACK. It is independent from PWD and is intentionally unreadable
+  // on NTAG21x, so rewriting it here adds risk without improving verification.
+  //
+  // Establish a clean Type-2 selection before writing the security pages. The
+  // protected-tag path already does this inside st25EnsureMfuAuth(), while an
+  // unprotected tag previously went straight from GET_VERSION/config READs to
+  // PWD WRITE. On this ST25R3916/RFAL fork that can leave the poller in a state
+  // where WRITE receives no short ACK (ERR_IO, 0 received bits).
+  dev.deactivate();
+  delay(8);
+  ST25R3916Backend::ScanResult writeTarget;
+  if (!dev.scan(ST25R3916Backend::TECH_A, writeTarget, 1200, true) || !sameTag(tag, writeTarget)) {
+    dev.deactivate(); showAdvancedStatus("PWD reselect failed", 1800); return;
+  }
+
+  // Use the same raw-ACK-aware WRITE path that already succeeds in Remove
+  // Password on this backend. RFAL's native helper can report ERR_IO for the
+  // valid 4-bit Type-2 ACK on this fork.
+  if (!dev.type2WritePage((uint8_t)(cfg + 2), newPwd)) {
+    char msg[72];
+    const uint8_t nak = dev.lastType2WriteAckNibble();
+    if (nak != 0xFF) {
+      snprintf(msg, sizeof(msg), "PWD WRITE NAK=%X bits=%u",
+               (unsigned)nak, (unsigned)dev.lastType2WriteBits());
+    } else {
+      snprintf(msg, sizeof(msg), "PWD write failed rc=%u bits=%u",
+               (unsigned)dev.lastType2WriteCode(), (unsigned)dev.lastType2WriteBits());
+    }
+    dev.deactivate(); showAdvancedStatus(msg, 2400); return;
+  }
+
+  // PWD takes effect immediately. Re-select the same PICC and prove that the
+  // new password works. A successful PWD_AUTH returns the tag's PACK; because
+  // PACK is intentionally unreadable and was not changed here, any valid
+  // two-byte PACK response is sufficient evidence of successful auth.
   dev.deactivate();
   delay(8);
   ST25R3916Backend::ScanResult current;
-  if(!dev.scan(ST25R3916Backend::TECH_A,current,1200,true)){
-    dev.deactivate();ShowStatusAction::show("Password reselect failed",1800);_showMfuAdvancedMenu();return;
+  if (!dev.scan(ST25R3916Backend::TECH_A, current, 1200, true)) {
+    dev.deactivate(); showAdvancedStatus("Password reselect failed", 1800); return;
   }
-  if(!sameTag(tag,current)){
-    dev.deactivate();ShowStatusAction::show("Password tag mismatch",1800);_showMfuAdvancedMenu();return;
+  if (!sameTag(tag, current)) {
+    dev.deactivate(); showAdvancedStatus("Password tag mismatch", 1800); return;
   }
-  if(!st25PwdAuth(dev,pwd)){
+  uint8_t returnedPack[2] = {};
+  if (!dev.type2PwdAuth(newPwd, returnedPack)) {
     char msg[64];
-    snprintf(msg,sizeof(msg),"PWD_AUTH failed rc=%u bits=%u",
-             (unsigned)dev.lastPwdAuthCode(),(unsigned)dev.lastPwdAuthBits());
-    dev.deactivate();ShowStatusAction::show(msg,2200);_showMfuAdvancedMenu();return;
+    snprintf(msg, sizeof(msg), "PWD_AUTH failed rc=%u bits=%u",
+             (unsigned)dev.lastPwdAuthCode(), (unsigned)dev.lastPwdAuthBits());
+    dev.deactivate(); showAdvancedStatus(msg, 2200); return;
   }
-  ok=true;
-  if(!configLocked)ok=st25WritePageVerified(dev,cfg,c0);
-  dev.deactivate();ShowStatusAction::show(ok?"Password set\nRetap tag to activate":"Password setup failed",1800);_showMfuAdvancedMenu();
+  if (!configLocked && !st25WritePageVerified(dev, cfg, c0, pages)) {
+    dev.deactivate(); showAdvancedStatus("AUTH0 write failed", 1800); return;
+  }
+
+  dev.deactivate();
+  showAdvancedStatus("Password set\nRetap tag to activate", 1800);
 #endif
 }
 
 void ST25R3916Screen::_removeMfuPassword() {
 #if defined(DEVICE_HAS_ST25R3916)
   _advancedOperationTitle = "Remove Password";
-  _state=STATE_MFU_MEMORY;render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showMfuAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){ShowStatusAction::show("No tag detected");_showMfuAdvancedMenu();return;}String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)){dev.deactivate();ShowStatusAction::show("Tag not supported");_showMfuAdvancedMenu();return;}uint16_t cfg=st25MfuConfig0(type);if(cfg==0xFFFF||cfg+3>=pages){dev.deactivate();ShowStatusAction::show("Password not supported");_showMfuAdvancedMenu();return;}if(!st25EnsureMfuAuth(dev,type,pages,cfg,cfg+3,false)){dev.deactivate();_showMfuAdvancedMenu();return;}uint8_t c0[4]={},c1[4]={};if(!st25ReadPage(dev,cfg,c0)||!st25ReadPage(dev,cfg+1,c1)){dev.deactivate();ShowStatusAction::show("Read config failed");_showMfuAdvancedMenu();return;}if(c1[0]&0x40){dev.deactivate();ShowStatusAction::show("Configuration locked");_showMfuAdvancedMenu();return;}
-  c1[0]&=(uint8_t)~0x87u; c0[3]=0xFF;
-  const uint8_t pwd[4]={0xFF,0xFF,0xFF,0xFF},pack[4]={0,0,0,0};
-  bool ok=st25WritePageVerified(dev,cfg+1,c1)&&st25WritePageVerified(dev,cfg,c0);
-  // PWD/PACK are not ordinary readable pages. Write them best-effort, then
-  // verify the protection configuration after a clean reselect.
-  if(ok){(void)dev.type2WritePage((uint8_t)(cfg+2),pwd);(void)dev.type2WritePage((uint8_t)(cfg+3),pack);}
-  dev.deactivate();
-  if(ok){
-    ST25R3916Backend::ScanResult current; uint8_t v0[4]={},v1[4]={};
-    ok=dev.scan(ST25R3916Backend::TECH_A,current,1200,true)&&sameTag(tag,current)&&
-       st25ReadPage(dev,cfg,v0)&&st25ReadPage(dev,cfg+1,v1)&&
-       v0[3]==0xFF&&((v1[0]&0x87u)==0);
+  _state = STATE_MFU_MEMORY;
+  render();
+  _renderTagPrompt();
+
+  // Show operation results over a freshly rendered menu, then redraw the
+  // menu after the transient overlay wipes itself. This avoids remnants from
+  // the "Place tag on reader..." working screen around/under status boxes.
+  auto showAdvancedStatus = [this](const char* message, int32_t durationMs) {
+    _showMfuAdvancedMenu();
+    ShowStatusAction::show(message, durationMs);
+    _showMfuAdvancedMenu();
+  };
+
+  ST25R3916Backend dev;
+  if (!st25Begin(dev)) { showAdvancedStatus("ST25R3916 not found", 1600); return; }
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    showAdvancedStatus("No tag detected", 1600); return;
   }
-  dev.deactivate();ShowStatusAction::show(ok?"Password removed":"Remove failed",1600);_showMfuAdvancedMenu();
+
+  String type;
+  uint16_t pages = 0;
+  if (!_detectMfuType(dev, type, pages)) {
+    dev.deactivate(); showAdvancedStatus("Tag not supported", 1600); return;
+  }
+  const uint16_t cfg = st25MfuConfig0(type);
+  if (cfg == 0xFFFF || cfg + 3 >= pages) {
+    dev.deactivate(); showAdvancedStatus("Password not supported", 1600); return;
+  }
+
+  uint8_t auth0 = 0xFF;
+  uint8_t probe0[4] = {}, probe1[4] = {};
+  const bool readable = st25ReadPageTailSafe(dev, cfg, pages, probe0) &&
+                        st25ReadPageTailSafe(dev, cfg + 1, pages, probe1);
+  if (readable) auth0 = probe0[3];
+  const bool protectedNow = !readable || (auth0 != 0xFF && auth0 < pages);
+  if (protectedNow && !st25EnsureMfuAuth(dev, type, pages, cfg, cfg + 3, false)) {
+    dev.deactivate(); _showMfuAdvancedMenu(); return;
+  }
+
+  uint8_t c0[4] = {}, c1[4] = {};
+  if (!st25ReadPageTailSafe(dev, cfg, pages, c0) ||
+      !st25ReadPageTailSafe(dev, cfg + 1, pages, c1)) {
+    dev.deactivate(); showAdvancedStatus("Read config failed", 1600); return;
+  }
+  if (c1[0] & 0x40u) {
+    dev.deactivate(); showAdvancedStatus("Configuration locked", 1600); return;
+  }
+
+  c1[0] &= (uint8_t)~0x87u; // PROT=0, AUTHLIM=0
+  c0[3] = 0xFF;             // AUTH0=FF disables password protection
+  const uint8_t defaultPwd[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+  const uint8_t defaultPackPage[4] = {0x00, 0x00, 0x00, 0x00};
+  const uint8_t expectedPack[2] = {0x00, 0x00};
+
+  // First disable protection while the old authenticated session is alive.
+  if (!st25WritePageVerified(dev, cfg + 1, c1, pages)) {
+    dev.deactivate(); showAdvancedStatus("ACCESS reset failed", 1800); return;
+  }
+  if (!st25WritePageVerified(dev, cfg, c0, pages)) {
+    dev.deactivate(); showAdvancedStatus("AUTH0 reset failed", 1800); return;
+  }
+
+  // Protection is now disabled, so restore the delivery credentials. Write
+  // PACK first and PWD last, mirroring Set Password's safe ordering.
+  if (!dev.type2WritePage((uint8_t)(cfg + 3), defaultPackPage)) {
+    dev.deactivate(); showAdvancedStatus("PACK reset failed", 1800); return;
+  }
+  if (!dev.type2WritePage((uint8_t)(cfg + 2), defaultPwd)) {
+    dev.deactivate(); showAdvancedStatus("PWD reset failed", 1800); return;
+  }
+
+  // Clean reselect: verify both that protection remains disabled and that the
+  // delivery password/PACK pair is really active.
+  dev.deactivate();
+  delay(8);
+  ST25R3916Backend::ScanResult current;
+  if (!dev.scan(ST25R3916Backend::TECH_A, current, 1200, true) || !sameTag(tag, current)) {
+    dev.deactivate(); showAdvancedStatus("Verify reselect failed", 1800); return;
+  }
+  uint8_t v0[4] = {}, v1[4] = {}, returnedPack[2] = {};
+  if (!st25ReadPageTailSafe(dev, cfg, pages, v0) ||
+      !st25ReadPageTailSafe(dev, cfg + 1, pages, v1) ||
+      v0[3] != 0xFF || (v1[0] & 0x87u) != 0) {
+    dev.deactivate(); showAdvancedStatus("Config verify failed", 1800); return;
+  }
+  if (!dev.type2PwdAuth(defaultPwd, returnedPack)) {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "PWD verify failed rc=%u bits=%u",
+             (unsigned)dev.lastPwdAuthCode(), (unsigned)dev.lastPwdAuthBits());
+    dev.deactivate(); showAdvancedStatus(msg, 2200); return;
+  }
+  if (memcmp(returnedPack, expectedPack, sizeof(expectedPack)) != 0) {
+    char msg[48];
+    snprintf(msg, sizeof(msg), "PACK verify %02X%02X", returnedPack[0], returnedPack[1]);
+    dev.deactivate(); showAdvancedStatus(msg, 2000); return;
+  }
+
+  dev.deactivate();
+  showAdvancedStatus("Password removed", 1600);
 #endif
 }
 
