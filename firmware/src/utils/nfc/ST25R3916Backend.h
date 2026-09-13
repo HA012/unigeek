@@ -86,6 +86,15 @@ public:
   bool nfcATransceiveBits(const uint8_t* tx, size_t txBits, uint8_t* rx,
                           size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs = 20);
 
+  // Generic helpers used by the experimental NFC-B/F/V and ISO-DEP tools.
+  // activeRfTransceive() is for byte-oriented RF frames while the device is
+  // active; isoDepTransceive() lets the RFAL high layer handle ISO14443-4
+  // framing/chaining for Type 4A/4B APDUs.
+  bool activeRfTransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                          size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 50);
+  bool isoDepTransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                        size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 1200);
+
   const Info& info() const { return _info; }
   uint16_t lastScanCode() const { return _lastScanCode; }
   Transport transport() const { return _transport; }
