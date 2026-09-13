@@ -552,10 +552,11 @@ bool ST25R3916Backend::nfcATransceive(const uint8_t* tx, size_t txLen, uint8_t* 
 bool ST25R3916Backend::nfcATransceiveBits(const uint8_t* tx, size_t txBits, uint8_t* rx,
                                             size_t rxMaxBits, size_t& rxBits, uint32_t timeoutMs) {
   if (!_active || _activeTag.technology != Technology::NFC_A) { rxBits = 0; return false; }
-  // Magic Gen1A raw commands disable CRC but still use normal ISO14443A
-  // parity on complete bytes (notably 0x43). Keep manual-parity mode reserved
-  // for Crypto1 exchanges that explicitly pack their parity bits.
-  return _transceivePacked(tx, txBits, rx, rxMaxBits, rxBits, timeoutMs, true);
+  // Complete-byte raw frames use normal ISO14443A parity, while the Gen1A
+  // wake-up command 0x40 is deliberately transmitted as a 7-bit frame and
+  // must not receive an automatic parity bit.
+  const bool autoTxParity = (txBits >= 8U) && ((txBits & 7U) == 0U);
+  return _transceivePacked(tx, txBits, rx, rxMaxBits, rxBits, timeoutMs, autoTxParity);
 }
 
 bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
