@@ -9,6 +9,8 @@
 #include "core/ConfigManager.h"
 #include "ui/views/ProgressView.h"
 #include "ui/views/LogView.h"
+#include "ui/components/Header.h"
+#include "ui/components/StatusBar.h"
 #include "utils/nfc/NdefParser.h"
 #include "utils/nfc/NdefBuilder.h"
 #include "utils/nfc/NfcDumpBuilder.h"
@@ -430,7 +432,16 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
 
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+  if (_state == STATE_MAGIC_DETECT) {
+    if (Uni.Nav->wasPressed()) {
+      auto dir = Uni.Nav->readDirection();
+      if (dir == INavigation::DIR_BACK) _showMfcTagMenu();
+      else if (dir == INavigation::DIR_PRESS && !_magicDetectDone) _runDetectMagic();
+    }
+    return;
+  }
+
+  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
       _state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU ||
       _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_ATTACK_SELECT ||
       _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_ADVANCED_MENU ||
@@ -500,7 +511,7 @@ void ST25R3916Screen::onUpdate() {
     else _showNdefWritePreview(_ndefBuf, _ndefLen, fromFile);
     return;
   }
-  if (_state == STATE_MFC_DUMP_HEX) {
+  if (_state == STATE_MFC_DUMP_HEX || _state == STATE_MFC_MEMORY) {
     _handleMfcDumpNav(dir);
     return;
   }
@@ -512,6 +523,10 @@ void ST25R3916Screen::onUpdate() {
 }
 
 void ST25R3916Screen::onRender() {
+  if (_state == STATE_MAGIC_DETECT) {
+    _magicLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH());
+    return;
+  }
   if (_state == STATE_EMULATING) {
     auto& lcd = Uni.Lcd;
     const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
@@ -521,8 +536,7 @@ void ST25R3916Screen::onRender() {
     lcd.drawString("Emulating tag...", bx + bw / 2, by + bh / 2);
     return;
   }
-
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU ||
+  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
       _state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU ||
       _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_ATTACK_SELECT ||
       _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_ADVANCED_MENU ||
@@ -540,7 +554,7 @@ void ST25R3916Screen::onRender() {
     _renderTagPrompt();
     return;
   }
-  if (_state == STATE_MFC_DUMP_HEX) {
+  if (_state == STATE_MFC_DUMP_HEX || _state == STATE_MFC_MEMORY) {
     _renderMfcDump();
     return;
   }
@@ -580,6 +594,10 @@ void ST25R3916Screen::onBack() {
     render();
     return;
   }
+  if (_state == STATE_MFC_MEMORY) {
+    _showMfcAdvancedMenu();
+    return;
+  }
   if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_WRITING) {
     _showMfcTagMenu();
     return;
@@ -610,12 +628,14 @@ void ST25R3916Screen::onBack() {
     _showMfcMenu();
     return;
   }
+  if (_state == STATE_MFC_ADVANCED_MENU) { _showMfcTagMenu(); return; }
   if (_state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU) { _showMfcMenu(); return; }
   if (_state == STATE_MFC_KEYS_VIEW || _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_VIEW) { _showMfcKeysMenu(); return; }
   if (_state == STATE_MFC_DICT_ATTACK_SELECT) { _showMfcAttacksMenu(); return; }
   if (_state == STATE_MFU_MEMORY) { _showMfuAdvancedMenu(); return; }
   if (_state == STATE_MFU_ADVANCED_MENU) { _showMfuTagMenu(); return; }
-  if (_state == STATE_MAGIC_DETECT || _state == STATE_DEVICE_INFO) { _showMenu(); return; }
+  if (_state == STATE_MAGIC_DETECT) { _showMfcTagMenu(); return; }
+  if (_state == STATE_DEVICE_INFO) { _showMenu(); return; }
   if (_state == STATE_MFC_MENU) {
     _showMenu();
     return;
@@ -691,6 +711,14 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     else if (index == 4) _lockMfuTag();
     return;
   }
+  if (_state == STATE_MFC_ADVANCED_MENU) {
+    _selMfcAdvanced = index;
+    if (index == 0) _readMfcMemory();
+    else if (index == 1) _editMfcMemory();
+    else if (index == 2) _editMfcUid();
+    else if (index == 3) _lockMfcUidGen3();
+    return;
+  }
   if (_state == STATE_MFC_NDEF_MENU) {
     _selMfcNdef = index;
     if (index == 0) _readMfcNdef();
@@ -708,10 +736,12 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_NDEF_FILE_SELECT) { _openNdefFile(index); return; }
   if (_state == STATE_MFC_TAG_MENU) {
     _selMfcTag = index;
-    if (index == 0) _readMfcTag();
-    else if (index == 1) _openMfcDumpPicker();
-    else if (index == 2) _eraseMfcTag();
-    else if (index == 3) _emulateMfcTag();
+    if (index == 0) _detectMagic();
+    else if (index == 1) _readMfcTag();
+    else if (index == 2) _openMfcDumpPicker();
+    else if (index == 3) _eraseMfcTag();
+    else if (index == 4) _emulateMfcTag();
+    else if (index == 5) _showMfcAdvancedMenu();
     return;
   }
   if (_state == STATE_MFC_DUMP_SELECT) {
@@ -724,8 +754,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
     case 1: _showMfcMenu(); break;
     case 2: _showMfuMenu(); break;
-    case 3: _detectMagic(); break;
-    case 4: _showDeviceInfo(); break;
+    case 3: _showDeviceInfo(); break;
   }
 #else
   (void)index;
@@ -735,7 +764,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
 
 void ST25R3916Screen::_showMenu() {
   _state = STATE_MENU;
-  setItems(_items, 5, _selMain);
+  setItems(_items, 4, _selMain);
 }
 
 void ST25R3916Screen::_showMfcMenu() {
@@ -746,7 +775,13 @@ void ST25R3916Screen::_showMfcMenu() {
 
 void ST25R3916Screen::_showMfcTagMenu() {
   _state = STATE_MFC_TAG_MENU;
-  setItems(_mfcTagItems, 4, _selMfcTag);
+  setItems(_mfcTagItems, 6, _selMfcTag);
+  render();
+}
+
+void ST25R3916Screen::_showMfcAdvancedMenu() {
+  _state = STATE_MFC_ADVANCED_MENU;
+  setItems(_mfcAdvancedItems, 4, _selMfcAdvanced);
   render();
 }
 
@@ -1152,6 +1187,8 @@ void ST25R3916Screen::_readMfcTag() {
     uid += h;
   }
 
+  MagicCardType magic = _detectMagicType(dev);
+
   _rowCount = 0;
   auto addRow = [&](const char* label, const String& value) {
     if (_rowCount >= kMaxRows) return;
@@ -1169,6 +1206,8 @@ void ST25R3916Screen::_readMfcTag() {
   char sak[4];
   snprintf(sak, sizeof(sak), "%02X", tag.sak);
   addRow("SAK", sak);
+  addRow("Magic", magic == MagicCardType::GEN1A ? "Gen1A" :
+                  magic == MagicCardType::GEN3 ? "Gen3" : "None");
   addRow("Dump", String((unsigned)_mfcDumpLen) + " bytes");
   addRow("Sectors", String((unsigned)sectors));
   addRow("Blocks", String((unsigned)blocksRead) + "/" + String((unsigned)blocks));
@@ -3678,79 +3717,499 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
 #endif
 }
 
-void ST25R3916Screen::_detectMagic() {
+MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
 #if defined(DEVICE_HAS_ST25R3916)
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 900, true) || !isMifareClassic(tag.sak)) {
+    dev.deactivate();
+    return MagicCardType::NONE;
+  }
+
+  // Gen3 first: a direct block-0 read succeeds without authentication.
+  {
+    const uint8_t cmd[2] = {0x30, 0x00};
+    uint8_t rx[20] = {};
+    size_t len = 0;
+    if (dev.nfcATransceive(cmd, sizeof(cmd), rx, sizeof(rx), len, 120) && len >= 16) {
+      dev.deactivate();
+      return MagicCardType::GEN3;
+    }
+  }
+
+  for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+    dev.deactivate();
+    delay(10);
+    if (!dev.scan(ST25R3916Backend::TECH_A, tag, 800, true)) continue;
+
+    const uint8_t halt[2] = {0x50, 0x00};
+    uint8_t ignored[4] = {};
+    size_t ignoredLen = 0;
+    (void)dev.nfcATransceive(halt, sizeof(halt), ignored, sizeof(ignored), ignoredLen, 80);
+    delay(2);
+
+    uint8_t wake = 0x40;
+    uint8_t ack[2] = {};
+    size_t bits = 0;
+    const bool wakeOk = dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) &&
+                        bits >= 4 && (ack[0] & 0x0F) == 0x0A;
+    if (!wakeOk) continue;
+
+    uint8_t unlock = 0x43;
+    memset(ack, 0, sizeof(ack));
+    bits = 0;
+    const bool unlockOk = dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) &&
+                          bits >= 4 && (ack[0] & 0x0F) == 0x0A;
+    if (unlockOk) {
+      dev.deactivate();
+      return MagicCardType::GEN1A;
+    }
+  }
+  dev.deactivate();
+#endif
+  return MagicCardType::NONE;
+}
+
+void ST25R3916Screen::_detectMagic() {
   _state = STATE_MAGIC_DETECT;
+  _magicDetectDone = false;
+  _magicLog.clear();
+  _magicLog.addLine("Detect Magic", TFT_CYAN);
+  _magicLog.addLine("[Press] Start", TFT_DARKGREY);
   render();
+}
+
+void ST25R3916Screen::_runDetectMagic() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _magicLog.addLine("Scanning tag...", TFT_WHITE);
+  render();
+  ST25R3916Backend dev;
+  if (!st25Begin(dev)) {
+    _magicLog.addLine("ST25R3916 not found", TFT_DARKGREY);
+    _magicDetectDone = true; render(); return;
+  }
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, false)) {
+    _magicLog.addLine("No tag detected", TFT_DARKGREY);
+    _magicDetectDone = true; render(); return;
+  }
+  if (!isMifareClassic(tag.sak)) {
+    _magicLog.addLine("Not MIFARE Classic", TFT_DARKGREY);
+    _magicDetectDone = true; render(); return;
+  }
+  _magicLog.addLine("Checking Magic type...", TFT_WHITE);
+  render();
+  MagicCardType mt = _detectMagicType(dev);
+  _magicLog.addLine("Magic type:", TFT_CYAN);
+  _magicLog.addLine(mt == MagicCardType::GEN1A ? "Gen1A" :
+                    mt == MagicCardType::GEN3 ? "Gen3" : "None",
+                    mt == MagicCardType::NONE ? TFT_DARKGREY : TFT_GREEN);
+  _magicDetectDone = true;
+  render();
+#else
+  _magicLog.addLine("ST25R3916 not supported", TFT_DARKGREY);
+  _magicDetectDone = true;
+  render();
+#endif
+}
+
+static uint16_t st25CrcA(const uint8_t* data, size_t len) {
+  uint16_t crc = 0x6363;
+  for (size_t i = 0; i < len; ++i) {
+    uint8_t d = data[i] ^ (uint8_t)(crc & 0x00FF);
+    d ^= (uint8_t)(d << 4);
+    crc = (uint16_t)((crc >> 8) ^ ((uint16_t)d << 8) ^ ((uint16_t)d << 3) ^ ((uint16_t)d >> 4));
+  }
+  return crc;
+}
+
+bool ST25R3916Screen::_writeMagicUid(ST25R3916Backend& dev, MagicCardType type,
+                                      const uint8_t* uid, uint8_t uidLen,
+                                      const uint8_t block0[16]) {
+#if defined(DEVICE_HAS_ST25R3916)
+  if (!uid || (uidLen != 4 && uidLen != 7)) return false;
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 900, true)) return false;
+
+  if (type == MagicCardType::GEN3) {
+    uint8_t cmd[13] = {0x90, 0xFB, 0xCC, 0xCC, uidLen};
+    memcpy(cmd + 5, uid, uidLen);
+    cmd[5 + uidLen] = 0x00;
+    uint8_t rx[8] = {};
+    size_t rxLen = 0;
+    const bool ok = dev.nfcATransceive(cmd, 6U + uidLen, rx, sizeof(rx), rxLen, 500);
+    dev.deactivate();
+    if (!ok) return false;
+  } else if (type == MagicCardType::GEN1A) {
+    if (uidLen != 4 || !block0) { dev.deactivate(); return false; }
+    const uint8_t halt[2] = {0x50, 0x00};
+    uint8_t scratch[4] = {}; size_t scratchLen = 0;
+    (void)dev.nfcATransceive(halt, sizeof(halt), scratch, sizeof(scratch), scratchLen, 100);
+    uint8_t ack[2] = {}; size_t bits = 0; uint8_t wake = 0x40;
+    if (!dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) || bits < 4 || (ack[0] & 0x0F) != 0x0A) { dev.deactivate(); return false; }
+    uint8_t unlock = 0x43; memset(ack,0,sizeof(ack)); bits=0;
+    if (!dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) || bits < 4 || (ack[0] & 0x0F) != 0x0A) { dev.deactivate(); return false; }
+
+    uint8_t writeCmd[4] = {0xA0, 0x00, 0, 0};
+    uint16_t crc = st25CrcA(writeCmd, 2); writeCmd[2]=(uint8_t)crc; writeCmd[3]=(uint8_t)(crc>>8);
+    memset(ack,0,sizeof(ack)); bits=0;
+    if (!dev.nfcATransceiveBits(writeCmd, 32, ack, 4, bits, 400) || bits < 4 || (ack[0]&0x0F)!=0x0A) { dev.deactivate(); return false; }
+
+    uint8_t data[18] = {}; memcpy(data, block0, 16); memcpy(data, uid, 4);
+    data[4] = uid[0] ^ uid[1] ^ uid[2] ^ uid[3];
+    crc = st25CrcA(data, 16); data[16]=(uint8_t)crc; data[17]=(uint8_t)(crc>>8);
+    memset(ack,0,sizeof(ack)); bits=0;
+    if (!dev.nfcATransceiveBits(data, 144, ack, 4, bits, 700) || bits < 4 || (ack[0]&0x0F)!=0x0A) { dev.deactivate(); return false; }
+    dev.deactivate();
+  } else { dev.deactivate(); return false; }
+
+  for (uint8_t attempt=0; attempt<3; ++attempt) {
+    ST25R3916Backend::ScanResult verify;
+    if (dev.scan(ST25R3916Backend::TECH_A, verify, 500, false) &&
+        verify.nfcidLen == uidLen && memcmp(verify.nfcid, uid, uidLen)==0) return true;
+    delay(30);
+  }
+#endif
+  return false;
+}
+
+void ST25R3916Screen::_readMfcMemory() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _readMfcTag();
+  if (_state == STATE_MFC_DETAILS && _mfcDumpLen && _mfcDumpBlocks) {
+    _mfcDumpOffset = 0;
+    _state = STATE_MFC_MEMORY;
+    render();
+    return;
+  }
+#endif
+  _showMfcAdvancedMenu();
+}
+
+void ST25R3916Screen::_editMfcMemory() {
+#if defined(DEVICE_HAS_ST25R3916)
+  ST25R3916Backend dev;
+  if (!st25Begin(dev)) {
+    ShowStatusAction::show("ST25R3916 not found");
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected");
+    _showMfcAdvancedMenu();
+    return;
+  }
+  if (!isMifareClassic(tag.sak)) {
+    dev.deactivate();
+    ShowStatusAction::show("Tag not MIFARE Classic");
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  size_t sectors = 0, blocks = 0;
+  mfcDimensions(tag.sak, sectors, blocks);
+  if (!blocks || blocks > 256) {
+    dev.deactivate();
+    ShowStatusAction::show("Unsupported MIFARE Classic");
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  const int block = InputNumberAction::popup(
+      (String("Block (1..") + String((unsigned)(blocks - 1)) + ")").c_str(),
+      1, (int)blocks - 1, 1);
+  if (InputNumberAction::wasCancelled()) {
+    dev.deactivate();
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  String hex = InputTextAction::popup("Block data (32 hex)", "", InputTextAction::INPUT_HEX);
+  if (InputTextAction::wasCancelled()) {
+    dev.deactivate();
+    _showMfcAdvancedMenu();
+    return;
+  }
+  hex.replace(" ", "");
+  hex.replace(":", "");
+  if (hex.length() != 32) {
+    dev.deactivate();
+    ShowStatusAction::show("Need 32 hex chars");
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  uint8_t data[16] = {};
+  for (uint8_t i = 0; i < 16; ++i) {
+    char b[3] = {hex[i * 2], hex[i * 2 + 1], 0};
+    char* end = nullptr;
+    unsigned long value = strtoul(b, &end, 16);
+    if (!end || *end) {
+      dev.deactivate();
+      ShowStatusAction::show("Bad hex");
+      _showMfcAdvancedMenu();
+      return;
+    }
+    data[i] = (uint8_t)value;
+  }
+
+  const uint8_t sector = block < 128 ? (uint8_t)(block / 4) : (uint8_t)(32 + (block - 128) / 16);
+  const uint8_t trailer = (uint8_t)(sectorFirstBlock(sector) + sectorBlockCount(sector) - 1U);
+  const auto defaults = NFCUtility::getDefaultKeys();
+
+  auto reactivate = [&]() -> bool {
+    dev.deactivate();
+    ST25R3916Backend::ScanResult current;
+    return dev.scan(ST25R3916Backend::TECH_A, current, 350, true) &&
+           isMifareClassic(current.sak) && sameTag(tag, current);
+  };
+
+  bool ok = false;
+  for (uint8_t keyType = 0; keyType < 2 && !ok; ++keyType) {
+    for (const auto& candidate : defaults) {
+      if (!dev.hasActiveTag() && !reactivate()) continue;
+      if (!dev.mifareClassicAuthenticate(trailer, candidate.value().data(), keyType == 1)) {
+        if (!reactivate() ||
+            !dev.mifareClassicAuthenticate(trailer, candidate.value().data(), keyType == 1)) {
+          dev.deactivate();
+          continue;
+        }
+      }
+      ok = dev.mifareClassicWriteBlock((uint8_t)block, data);
+      dev.deactivate();
+      if (ok) break;
+    }
+  }
+
+  ShowStatusAction::show(ok ? "Block written" : "Write failed: missing key", 1600);
+#endif
+  _showMfcAdvancedMenu();
+}
+
+void ST25R3916Screen::_editMfcUid() {
+#if defined(DEVICE_HAS_ST25R3916)
+  Header header;
+  header.render("Edit UID");
   _renderTagPrompt();
 
   ST25R3916Backend dev;
   if (!st25Begin(dev)) {
     ShowStatusAction::show("ST25R3916 not found");
-    _showMenu();
+    _showMfcAdvancedMenu();
     return;
   }
 
-  ST25R3916Backend::ScanResult tag;
-  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true) || !isMifareClassic(tag.sak)) {
-    dev.deactivate();
-    ShowStatusAction::show("Not MIFARE Classic");
-    _showMenu();
-    return;
-  }
-
-  MagicCardType mt = MagicCardType::NONE;
-
-  // Probe Gen3 first. Gen3/APDU cards accept a direct block-0 READ without
-  // MIFARE authentication; probing it before Gen1A avoids a false Gen3 result
-  // after opening the Gen1A backdoor.
-  {
-    const uint8_t cmd[2] = {0x30, 0x00};
-    uint8_t rx[20] = {};
-    size_t len = 0;
-    if (dev.nfcATransceive(cmd, sizeof(cmd), rx, sizeof(rx), len, 100) && len >= 16)
-      mt = MagicCardType::GEN3;
-  }
-
-  if (mt == MagicCardType::NONE) {
-    // Gen1A must be entered from HALT: 0x40 as a 7-bit frame followed by 0x43.
-    // Give the raw exchange substantially more time than an ordinary NFC-A
-    // command and verify the actual 4-bit ACK nibble instead of accepting any
-    // short response.
-    for (uint8_t attempt = 0; attempt < 2 && mt == MagicCardType::NONE; ++attempt) {
+  ST25R3916Backend::ScanResult presented;
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
       dev.deactivate();
-      delay(10);
-      if (!dev.scan(ST25R3916Backend::TECH_A, tag, 800, true)) continue;
+      _showMfcAdvancedMenu();
+      return;
+    }
+    if (dev.scan(ST25R3916Backend::TECH_A, presented, 200, true)) {
+      found = true;
+      break;
+    }
+    delay(50);
+  }
+  if (!found) {
+    ShowStatusAction::show("No tag detected");
+    _showMfcAdvancedMenu();
+    return;
+  }
+  dev.deactivate();
 
-      const uint8_t halt[2] = {0x50, 0x00};
-      uint8_t ignored[4] = {};
-      size_t ignoredLen = 0;
-      (void)dev.nfcATransceive(halt, sizeof(halt), ignored, sizeof(ignored), ignoredLen, 80);
-      delay(2);
+  const MagicCardType magic = _detectMagicType(dev);
+  if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
+    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 1800);
+    _showMfcAdvancedMenu();
+    return;
+  }
 
-      uint8_t wake = 0x40;
-      uint8_t ack[2] = {};
-      size_t bits = 0;
-      const bool wakeOk = dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) &&
-                          bits >= 4 && (ack[0] & 0x0F) == 0x0A;
-      if (!wakeOk) continue;
+  // Detect Magic performs fresh activations. Read the presented UID again so
+  // the editor and preview always refer to the tag that will actually be edited.
+  ST25R3916Backend::ScanResult tag;
+  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 1200, true) ||
+      (tag.nfcidLen != 4 && tag.nfcidLen != 7)) {
+    dev.deactivate();
+    ShowStatusAction::show("Edit UID failed");
+    _showMfcAdvancedMenu();
+    return;
+  }
 
-      uint8_t unlock = 0x43;
+  uint8_t currentUid[7] = {};
+  const uint8_t currentLen = tag.nfcidLen;
+  memcpy(currentUid, tag.nfcid, currentLen);
+
+  uint8_t block0[16] = {};
+  if (magic == MagicCardType::GEN1A) {
+    if (currentLen != 4) {
+      dev.deactivate();
+      ShowStatusAction::show("Edit UID failed");
+      _showMfcAdvancedMenu();
+      return;
+    }
+
+    const uint8_t halt[2] = {0x50, 0x00};
+    uint8_t tmp[4] = {};
+    size_t tmpLen = 0;
+    (void)dev.nfcATransceive(halt, sizeof(halt), tmp, sizeof(tmp), tmpLen, 80);
+
+    uint8_t ack[2] = {};
+    uint8_t wake = 0x40;
+    size_t bits = 0;
+    bool ok = dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) &&
+              bits >= 4 && (ack[0] & 0x0F) == 0x0A;
+    uint8_t unlock = 0x43;
+    if (ok) {
       memset(ack, 0, sizeof(ack));
       bits = 0;
-      const bool unlockOk = dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) &&
-                            bits >= 4 && (ack[0] & 0x0F) == 0x0A;
-      if (unlockOk) mt = MagicCardType::GEN1A;
+      ok = dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) &&
+           bits >= 4 && (ack[0] & 0x0F) == 0x0A;
     }
+    if (ok) {
+      const uint8_t read0[2] = {0x30, 0x00};
+      size_t len = 0;
+      ok = dev.nfcATransceive(read0, sizeof(read0), block0, sizeof(block0), len, 500) &&
+           len >= sizeof(block0);
+    }
+    dev.deactivate();
+    if (!ok) {
+      ShowStatusAction::show("Edit UID failed");
+      _showMfcAdvancedMenu();
+      return;
+    }
+  } else {
+    dev.deactivate();
   }
 
+  String initial;
+  for (uint8_t i = 0; i < currentLen; ++i) {
+    char h[3];
+    snprintf(h, sizeof(h), "%02X", currentUid[i]);
+    initial += h;
+  }
+
+  String hex = InputTextAction::popup("New UID (8 or 14 hex)", initial.c_str(),
+                                      InputTextAction::INPUT_HEX);
+  if (InputTextAction::wasCancelled()) {
+    _showMfcAdvancedMenu();
+    return;
+  }
+  hex.replace(" ", "");
+  hex.replace(":", "");
+  if (hex.length() != 8 && hex.length() != 14) {
+    ShowStatusAction::show("UID must be 4 or 7 bytes");
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  const uint8_t newLen = (uint8_t)(hex.length() / 2);
+  if (magic == MagicCardType::GEN1A && newLen != 4) {
+    ShowStatusAction::show("Gen1A UID must be 4 bytes", 1600);
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  uint8_t newUid[7] = {};
+  for (uint8_t i = 0; i < newLen; ++i) {
+    char b[3] = {hex[i * 2], hex[i * 2 + 1], 0};
+    char* end = nullptr;
+    const unsigned long value = strtoul(b, &end, 16);
+    if (!end || *end) {
+      ShowStatusAction::show("Bad hex");
+      _showMfcAdvancedMenu();
+      return;
+    }
+    newUid[i] = (uint8_t)value;
+  }
+
+  auto uidText = [](const uint8_t* uid, uint8_t len) {
+    String out;
+    for (uint8_t i = 0; i < len; ++i) {
+      if (i) out += ':';
+      char h[3];
+      snprintf(h, sizeof(h), "%02X", uid[i]);
+      out += h;
+    }
+    return out;
+  };
+
+  // Match PN532/CU: show the old and new UIDs before any RF write occurs.
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bh = bodyH();
+  lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
+  header.render("Edit UID");
+  StatusBar::refresh();
+  lcd.setTextDatum(TL_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
+  lcd.drawString("Current UID", bx + 4, by + 8);
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString(uidText(currentUid, currentLen), bx + 4, by + 24);
+  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
+  lcd.drawString("New UID", bx + 4, by + 48);
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString(uidText(newUid, newLen), bx + 4, by + 64);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("[Press] Write", bx + 4, by + bh - 18);
+
+  while (true) {
+    Uni.update();
+    if (!Uni.Nav->wasPressed()) {
+      delay(10);
+      continue;
+    }
+    const auto dir = Uni.Nav->readDirection();
+    if (dir == INavigation::DIR_BACK) {
+      _showMfcAdvancedMenu();
+      return;
+    }
+    if (dir == INavigation::DIR_PRESS) break;
+  }
+
+  // Revalidate the physical tag immediately before writing. In particular,
+  // never reuse Gen1A block 0 if the user swapped cards in the editor/preview.
+  ST25R3916Backend::ScanResult verify;
+  if (!dev.scan(ST25R3916Backend::TECH_A, verify, 700, true) ||
+      verify.nfcidLen != currentLen ||
+      memcmp(verify.nfcid, currentUid, currentLen) != 0) {
+    dev.deactivate();
+    ShowStatusAction::show("Edit UID failed", 1600);
+    _showMfcAdvancedMenu();
+    return;
+  }
   dev.deactivate();
-  ShowStatusAction::show(magicCardTypeName(mt), 1800);
-  _showMenu();
-#else
-  ShowStatusAction::show("ST25R3916 not supported");
-  _showMenu();
+
+  if (_detectMagicType(dev) != magic) {
+    ShowStatusAction::show("Edit UID failed", 1600);
+    _showMfcAdvancedMenu();
+    return;
+  }
+
+  const bool ok = _writeMagicUid(dev, magic, newUid, newLen,
+                                 magic == MagicCardType::GEN1A ? block0 : nullptr);
+  ShowStatusAction::show(ok ? "UID edited" : "Edit UID failed", 1600);
 #endif
+  _showMfcAdvancedMenu();
+}
+
+void ST25R3916Screen::_lockMfcUidGen3() {
+#if defined(DEVICE_HAS_ST25R3916)
+  ST25R3916Backend dev; if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showMfcAdvancedMenu();return;}
+  if(_detectMagicType(dev)!=MagicCardType::GEN3){ShowStatusAction::show("Tag is not Gen3");_showMfcAdvancedMenu();return;}
+  static const InputSelectAction::Option opts[]={{"Lock UID permanently","lock"}};
+  const char* choice=InputSelectAction::popup("Permanent UID lock",opts,1,nullptr); if(!choice||strcmp(choice,"lock")!=0){_showMfcAdvancedMenu();return;}
+  ST25R3916Backend::ScanResult tag; if(!dev.scan(ST25R3916Backend::TECH_A,tag,1000,true)){ShowStatusAction::show("Tag lost");_showMfcAdvancedMenu();return;}
+  const uint8_t cmd[]={0x90,0xFD,0x11,0x11,0x00}; uint8_t rx[8]={}; size_t len=0; const bool ok=dev.nfcATransceive(cmd,sizeof(cmd),rx,sizeof(rx),len,500); dev.deactivate();
+  ShowStatusAction::show(ok?"Gen3 UID locked":"Lock failed",1600);
+#endif
+  _showMfcAdvancedMenu();
 }
 
 void ST25R3916Screen::_showDeviceInfo() {
