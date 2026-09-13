@@ -46,6 +46,18 @@ public:
       case STATE_MFC_DICT_VIEW: return _dictViewTitle.length() ? _dictViewTitle.c_str() : "Dictionary";
       case STATE_MAGIC_DETECT: return "Detect Magic";
       case STATE_DEVICE_INFO: return "Device Info";
+      case STATE_EXP_MENU: return _expFamilyTitle();
+      case STATE_EXP_TAG_MENU: return "Tag Operations";
+      case STATE_EXP_ADVANCED_MENU: return "Advanced";
+      case STATE_EXP_SUB1_MENU: return _expSub1Title();
+      case STATE_EXP_SUB2_MENU: return _expSub2Title();
+      case STATE_EXP_DETAILS: return "Tag Details";
+      case STATE_EXP_RESULT: return _advancedOperationTitle.length() ? _advancedOperationTitle.c_str() : "Result";
+      case STATE_EXP_NDEF_MENU: return "NDEF Operations";
+      case STATE_EXP_NDEF_WRITE_MENU: return "Write NDEF";
+      case STATE_EXP_NDEF_FILE_SELECT: return "NDEF Files";
+      case STATE_EXP_NDEF_DETAILS: return "NDEF Details";
+      case STATE_EXP_WORKING: return _advancedOperationTitle.length() ? _advancedOperationTitle.c_str() : "Experimental";
       case STATE_MFC_NDEF_WRITE_MENU: return "Write NDEF";
       case STATE_MFC_NDEF_FILE_SELECT: return "NDEF Files";
       case STATE_MFC_NDEF_READING: return "Read NDEF";
@@ -113,6 +125,18 @@ private:
     STATE_MFU_NDEF_READING,
     STATE_MFU_NDEF_WRITING,
     STATE_MFU_NDEF_DETAILS,
+    STATE_EXP_MENU,
+    STATE_EXP_TAG_MENU,
+    STATE_EXP_ADVANCED_MENU,
+    STATE_EXP_SUB1_MENU,
+    STATE_EXP_SUB2_MENU,
+    STATE_EXP_DETAILS,
+    STATE_EXP_RESULT,
+    STATE_EXP_NDEF_MENU,
+    STATE_EXP_NDEF_WRITE_MENU,
+    STATE_EXP_NDEF_FILE_SELECT,
+    STATE_EXP_NDEF_DETAILS,
+    STATE_EXP_WORKING,
     STATE_EMULATING,
   };
 
@@ -122,11 +146,22 @@ private:
   uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcAdvanced = 0, _selMfcNdef = 0;
   uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
   uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0;
+  uint8_t _selExp = 0, _selExpTag = 0, _selExpAdvanced = 0, _selExpSub1 = 0, _selExpSub2 = 0, _selExpNdef = 0;
 
-  ListItem _items[4] = {
+  enum ExperimentalFamily : uint8_t { EXP_NONE, EXP_DESFIRE, EXP_NFCV, EXP_FELICA, EXP_TYPE4B };
+  ExperimentalFamily _expFamily = EXP_NONE;
+  State _expResultReturn = STATE_EXP_TAG_MENU;
+  uint8_t _expDesfireAid[3] = {};
+  bool _expDesfireAidSelected = false;
+
+  ListItem _items[8] = {
     {"Scan Tag"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
+    {"DESFire (experimental)"},
+    {"ICODE / ST25V (experimental)"},
+    {"FeliCa (experimental)"},
+    {"Type 4B (experimental)"},
     {"Device Info"},
   };
   ListItem _mfcItems[4] = {
@@ -185,6 +220,20 @@ private:
     {"Remove Password"},
     {"Lock Tag"},
   };
+  ListItem _expRootItems[2] = {{"Tag Operations"}, {"NDEF Operations"}};
+  ListItem _expNdefItems[4] = {{"Read NDEF"}, {"Write NDEF"}, {"Format NDEF"}, {"Erase NDEF"}};
+  ListItem _expDesfireTagItems[4] = {{"Read Tag"}, {"Applications"}, {"Files"}, {"Advanced"}};
+  ListItem _expDesfireAppItems[3] = {{"List Applications"}, {"Select Application"}, {"Application Details"}};
+  ListItem _expDesfireFileItems[4] = {{"List Files"}, {"Read File"}, {"Edit File"}, {"File Details"}};
+  ListItem _expDesfireAdvancedItems[2] = {{"Authenticate"}, {"Send APDU"}};
+  ListItem _expNfcvTagItems[4] = {{"Read Tag"}, {"Write to Tag"}, {"Erase Tag"}, {"Advanced"}};
+  ListItem _expNfcvAdvancedItems[5] = {{"Read Memory"}, {"Edit Memory"}, {"Security Status"}, {"Password"}, {"Lock Block"}};
+  ListItem _expFelicaTagItems[4] = {{"Read Tag"}, {"Systems"}, {"Services"}, {"Advanced"}};
+  ListItem _expFelicaSystemItems[2] = {{"List Systems"}, {"System Details"}};
+  ListItem _expFelicaServiceItems[3] = {{"List Services"}, {"Read Service"}, {"Service Details"}};
+  ListItem _expFelicaAdvancedItems[3] = {{"Read Memory"}, {"Edit Memory"}, {"Raw Commands"}};
+  ListItem _expType4bTagItems[2] = {{"Read Tag"}, {"Advanced"}};
+  ListItem _expType4bAdvancedItems[2] = {{"Send APDU"}, {"Raw Commands"}};
   ListItem _mfcNdefWriteItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},
   };
@@ -230,6 +279,7 @@ private:
   bool _ndefWritePreview = false;
   bool _ndefWritePreviewFromFile = false;
   bool _ndefMfuTarget = false;
+  bool _ndefExperimentalTarget = false;
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
   String _dumpPickDir;
@@ -311,5 +361,27 @@ private:
   void _openNdefFile(uint8_t index);
   void _showNdefDetails(const uint8_t* uid, uint8_t uidLen, const uint8_t* ndef, size_t ndefLen);
   void _addWrappedRow(const String& label, const String& value);
+  const char* _expFamilyTitle() const;
+  const char* _expSub1Title() const;
+  const char* _expSub2Title() const;
+  void _showExperimentalMenu(ExperimentalFamily family);
+  void _showExperimentalTagMenu();
+  void _showExperimentalAdvancedMenu();
+  void _showExperimentalSub1Menu();
+  void _showExperimentalSub2Menu();
+  void _showExperimentalNdefMenu();
+  void _showExperimentalNdefWriteMenu();
+  void _experimentalReadTag();
+  void _experimentalDesfireAction(uint8_t group, uint8_t index);
+  void _experimentalNfcvAction(uint8_t index);
+  void _experimentalFelicaAction(uint8_t group, uint8_t index);
+  void _experimentalType4bAction(uint8_t index);
+  void _experimentalReadNdef();
+  bool _experimentalWriteNdef(const uint8_t* ndef, size_t ndefLen, bool formatOnly = false);
+  void _experimentalEraseNdef(bool formatOnly);
+  void _experimentalSendApdu(bool desfire);
+  void _experimentalRawCommand();
+  void _showExperimentalHex(const char* title, const uint8_t* data, size_t len);
+  void _returnToNdefWriteMenu();
   void _renderTagPrompt();
 };
