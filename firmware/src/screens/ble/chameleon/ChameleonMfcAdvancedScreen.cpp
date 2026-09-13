@@ -208,7 +208,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   // Final preview/confirmation. Back cancels; Press performs the write.
   // InputTextAction may leave pixels outside the body rectangle. Clear the
   // whole display before drawing the preview to avoid stale popup artefacts.
-  lcd.fillScreen(TFT_BLACK);
+  lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
   header.render("Edit UID");
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);

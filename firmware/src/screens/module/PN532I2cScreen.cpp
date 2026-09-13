@@ -4686,7 +4686,7 @@ void PN532I2cScreen::_doEditUid() {
   // InputTextAction may leave pixels outside the body rectangle (notably the
   // bottom strip reserved by BaseScreen). Clear the complete display before
   // drawing the preview so no keyboard/popup artefacts remain.
-  lcd.fillScreen(TFT_BLACK);
+  lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
   header.render("Edit UID");
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
