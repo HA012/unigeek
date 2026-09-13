@@ -229,7 +229,7 @@ private:
   ListItem _expNfcvTagItems[4] = {{"Read Tag"}, {"Write to Tag"}, {"Erase Tag"}, {"Advanced"}};
   ListItem _expNfcvAdvancedItems[5] = {{"Read Memory"}, {"Edit Memory"}, {"Security Status"}, {"Password"}, {"Lock Block"}};
   ListItem _expFelicaTagItems[4] = {{"Read Tag"}, {"Systems"}, {"Services"}, {"Advanced"}};
-  ListItem _expFelicaSystemItems[2] = {{"List Systems"}, {"System Details"}};
+  ListItem _expFelicaSystemItems[1] = {{"List Systems"}};
   ListItem _expFelicaServiceItems[3] = {{"List Services"}, {"Read Service"}, {"Service Details"}};
   ListItem _expFelicaAdvancedItems[3] = {{"Read Memory"}, {"Edit Memory"}, {"Raw Commands"}};
   ListItem _expType4bTagItems[2] = {{"Read Tag"}, {"Advanced"}};
@@ -305,6 +305,7 @@ private:
   void _renderMfcDump();
   void _handleMfcDumpNav(INavigation::Direction dir);
   void _showDeviceInfo();
+  void _showStatusAndReturn(const char* message, State target, int32_t durationMs = 1600);
   void _showMenu();
   void _showMfcMenu();
   void _showMfcTagMenu();

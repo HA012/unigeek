@@ -536,38 +536,7 @@ void ST25R3916Screen::onUpdate() {
 
   auto dir = Uni.Nav->readDirection();
   if (dir == INavigation::DIR_BACK) {
-    if (_state == STATE_MFC_DUMP_HEX) {
-      _state = STATE_MFC_DETAILS;
-      render();
-    } else if (_state == STATE_MFU_NDEF_DETAILS) {
-      if (_ndefWritePreview) { bool fromFile=_ndefWritePreviewFromFile; _ndefWritePreview=false; if(fromFile)_openNdefFilePicker(); else _showMfuNdefWriteMenu(); } else _showMfuNdefMenu();
-    } else if (_state == STATE_MFC_NDEF_DETAILS) {
-      if (_ndefWritePreview) {
-        const bool fromFile = _ndefWritePreviewFromFile;
-        _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
-        if (fromFile) _openNdefFilePicker(); else _showMfcNdefWriteMenu();
-      } else _showMfcNdefMenu();
-    } else if (_state == STATE_EXP_NDEF_DETAILS) {
-      if (_ndefWritePreview) { const bool fromFile = _ndefWritePreviewFromFile; _ndefWritePreview = false; _ndefWritePreviewFromFile = false; if (fromFile) _openNdefFilePicker(); else _showExperimentalNdefWriteMenu(); }
-      else _showExperimentalNdefMenu();
-    } else if (_state == STATE_EXP_DETAILS) {
-      _showExperimentalTagMenu();
-    } else if (_state == STATE_EXP_RESULT) {
-      if (_expResultReturn == STATE_EXP_SUB1_MENU) _showExperimentalSub1Menu();
-      else if (_expResultReturn == STATE_EXP_SUB2_MENU) _showExperimentalSub2Menu();
-      else if (_expResultReturn == STATE_EXP_ADVANCED_MENU) _showExperimentalAdvancedMenu();
-      else _showExperimentalTagMenu();
-    } else if (_state == STATE_MFU_DUMP_HEX) {
-      _state = STATE_MFU_DETAILS;
-      render();
-    } else if (_state == STATE_MFU_DETAILS) {
-      _showMfuTagMenu();
-    } else if (_state == STATE_MFC_DETAILS || _state == STATE_MFC_WRITE_PREVIEW ||
-               _state == STATE_MFC_WRITING) {
-      _showMfcTagMenu();
-    } else {
-      _showMenu();
-    }
+    onBack();
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
@@ -664,7 +633,7 @@ void ST25R3916Screen::onRender() {
 
 void ST25R3916Screen::onBack() {
   if (_state == STATE_EMULATING) { _stopEmulation(); return; }
-  if (_state == STATE_DETAILS) {
+  if (_state == STATE_SCANNING || _state == STATE_DETAILS) {
     _showMenu();
     return;
   }
@@ -707,7 +676,8 @@ void ST25R3916Screen::onBack() {
     _showMfcAdvancedMenu();
     return;
   }
-  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_WRITING) {
+  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT ||
+      _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _showMfcTagMenu();
     return;
   }
@@ -912,6 +882,36 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   (void)index;
   ShowStatusAction::show("ST25R3916 not supported");
 #endif
+}
+
+void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, int32_t durationMs) {
+  auto showTarget = [this, target]() {
+    switch (target) {
+      case STATE_MENU: _showMenu(); break;
+      case STATE_MFC_MENU: _showMfcMenu(); break;
+      case STATE_MFC_TAG_MENU: _showMfcTagMenu(); break;
+      case STATE_MFC_ADVANCED_MENU: _showMfcAdvancedMenu(); break;
+      case STATE_MFC_NDEF_MENU: _showMfcNdefMenu(); break;
+      case STATE_MFC_ATTACKS_MENU: _showMfcAttacksMenu(); break;
+      case STATE_MFC_KEYS_MENU: _showMfcKeysMenu(); break;
+      case STATE_MFU_MENU: _showMfuMenu(); break;
+      case STATE_MFU_TAG_MENU: _showMfuTagMenu(); break;
+      case STATE_MFU_ADVANCED_MENU: _showMfuAdvancedMenu(); break;
+      case STATE_MFU_NDEF_MENU: _showMfuNdefMenu(); break;
+      case STATE_EXP_TAG_MENU: _showExperimentalTagMenu(); break;
+      case STATE_EXP_ADVANCED_MENU: _showExperimentalAdvancedMenu(); break;
+      case STATE_EXP_SUB1_MENU: _showExperimentalSub1Menu(); break;
+      case STATE_EXP_SUB2_MENU: _showExperimentalSub2Menu(); break;
+      case STATE_EXP_NDEF_MENU: _showExperimentalNdefMenu(); break;
+      default: _showMenu(); break;
+    }
+  };
+
+  // Show transient status over a clean destination screen and redraw once the
+  // overlay removes itself. This prevents remnants from working/prompt screens.
+  showTarget();
+  ShowStatusAction::show(message, durationMs);
+  showTarget();
 }
 
 void ST25R3916Screen::_showMenu() {
@@ -3566,30 +3566,21 @@ void ST25R3916Screen::_setMfuPassword() {
   render();
   _renderTagPrompt();
 
-  // Show operation results over a freshly rendered menu, then redraw the
-  // menu after the transient overlay wipes itself. This avoids remnants from
-  // the "Place tag on reader..." working screen around/under status boxes.
-  auto showAdvancedStatus = [this](const char* message, int32_t durationMs) {
-    _showMfuAdvancedMenu();
-    ShowStatusAction::show(message, durationMs);
-    _showMfuAdvancedMenu();
-  };
-
   ST25R3916Backend dev;
-  if (!st25Begin(dev)) { showAdvancedStatus("ST25R3916 not found", 1600); return; }
+  if (!st25Begin(dev)) { _showStatusAndReturn("ST25R3916 not found", STATE_MFU_ADVANCED_MENU, 1600); return; }
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
-    showAdvancedStatus("No tag detected", 1600); return;
+    _showStatusAndReturn("No tag detected", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages)) {
-    dev.deactivate(); showAdvancedStatus("Tag not supported", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
   const uint16_t cfg = st25MfuConfig0(type);
   if (cfg == 0xFFFF || cfg + 3 >= pages) {
-    dev.deactivate(); showAdvancedStatus("Password not supported", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Password not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   uint8_t c0[4] = {}, c1[4] = {};
@@ -3601,7 +3592,7 @@ void ST25R3916Screen::_setMfuPassword() {
   }
   if (!st25ReadPageTailSafe(dev, cfg, pages, c0) ||
       !st25ReadPageTailSafe(dev, cfg + 1, pages, c1)) {
-    dev.deactivate(); showAdvancedStatus("Read config failed", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Read config failed", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   uint8_t newPwd[4] = {};
@@ -3615,7 +3606,7 @@ void ST25R3916Screen::_setMfuPassword() {
   const uint8_t desiredAccess = (uint8_t)((c1[0] & ~0x87u) | (strcmp(mode, "rw") == 0 ? 0x80u : 0u));
   const bool configLocked = (c1[0] & 0x40u) != 0;
   if (configLocked && (c0[3] != 4 || (c1[0] & 0x87u) != (desiredAccess & 0x87u))) {
-    dev.deactivate(); showAdvancedStatus("Configuration locked", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Configuration locked", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   // NTAG21x deliberately masks PWD and PACK on READ/FAST_READ: the real
@@ -3628,7 +3619,7 @@ void ST25R3916Screen::_setMfuPassword() {
     c1[0] = desiredAccess;
     c0[3] = 4; // protect the complete user area only after credential verify
     if (c1[0] != oldAccess && !st25WritePageVerified(dev, cfg + 1, c1, pages)) {
-      dev.deactivate(); showAdvancedStatus("ACCESS write failed", 1800); return;
+      dev.deactivate(); _showStatusAndReturn("ACCESS write failed", STATE_MFU_ADVANCED_MENU, 1800); return;
     }
   }
 
@@ -3644,7 +3635,7 @@ void ST25R3916Screen::_setMfuPassword() {
   delay(8);
   ST25R3916Backend::ScanResult writeTarget;
   if (!dev.scan(ST25R3916Backend::TECH_A, writeTarget, 1200, true) || !sameTag(tag, writeTarget)) {
-    dev.deactivate(); showAdvancedStatus("PWD reselect failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("PWD reselect failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
 
   // Use the same raw-ACK-aware WRITE path that already succeeds in Remove
@@ -3660,7 +3651,7 @@ void ST25R3916Screen::_setMfuPassword() {
       snprintf(msg, sizeof(msg), "PWD write failed rc=%u bits=%u",
                (unsigned)dev.lastType2WriteCode(), (unsigned)dev.lastType2WriteBits());
     }
-    dev.deactivate(); showAdvancedStatus(msg, 2400); return;
+    dev.deactivate(); _showStatusAndReturn(msg, STATE_MFU_ADVANCED_MENU, 2400); return;
   }
 
   // PWD takes effect immediately. Re-select the same PICC and prove that the
@@ -3671,24 +3662,24 @@ void ST25R3916Screen::_setMfuPassword() {
   delay(8);
   ST25R3916Backend::ScanResult current;
   if (!dev.scan(ST25R3916Backend::TECH_A, current, 1200, true)) {
-    dev.deactivate(); showAdvancedStatus("Password reselect failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("Password reselect failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   if (!sameTag(tag, current)) {
-    dev.deactivate(); showAdvancedStatus("Password tag mismatch", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("Password tag mismatch", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   uint8_t returnedPack[2] = {};
   if (!dev.type2PwdAuth(newPwd, returnedPack)) {
     char msg[64];
     snprintf(msg, sizeof(msg), "PWD_AUTH failed rc=%u bits=%u",
              (unsigned)dev.lastPwdAuthCode(), (unsigned)dev.lastPwdAuthBits());
-    dev.deactivate(); showAdvancedStatus(msg, 2200); return;
+    dev.deactivate(); _showStatusAndReturn(msg, STATE_MFU_ADVANCED_MENU, 2200); return;
   }
   if (!configLocked && !st25WritePageVerified(dev, cfg, c0, pages)) {
-    dev.deactivate(); showAdvancedStatus("AUTH0 write failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("AUTH0 write failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
 
   dev.deactivate();
-  showAdvancedStatus("Password set\nRetap tag to activate", 1800);
+  _showStatusAndReturn("Password set\nRetap tag to activate", STATE_MFU_ADVANCED_MENU, 1800);
 #endif
 }
 
@@ -3699,30 +3690,21 @@ void ST25R3916Screen::_removeMfuPassword() {
   render();
   _renderTagPrompt();
 
-  // Show operation results over a freshly rendered menu, then redraw the
-  // menu after the transient overlay wipes itself. This avoids remnants from
-  // the "Place tag on reader..." working screen around/under status boxes.
-  auto showAdvancedStatus = [this](const char* message, int32_t durationMs) {
-    _showMfuAdvancedMenu();
-    ShowStatusAction::show(message, durationMs);
-    _showMfuAdvancedMenu();
-  };
-
   ST25R3916Backend dev;
-  if (!st25Begin(dev)) { showAdvancedStatus("ST25R3916 not found", 1600); return; }
+  if (!st25Begin(dev)) { _showStatusAndReturn("ST25R3916 not found", STATE_MFU_ADVANCED_MENU, 1600); return; }
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) {
-    showAdvancedStatus("No tag detected", 1600); return;
+    _showStatusAndReturn("No tag detected", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages)) {
-    dev.deactivate(); showAdvancedStatus("Tag not supported", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
   const uint16_t cfg = st25MfuConfig0(type);
   if (cfg == 0xFFFF || cfg + 3 >= pages) {
-    dev.deactivate(); showAdvancedStatus("Password not supported", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Password not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   uint8_t auth0 = 0xFF;
@@ -3738,10 +3720,10 @@ void ST25R3916Screen::_removeMfuPassword() {
   uint8_t c0[4] = {}, c1[4] = {};
   if (!st25ReadPageTailSafe(dev, cfg, pages, c0) ||
       !st25ReadPageTailSafe(dev, cfg + 1, pages, c1)) {
-    dev.deactivate(); showAdvancedStatus("Read config failed", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Read config failed", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
   if (c1[0] & 0x40u) {
-    dev.deactivate(); showAdvancedStatus("Configuration locked", 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Configuration locked", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
 
   c1[0] &= (uint8_t)~0x87u; // PROT=0, AUTHLIM=0
@@ -3752,19 +3734,19 @@ void ST25R3916Screen::_removeMfuPassword() {
 
   // First disable protection while the old authenticated session is alive.
   if (!st25WritePageVerified(dev, cfg + 1, c1, pages)) {
-    dev.deactivate(); showAdvancedStatus("ACCESS reset failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("ACCESS reset failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   if (!st25WritePageVerified(dev, cfg, c0, pages)) {
-    dev.deactivate(); showAdvancedStatus("AUTH0 reset failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("AUTH0 reset failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
 
   // Protection is now disabled, so restore the delivery credentials. Write
   // PACK first and PWD last, mirroring Set Password's safe ordering.
   if (!dev.type2WritePage((uint8_t)(cfg + 3), defaultPackPage)) {
-    dev.deactivate(); showAdvancedStatus("PACK reset failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("PACK reset failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   if (!dev.type2WritePage((uint8_t)(cfg + 2), defaultPwd)) {
-    dev.deactivate(); showAdvancedStatus("PWD reset failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("PWD reset failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
 
   // Clean reselect: verify both that protection remains disabled and that the
@@ -3773,28 +3755,28 @@ void ST25R3916Screen::_removeMfuPassword() {
   delay(8);
   ST25R3916Backend::ScanResult current;
   if (!dev.scan(ST25R3916Backend::TECH_A, current, 1200, true) || !sameTag(tag, current)) {
-    dev.deactivate(); showAdvancedStatus("Verify reselect failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("Verify reselect failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   uint8_t v0[4] = {}, v1[4] = {}, returnedPack[2] = {};
   if (!st25ReadPageTailSafe(dev, cfg, pages, v0) ||
       !st25ReadPageTailSafe(dev, cfg + 1, pages, v1) ||
       v0[3] != 0xFF || (v1[0] & 0x87u) != 0) {
-    dev.deactivate(); showAdvancedStatus("Config verify failed", 1800); return;
+    dev.deactivate(); _showStatusAndReturn("Config verify failed", STATE_MFU_ADVANCED_MENU, 1800); return;
   }
   if (!dev.type2PwdAuth(defaultPwd, returnedPack)) {
     char msg[64];
     snprintf(msg, sizeof(msg), "PWD verify failed rc=%u bits=%u",
              (unsigned)dev.lastPwdAuthCode(), (unsigned)dev.lastPwdAuthBits());
-    dev.deactivate(); showAdvancedStatus(msg, 2200); return;
+    dev.deactivate(); _showStatusAndReturn(msg, STATE_MFU_ADVANCED_MENU, 2200); return;
   }
   if (memcmp(returnedPack, expectedPack, sizeof(expectedPack)) != 0) {
     char msg[48];
     snprintf(msg, sizeof(msg), "PACK verify %02X%02X", returnedPack[0], returnedPack[1]);
-    dev.deactivate(); showAdvancedStatus(msg, 2000); return;
+    dev.deactivate(); _showStatusAndReturn(msg, STATE_MFU_ADVANCED_MENU, 2000); return;
   }
 
   dev.deactivate();
-  showAdvancedStatus("Password removed", 1600);
+  _showStatusAndReturn("Password removed", STATE_MFU_ADVANCED_MENU, 1600);
 #endif
 }
 
@@ -4582,7 +4564,7 @@ void ST25R3916Screen::_showExperimentalAdvancedMenu() {
 void ST25R3916Screen::_showExperimentalSub1Menu() {
   _state = STATE_EXP_SUB1_MENU;
   if (_expFamily == EXP_DESFIRE) setItems(_expDesfireAppItems, 3, _selExpSub1);
-  else if (_expFamily == EXP_FELICA) setItems(_expFelicaSystemItems, 2, _selExpSub1);
+  else if (_expFamily == EXP_FELICA) setItems(_expFelicaSystemItems, 1, _selExpSub1);
   render();
 }
 
@@ -4701,7 +4683,8 @@ void ST25R3916Screen::_experimentalDesfireAction(uint8_t group, uint8_t index) {
     if(!selectAid()){dev.deactivate();ShowStatusAction::show("Select application failed");_showExperimentalSub1Menu();return;}bool ok=ST25R3916Experimental::desfireExchange(dev,0x45,nullptr,0,out,sizeof(out),n,st);if(!ok){dev.deactivate();ShowStatusAction::show("Application details failed");_showExperimentalSub1Menu();return;}showData("Application Details",out,n);return;
   }
   if(group==2){
-    if(!selectAid()){dev.deactivate();ShowStatusAction::show("Select application first");_showExperimentalSub2Menu();return;}
+    if(!_expDesfireAidSelected){dev.deactivate();_showStatusAndReturn("Select application first",STATE_EXP_SUB2_MENU);return;}
+    if(!selectAid()){dev.deactivate();_showStatusAndReturn("Selected application unavailable",STATE_EXP_SUB2_MENU);return;}
     if(index==0){if(!ST25R3916Experimental::desfireExchange(dev,0x6F,nullptr,0,out,sizeof(out),n,st)){dev.deactivate();ShowStatusAction::show("List files failed");_showExperimentalSub2Menu();return;}showData("File List",out,n);return;}
     int fileNo=InputNumberAction::popup("File number",0,31,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalSub2Menu();return;}
     if(index==3){uint8_t f=(uint8_t)fileNo;if(!ST25R3916Experimental::desfireExchange(dev,0xF5,&f,1,out,sizeof(out),n,st)){dev.deactivate();ShowStatusAction::show("File details failed");_showExperimentalSub2Menu();return;}showData("File Details",out,n);return;}
@@ -4755,7 +4738,7 @@ void ST25R3916Screen::_experimentalNfcvAction(uint8_t index) {
 void ST25R3916Screen::_experimentalFelicaAction(uint8_t group, uint8_t index) {
 #if defined(DEVICE_HAS_ST25R3916)
   _state=STATE_EXP_WORKING;_advancedOperationTitle=group==1?"Systems":group==2?"Services":"Advanced";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalTagMenu();return;}ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_F,tag,5000,true)||tag.technology!=ST25R3916Backend::Technology::NFC_F){ShowStatusAction::show("No FeliCa tag");_showExperimentalTagMenu();return;}
-  if(group==1){_expResultReturn=STATE_EXP_SUB1_MENU;uint16_t sys[32]={};size_t count=0;if(!ST25R3916Experimental::felicaRequestSystemCodes(dev,tag,sys,32,count)){dev.deactivate();ShowStatusAction::show("System request failed");_showExperimentalSub1Menu();return;}_rowCount=0;for(size_t i=0;i<count&&_rowCount<kMaxRows;++i){char l[16];snprintf(l,sizeof(l),"System %u",(unsigned)i);char v[10];snprintf(v,sizeof(v),"0x%04X",sys[i]);_rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;}if(index==1&&count&&_rowCount<kMaxRows){_rowLabels[_rowCount]="Note";_rowValues[_rowCount]="System codes reported by tag";_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;}dev.deactivate();_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);_state=STATE_EXP_RESULT;render();return;}
+  if(group==1){_expResultReturn=STATE_EXP_SUB1_MENU;uint16_t sys[32]={};size_t count=0;if(!ST25R3916Experimental::felicaRequestSystemCodes(dev,tag,sys,32,count)){dev.deactivate();_showStatusAndReturn("System request failed",STATE_EXP_SUB1_MENU);return;}_rowCount=0;for(size_t i=0;i<count&&_rowCount<kMaxRows;++i){char l[16];snprintf(l,sizeof(l),"System %u",(unsigned)i);char v[10];snprintf(v,sizeof(v),"0x%04X",sys[i]);_rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;}dev.deactivate();_advancedOperationTitle="Systems";_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);_state=STATE_EXP_RESULT;render();return;}
   if(group==2&&index==0){_expResultReturn=STATE_EXP_SUB2_MENU;_rowCount=0;for(uint16_t i=0;i<64&&_rowCount<kMaxRows;++i){uint16_t sc=0;if(!ST25R3916Experimental::felicaSearchService(dev,tag,i,sc))break;char l[16];snprintf(l,sizeof(l),"Service %u",i);char v[10];snprintf(v,sizeof(v),"0x%04X",sc);_rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;}dev.deactivate();_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);_state=STATE_EXP_RESULT;render();return;}
   if(group==2){String sh=InputTextAction::popup("Service code (4 hex)","000B",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalSub2Menu();return;}uint8_t sb[2];size_t sl=0;if(!st25ParseHex(sh,sb,2,sl)||sl!=2){dev.deactivate();ShowStatusAction::show("Need 4 hex chars");_showExperimentalSub2Menu();return;}uint16_t service=(uint16_t)((sb[0]<<8)|sb[1]);if(index==2){uint16_t kv=0;if(!ST25R3916Experimental::felicaRequestService(dev,tag,service,kv)){dev.deactivate();ShowStatusAction::show("Service details failed");_showExperimentalSub2Menu();return;}_rowCount=0;char sc[10],ks[10];snprintf(sc,sizeof(sc),"0x%04X",service);snprintf(ks,sizeof(ks),"0x%04X",kv);_rowLabels[0]="Service Code";_rowValues[0]=sc;_rows[0]={_rowLabels[0].c_str(),_rowValues[0]};_rowLabels[1]="Key Version";_rowValues[1]=ks;_rows[1]={_rowLabels[1].c_str(),_rowValues[1]};_rowCount=2;dev.deactivate();_expResultReturn=STATE_EXP_SUB2_MENU;_advancedOperationTitle="Service Details";_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);_state=STATE_EXP_RESULT;render();return;}int block=InputNumberAction::popup("Block",0,255,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalSub2Menu();return;}uint8_t d[16];if(!ST25R3916Experimental::felicaReadBlock(dev,tag,service,(uint16_t)block,d)){dev.deactivate();ShowStatusAction::show("Read service failed");_showExperimentalSub2Menu();return;}dev.deactivate();_expResultReturn=STATE_EXP_SUB2_MENU;_showExperimentalHex("Service Data",d,16);return;}
   if(group==3&&(index==0||index==1)){String sh=InputTextAction::popup("Service code (4 hex)",index==0?"000B":"0009",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalAdvancedMenu();return;}uint8_t sb[2];size_t sl=0;if(!st25ParseHex(sh,sb,2,sl)||sl!=2){dev.deactivate();ShowStatusAction::show("Need 4 hex chars");_showExperimentalAdvancedMenu();return;}uint16_t service=(uint16_t)((sb[0]<<8)|sb[1]);int block=InputNumberAction::popup("Block",0,255,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalAdvancedMenu();return;}uint8_t d[16]={};if(!ST25R3916Experimental::felicaReadBlock(dev,tag,service,(uint16_t)block,d)){dev.deactivate();ShowStatusAction::show("Read failed");_showExperimentalAdvancedMenu();return;}if(index==0){dev.deactivate();_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("Memory",d,16);return;}String h=InputTextAction::popup("Block data (32 hex)",st25Hex(d,16).c_str(),InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalAdvancedMenu();return;}size_t dl=0;if(!st25ParseHex(h,d,16,dl)||dl!=16){dev.deactivate();ShowStatusAction::show("Need 32 hex chars");_showExperimentalAdvancedMenu();return;}bool ok=ST25R3916Experimental::felicaWriteBlock(dev,tag,service,(uint16_t)block,d);dev.deactivate();ShowStatusAction::show(ok?"Block written":"Write failed");_showExperimentalAdvancedMenu();return;}
