@@ -559,6 +559,43 @@ bool ST25R3916Backend::nfcATransceiveBits(const uint8_t* tx, size_t txBits, uint
   return _transceivePacked(tx, txBits, rx, rxMaxBits, rxBits, timeoutMs, autoTxParity);
 }
 
+bool ST25R3916Backend::activeRfTransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                                            size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
+  if (!_active || !_hw) { rxLen = 0; return false; }
+  return _transceiveBytes(tx, txLen, rx, rxMaxLen, rxLen, timeoutMs);
+}
+
+bool ST25R3916Backend::isoDepTransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
+                                         size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs) {
+  rxLen = 0;
+  if (!_active || !_nfc || !_activeTag.isoDep || !tx || !txLen || !rx || !rxMaxLen) return false;
+  if (txLen > 0xFFFFU) return false;
+
+  uint8_t* rxData = nullptr;
+  uint16_t* received = nullptr;
+  ReturnCode rc = _nfc->rfalNfcDataExchangeStart(const_cast<uint8_t*>(tx), (uint16_t)txLen,
+                                                  &rxData, &received, 0);
+  if (rc != ST_ERR_NONE) return false;
+
+  // RFAL HL returns ST_ERR_AGAIN for each received ISO-DEP chaining block.
+  // That block must be copied immediately because RFAL reuses the same
+  // internal buffer for the following block.
+  const uint32_t started = millis();
+  while ((uint32_t)(millis() - started) < timeoutMs) {
+    _nfc->rfalNfcWorker();
+    rc = _nfc->rfalNfcDataExchangeGetStatus();
+    if (rc == ST_ERR_BUSY) { delay(1); continue; }
+    if (rc != ST_ERR_NONE && rc != ST_ERR_AGAIN) return false;
+    if (!rxData || !received) return false;
+    const size_t chunk = (size_t)*received;
+    if (chunk > rxMaxLen - rxLen) return false;
+    if (chunk) { memcpy(rx + rxLen, rxData, chunk); rxLen += chunk; }
+    if (rc == ST_ERR_NONE) return true;
+    delay(1);
+  }
+  return false;
+}
+
 bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
   if (!data) return false;
   const uint8_t cmd[2] = {0x30, startPage};

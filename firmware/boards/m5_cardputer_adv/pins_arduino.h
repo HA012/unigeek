@@ -65,7 +65,6 @@ static const uint8_t SCL = 15;
 #define ST25R3916_CS_PIN   6
 #define ST25R3916_IRQ_PIN  4
 #define ST25R3916_SPI_HZ   10000000U
-#define ST25R3916_I2C_ADDR 0x50
 
 // ─── RGB LED (SK6812) ─────────────────────────────────────
 #define RGB_LED  21
