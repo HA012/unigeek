@@ -210,6 +210,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   // whole display before drawing the preview to avoid stale popup artefacts.
   lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
   header.render("Edit UID");
+  StatusBar::refresh();
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_CYAN, TFT_BLACK);

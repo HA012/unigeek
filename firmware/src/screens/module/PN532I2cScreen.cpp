@@ -4688,6 +4688,7 @@ void PN532I2cScreen::_doEditUid() {
   // drawing the preview so no keyboard/popup artefacts remain.
   lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
   header.render("Edit UID");
+  StatusBar::refresh();
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_CYAN, TFT_BLACK);
