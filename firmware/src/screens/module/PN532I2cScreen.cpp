@@ -4566,7 +4566,7 @@ void PN532I2cScreen::_doEditUid() {
 
   const MagicCardType magic = _detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
-    ShowStatusAction::show("Failed: Tag is not Gen1A or Gen3", 1800);
+    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 1800);
     _goMifareAdvanced();
     return;
   }

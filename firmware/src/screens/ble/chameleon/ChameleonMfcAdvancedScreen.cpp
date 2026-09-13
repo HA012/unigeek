@@ -35,7 +35,7 @@ static String hex8(const uint8_t* d){ String s; char b[3]; for(int i=0;i<8;++i){
 void ChameleonMfcAdvancedScreen::onInit(){
   _items[0] = {"Read Memory"};
   _items[1] = {"Edit Memory"};
-  _items[2] = {"Edit UID (Gen1A and Gen3)"};
+  _items[2] = {"Edit UID (Gen1A/Gen3)"};
   _items[3] = {"Lock UID (Gen3)"};
   setItems(_items);
 }
@@ -112,7 +112,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   const MagicCardType magic = c.detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
     restore(); render();
-    ShowStatusAction::show("Failed: Tag is not Gen1A or Gen3", 1800);
+    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 1800);
     render();
     return;
   }

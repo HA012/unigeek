@@ -16,7 +16,7 @@ enum class MagicCardType : uint8_t {
 
 inline const char* magicCardTypeName(MagicCardType type) {
   switch (type) {
-    case MagicCardType::GEN1A: return "Gen1A-compatible";
+    case MagicCardType::GEN1A: return "Gen1A";
     case MagicCardType::GEN2:  return "Gen2 / CUID";
     case MagicCardType::GEN3:  return "Gen3 / APDU";
     case MagicCardType::GEN4:  return "Gen4";

@@ -116,7 +116,7 @@ private:
   ListItem _mfAdvancedItems[4] = {
     {"Read Memory"},
     {"Edit Memory"},
-    {"Edit UID (Gen1A and Gen3)"},
+    {"Edit UID (Gen1A/Gen3)"},
     {"Lock UID (Gen3)"},
   };
 
