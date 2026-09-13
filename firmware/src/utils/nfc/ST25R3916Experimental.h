@@ -18,6 +18,7 @@ struct TypeVInfo {
 
 bool desfireExchange(ST25R3916Backend& dev, uint8_t ins, const uint8_t* data, size_t dataLen,
                      uint8_t* out, size_t outMax, size_t& outLen, uint8_t& status);
+bool desfireProbe(ST25R3916Backend& dev);
 bool desfireAuthenticateAes(ST25R3916Backend& dev, uint8_t keyNo, const uint8_t key[16]);
 
 bool type4ReadNdef(ST25R3916Backend& dev, uint8_t* out, size_t outMax, size_t& outLen, size_t& capacity);
@@ -35,6 +36,8 @@ bool typeVReadNdef(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& ta
                    uint8_t* out, size_t outMax, size_t& outLen, size_t& capacity);
 bool typeVWriteNdef(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
                     const uint8_t* ndef, size_t ndefLen, size_t& capacity, bool allowFormat);
+bool typeVEraseTagSafe(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
+                       size_t& capacity);
 bool typeVPresentIcodePassword(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
                                uint8_t passwordId, const uint8_t password[4]);
 bool typeVPresentStPassword(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,

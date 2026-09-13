@@ -68,7 +68,7 @@ bool type4SelectNdef(ST25R3916Backend& dev, uint16_t& fileId, size_t& capacity, 
       if (fileSize < 2) return false;
       // FLEN includes the 2-byte NLEN field at the beginning of the NDEF file.
       capacity = fileSize - 2U;
-      writable = rx[p + 5] != 0xFF;
+      writable = rx[p + 5] == 0x00;
       found = true;
       break;
     }
@@ -109,6 +109,101 @@ uint16_t attrChecksum(const uint8_t attr[16]) {
   return s;
 }
 
+bool typeVLayout(const uint8_t* mem, size_t total, size_t& cc, size_t& capacity) {
+  cc = 0;
+  capacity = 0;
+  if (!mem || total < 8) return false;
+  size_t advertised = 0;
+  if ((mem[0] == 0xE1 || mem[0] == 0xE2) && mem[2] != 0) {
+    cc = 4;
+    advertised = (size_t)mem[2] * 8U;
+  } else if (mem[0] == 0xE2 && total >= 8) {
+    cc = 8;
+    advertised = (size_t)(((uint16_t)mem[6] << 8) | mem[7]) * 8U;
+  } else {
+    return false;
+  }
+  if (!advertised || cc >= total) return false;
+  capacity = min(advertised, total - cc);
+  return capacity > 0;
+}
+
+bool appendTypeVTlv(uint8_t* area, size_t areaCap, size_t& pos,
+                    uint8_t type, const uint8_t* value, size_t len) {
+  const size_t header = len < 0xFFU ? 2U : 4U;
+  if (!area || pos + header + len > areaCap) return false;
+  area[pos++] = type;
+  if (len < 0xFFU) {
+    area[pos++] = (uint8_t)len;
+  } else {
+    if (len > 0xFFFFU) return false;
+    area[pos++] = 0xFF;
+    area[pos++] = (uint8_t)(len >> 8);
+    area[pos++] = (uint8_t)len;
+  }
+  if (len && value) memcpy(area + pos, value, len);
+  pos += len;
+  return true;
+}
+
+bool rewriteTypeVArea(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
+                      const TypeVInfo& info, uint8_t* oldMem, const uint8_t* newMem,
+                      size_t bytesToConsider) {
+  if (!oldMem || !newMem || !info.blockSize) return false;
+  const uint16_t blocks = (uint16_t)((bytesToConsider + info.blockSize - 1U) / info.blockSize);
+  for (uint16_t b = 0; b < blocks; ++b) {
+    const size_t off = (size_t)b * info.blockSize;
+    if (memcmp(oldMem + off, newMem + off, info.blockSize) == 0) continue;
+    if (!typeVWriteBlock(dev, tag, b, newMem + off, info.blockSize)) return false;
+  }
+  return true;
+}
+
+bool rebuildTypeVArea(const uint8_t* oldArea, size_t areaCap,
+                      const uint8_t* ndef, size_t ndefLen,
+                      bool preserveNonControlTlvs, uint8_t* newArea) {
+  if (!oldArea || !newArea) return false;
+  memset(newArea, 0, areaCap);
+  size_t out = 0;
+  size_t p = 0;
+  bool insertedNdef = false;
+  bool sawTerminator = false;
+  while (p < areaCap) {
+    const size_t tlvStart = p;
+    const uint8_t type = oldArea[p++];
+    if (type == 0x00) continue;
+    if (type == 0xFE) { sawTerminator = true; break; }
+    if (p >= areaCap) return false;
+    size_t len = oldArea[p++];
+    if (len == 0xFF) {
+      if (p + 1 >= areaCap) return false;
+      len = ((size_t)oldArea[p] << 8) | oldArea[p + 1];
+      p += 2;
+    }
+    if (p + len > areaCap) return false;
+    const uint8_t* value = oldArea + p;
+    if (type == 0x03) {
+      if (!insertedNdef) {
+        if (!appendTypeVTlv(newArea, areaCap, out, 0x03, ndef, ndefLen)) return false;
+        insertedNdef = true;
+      }
+    } else if (preserveNonControlTlvs || type == 0x01 || type == 0x02) {
+      const size_t rawLen = (p + len) - tlvStart;
+      if (out + rawLen > areaCap) return false;
+      memcpy(newArea + out, oldArea + tlvStart, rawLen);
+      out += rawLen;
+    }
+    p += len;
+  }
+  if (!insertedNdef) {
+    if (!appendTypeVTlv(newArea, areaCap, out, 0x03, ndef, ndefLen)) return false;
+  }
+  if (out >= areaCap) return false;
+  newArea[out++] = 0xFE;
+  (void)sawTerminator;
+  return true;
+}
+
 } // namespace
 
 bool desfireExchange(ST25R3916Backend& dev, uint8_t ins, const uint8_t* data, size_t dataLen,
@@ -133,6 +228,17 @@ bool desfireExchange(ST25R3916Backend& dev, uint8_t ins, const uint8_t* data, si
     apdu[0]=0x90; apdu[1]=0xAF; apdu[2]=0; apdu[3]=0; apdu[4]=0; apdu[5]=0; apduLen=6;
   }
   return false;
+}
+
+bool desfireProbe(ST25R3916Backend& dev) {
+  uint8_t version[96] = {};
+  size_t n = 0;
+  uint8_t status = 0xFF;
+  // GetVersion is a DESFire-native command. A generic ISO-DEP Type 4A card
+  // should not be classified as DESFire unless this command completes with a
+  // valid DESFire status and at least one version frame worth of payload.
+  return desfireExchange(dev, 0x60, nullptr, 0, version, sizeof(version), n, status) &&
+         status == 0x00 && n >= 7;
 }
 
 bool desfireAuthenticateAes(ST25R3916Backend& dev, uint8_t keyNo, const uint8_t key[16]) {
@@ -320,81 +426,110 @@ bool typeVWriteNdef(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& t
   const size_t total = (size_t)info.blocks * info.blockSize;
   if (total < 8 || total > 8192) return false;
 
-  uint8_t* mem = new uint8_t[total]();
-  if (!mem) return false;
+  uint8_t* oldMem = new uint8_t[total];
+  uint8_t* newMem = new uint8_t[total];
+  if (!oldMem || !newMem) { delete[] oldMem; delete[] newMem; return false; }
   bool ok = true;
   for (uint16_t b = 0; b < info.blocks && ok; ++b) {
     size_t n = 0;
-    ok = typeVReadBlock(dev, tag, b, mem + (size_t)b * info.blockSize,
+    ok = typeVReadBlock(dev, tag, b, oldMem + (size_t)b * info.blockSize,
                         total - (size_t)b * info.blockSize, n) && n == info.blockSize;
   }
-  if (!ok) { delete[] mem; return false; }
+  if (!ok) { delete[] oldMem; delete[] newMem; return false; }
+  memcpy(newMem, oldMem, total);
 
   size_t cc = 0;
-  size_t advertised = 0;
-  if ((mem[0] == 0xE1 || mem[0] == 0xE2) && mem[2] != 0) {
-    cc = 4;
-    advertised = (size_t)mem[2] * 8U;
-  } else if (mem[0] == 0xE2 && total >= 8) {
-    cc = 8;
-    advertised = (size_t)(((uint16_t)mem[6] << 8) | mem[7]) * 8U;
-  } else if (allowFormat) {
-    // Use the NFC Forum-style capacity (memory after the CC), rather than the
-    // compatibility variant that advertises the entire physical memory.
+  if (!typeVLayout(oldMem, total, cc, capacity)) {
+    if (!allowFormat) { delete[] oldMem; delete[] newMem; return false; }
+
+    // Formatting is the only path that may create a Capability Container from
+    // scratch. Normal Write/Erase operations must preserve the tag layout.
+    size_t advertised = 0;
     if (total <= 2040) {
       cc = 4;
       advertised = ((total - cc) / 8U) * 8U;
-      if (!advertised || advertised / 8U > 0xFFU) { delete[] mem; return false; }
-      mem[0] = 0xE1;
-      mem[1] = 0x40;  // T5T v1.0, read/write always allowed
-      mem[2] = (uint8_t)(advertised / 8U);
-      mem[3] = 0x00;
+      if (!advertised || advertised / 8U > 0xFFU) { delete[] oldMem; delete[] newMem; return false; }
+      newMem[0] = 0xE1;
+      newMem[1] = 0x40;
+      newMem[2] = (uint8_t)(advertised / 8U);
+      newMem[3] = 0x00;
     } else {
       cc = 8;
       advertised = ((total - cc) / 8U) * 8U;
       const size_t mlen = advertised / 8U;
-      if (!advertised || mlen > 0xFFFFU) { delete[] mem; return false; }
-      mem[0] = 0xE2;
-      mem[1] = 0x40;
-      mem[2] = 0x00;
-      mem[3] = 0x00;
-      mem[4] = 0x00;
-      mem[5] = 0x00;
-      mem[6] = (uint8_t)(mlen >> 8);
-      mem[7] = (uint8_t)mlen;
+      if (!advertised || mlen > 0xFFFFU) { delete[] oldMem; delete[] newMem; return false; }
+      newMem[0] = 0xE2;
+      newMem[1] = 0x40;
+      newMem[2] = 0x00;
+      newMem[3] = 0x00;
+      newMem[4] = 0x00;
+      newMem[5] = 0x00;
+      newMem[6] = (uint8_t)(mlen >> 8);
+      newMem[7] = (uint8_t)mlen;
     }
+    capacity = min(advertised, total - cc);
+    memset(newMem + cc, 0, capacity);
+    size_t p = 0;
+    if (!appendTypeVTlv(newMem + cc, capacity, p, 0x03, ndef, ndefLen) || p >= capacity) {
+      delete[] oldMem; delete[] newMem; return false;
+    }
+    newMem[cc + p] = 0xFE;
   } else {
-    delete[] mem;
-    return false;
+    // Existing Type 5 layout: replace only the NDEF TLV and preserve Lock
+    // Control, Memory Control, proprietary and any other valid TLVs.
+    uint8_t* area = new uint8_t[capacity];
+    if (!area) { delete[] oldMem; delete[] newMem; return false; }
+    ok = rebuildTypeVArea(oldMem + cc, capacity, ndef, ndefLen, true, area);
+    if (ok) memcpy(newMem + cc, area, capacity);
+    delete[] area;
+    if (!ok) { delete[] oldMem; delete[] newMem; return false; }
   }
 
-  if (!advertised || cc >= total) { delete[] mem; return false; }
-  capacity = min(advertised, total - cc);
-  const size_t tlvHeader = ndefLen < 0xFF ? 2U : 4U;
-  if (tlvHeader + ndefLen + 1U > capacity) { delete[] mem; return false; }
-
-  memset(mem + cc, 0, capacity);
-  size_t p = cc;
-  mem[p++] = 0x03;
-  if (ndefLen < 0xFF) {
-    mem[p++] = (uint8_t)ndefLen;
-  } else {
-    mem[p++] = 0xFF;
-    mem[p++] = (uint8_t)(ndefLen >> 8);
-    mem[p++] = (uint8_t)ndefLen;
-  }
-  if (ndefLen) memcpy(mem + p, ndef, ndefLen);
-  p += ndefLen;
-  mem[p] = 0xFE;
-
-  // Preserve bytes beyond the declared T5T area, but write every physical
-  // block touched by the CC/TLV region. A failed/locked block aborts safely.
   const size_t bytesToWrite = cc + capacity;
-  const uint16_t lastBlock = (uint16_t)((bytesToWrite + info.blockSize - 1U) / info.blockSize);
-  for (uint16_t b = 0; b < lastBlock && ok; ++b) {
-    ok = typeVWriteBlock(dev, tag, b, mem + (size_t)b * info.blockSize, info.blockSize);
+  ok = rewriteTypeVArea(dev, tag, info, oldMem, newMem, bytesToWrite);
+  delete[] oldMem;
+  delete[] newMem;
+  return ok;
+}
+
+bool typeVEraseTagSafe(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
+                       size_t& capacity) {
+  capacity = 0;
+  TypeVInfo info;
+  if (!typeVGetSystemInfo(dev, tag, info) || info.blockSize == 0) return false;
+  const size_t total = (size_t)info.blocks * info.blockSize;
+  if (total < 8 || total > 8192) return false;
+
+  uint8_t* oldMem = new uint8_t[total];
+  uint8_t* newMem = new uint8_t[total];
+  if (!oldMem || !newMem) { delete[] oldMem; delete[] newMem; return false; }
+  bool ok = true;
+  for (uint16_t b = 0; b < info.blocks && ok; ++b) {
+    size_t n = 0;
+    ok = typeVReadBlock(dev, tag, b, oldMem + (size_t)b * info.blockSize,
+                        total - (size_t)b * info.blockSize, n) && n == info.blockSize;
   }
-  delete[] mem;
+  if (!ok) { delete[] oldMem; delete[] newMem; return false; }
+  memcpy(newMem, oldMem, total);
+
+  size_t cc = 0;
+  if (!typeVLayout(oldMem, total, cc, capacity)) {
+    delete[] oldMem; delete[] newMem; return false;
+  }
+
+  // Safe Erase Tag intentionally preserves the Capability Container and the
+  // structural Lock/Memory Control TLVs. NDEF and proprietary user TLVs are
+  // removed, leaving a valid empty NDEF TLV and terminator.
+  uint8_t* area = new uint8_t[capacity];
+  if (!area) { delete[] oldMem; delete[] newMem; return false; }
+  const uint8_t empty = 0;
+  ok = rebuildTypeVArea(oldMem + cc, capacity, &empty, 0, false, area);
+  if (ok) memcpy(newMem + cc, area, capacity);
+  delete[] area;
+  if (ok) ok = rewriteTypeVArea(dev, tag, info, oldMem, newMem, cc + capacity);
+
+  delete[] oldMem;
+  delete[] newMem;
   return ok;
 }
 
@@ -431,7 +566,22 @@ bool typeVPresentStPassword(ST25R3916Backend& dev, const ST25R3916Backend::ScanR
 
 bool felicaRequestSystemCodes(ST25R3916Backend& dev,const ST25R3916Backend::ScanResult& tag,uint16_t*systems,size_t maxSystems,size_t&count){count=0;if(tag.nfcidLen<8)return false;uint8_t body[9]={0x0C};memcpy(body+1,tag.nfcid,8);uint8_t rx[96]={};size_t n=0;if(!felicaExchange(dev,body,sizeof(body),rx,sizeof(rx),n)||n<11||rx[1]!=0x0D)return false;size_t c=rx[10];if(11+c*2>n)return false;count=min(c,maxSystems);for(size_t i=0;i<count;++i)systems[i]=(uint16_t)((rx[11+i*2]<<8)|rx[12+i*2]);return true;}
 bool felicaSearchService(ST25R3916Backend& dev,const ST25R3916Backend::ScanResult& tag,uint16_t index,uint16_t&serviceCode){if(tag.nfcidLen<8)return false;uint8_t body[11]={0x0A};memcpy(body+1,tag.nfcid,8);body[9]=(uint8_t)index;body[10]=(uint8_t)(index>>8);uint8_t rx[32]={};size_t n=0;if(!felicaExchange(dev,body,sizeof(body),rx,sizeof(rx),n)||n<12||rx[1]!=0x0B)return false;serviceCode=(uint16_t)(rx[10]|(rx[11]<<8));return serviceCode!=0xFFFF;}
-bool felicaRequestService(ST25R3916Backend& dev,const ST25R3916Backend::ScanResult& tag,uint16_t serviceCode,uint16_t&keyVersion){if(tag.nfcidLen<8)return false;uint8_t body[12]={0x02};memcpy(body+1,tag.nfcid,8);body[9]=1;body[10]=(uint8_t)serviceCode;body[11]=(uint8_t)(serviceCode>>8);uint8_t rx[32]={};size_t n=0;if(!felicaExchange(dev,body,sizeof(body),rx,sizeof(rx),n)||n<12||rx[1]!=0x03)return false;keyVersion=(uint16_t)(rx[10]|(rx[11]<<8));return keyVersion!=0xFFFF;}
+bool felicaRequestService(ST25R3916Backend& dev, const ST25R3916Backend::ScanResult& tag,
+                          uint16_t serviceCode, uint16_t& keyVersion) {
+  if (tag.nfcidLen < 8) return false;
+  uint8_t body[12] = {0x02};
+  memcpy(body + 1, tag.nfcid, 8);
+  body[9] = 1;  // one node
+  body[10] = (uint8_t)serviceCode;
+  body[11] = (uint8_t)(serviceCode >> 8);
+  uint8_t rx[32] = {};
+  size_t n = 0;
+  if (!felicaExchange(dev, body, sizeof(body), rx, sizeof(rx), n) ||
+      n < 13 || rx[1] != 0x03 || rx[10] != 1) return false;
+  // Response: LEN, 0x03, IDm[8], Number of Node, Node Key Version[2].
+  keyVersion = (uint16_t)(rx[11] | ((uint16_t)rx[12] << 8));
+  return keyVersion != 0xFFFF;
+}
 bool felicaReadBlock(ST25R3916Backend& dev,const ST25R3916Backend::ScanResult& tag,uint16_t serviceCode,uint16_t block,uint8_t data[16]){if(tag.nfcidLen<8||block>0xFF)return false;uint8_t body[15]={0x06};memcpy(body+1,tag.nfcid,8);body[9]=1;body[10]=(uint8_t)serviceCode;body[11]=(uint8_t)(serviceCode>>8);body[12]=1;body[13]=0x80;body[14]=(uint8_t)block;uint8_t rx[64]={};size_t n=0;if(!felicaExchange(dev,body,sizeof(body),rx,sizeof(rx),n)||n<29||rx[1]!=0x07||rx[10]||rx[11]||rx[12]!=1)return false;memcpy(data,rx+13,16);return true;}
 bool felicaWriteBlock(ST25R3916Backend& dev,const ST25R3916Backend::ScanResult& tag,uint16_t serviceCode,uint16_t block,const uint8_t data[16]){if(tag.nfcidLen<8||block>0xFF)return false;uint8_t body[31]={0x08};memcpy(body+1,tag.nfcid,8);body[9]=1;body[10]=(uint8_t)serviceCode;body[11]=(uint8_t)(serviceCode>>8);body[12]=1;body[13]=0x80;body[14]=(uint8_t)block;memcpy(body+15,data,16);uint8_t rx[32]={};size_t n=0;return felicaExchange(dev,body,sizeof(body),rx,sizeof(rx),n)&&n>=12&&rx[1]==0x09&&rx[10]==0&&rx[11]==0;}
 
