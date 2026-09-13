@@ -64,9 +64,13 @@ public:
                        size_t rxMaxLen, size_t& rxLen, uint32_t timeoutMs = 20);
   bool type2ReadPages(uint8_t startPage, uint8_t data[16]);
   bool type2WritePage(uint8_t page, const uint8_t data[4]);
+  bool type2WritePageRfalFirst(uint8_t page, const uint8_t data[4]);
   bool type2PwdAuth(const uint8_t pwd[4], uint8_t pack[2] = nullptr);
   uint16_t lastPwdAuthCode() const { return _lastPwdAuthCode; }
   uint16_t lastPwdAuthBits() const { return _lastPwdAuthBits; }
+  uint8_t lastType2WriteAckNibble() const { return _lastType2WriteAckNibble; }
+  uint16_t lastType2WriteBits() const { return _lastType2WriteBits; }
+  uint16_t lastType2WriteCode() const { return _lastType2WriteCode; }
 
   // NFC-A passive-target emulation. The dump buffer remains owned by the
   // caller and must stay valid while emulation is active.
@@ -123,6 +127,9 @@ private:
   uint16_t _lastScanCode = 0xFFFF;
   uint16_t _lastPwdAuthCode = 0xFFFF;
   uint16_t _lastPwdAuthBits = 0;
+  uint8_t _lastType2WriteAckNibble = 0xFF;
+  uint16_t _lastType2WriteBits = 0;
+  uint16_t _lastType2WriteCode = 0xFFFF;
   ScanResult _activeTag;
   bool _active = false;
   Crypto1State* _crypto = nullptr;

@@ -605,11 +605,69 @@ bool ST25R3916Backend::type2ReadPages(uint8_t startPage, uint8_t data[16]) {
 }
 
 bool ST25R3916Backend::type2WritePage(uint8_t page, const uint8_t data[4]) {
-  if (!_active || _activeTag.technology != Technology::NFC_A || !_nfc || !data) return false;
-  // Use RFAL's dedicated Type-2 poller primitive, as Bruce does. It handles
-  // the 4-bit ACK/NAK framing internally; treating WRITE as a normal byte
-  // transceive is unreliable on ST25R3916.
-  return _nfc->rfalT2TPollerWrite(page, const_cast<uint8_t*>(data)) == ST_ERR_NONE;
+  _lastType2WriteAckNibble = 0xFF;
+  _lastType2WriteBits = 0;
+  _lastType2WriteCode = 0xFFFF;
+  if (!_active || _activeTag.technology != Technology::NFC_A || !_nfc || !_hw || !data) return false;
+
+  // Send WRITE (A2h) explicitly and consume the 4-bit Type-2 ACK ourselves.
+  // The RFAL fork used by UniGeek can occasionally report a valid short ACK as
+  // an incomplete-byte/CRC condition before rfalT2TPollerWrite() gets a chance
+  // to normalize it.  That is harmless for READs but made configuration-page
+  // writes (ACCESS/AUTH0/PWD/PACK) fail even though the command itself is
+  // standard NFC Forum Type-2.  _transceivePacked() deliberately accepts those
+  // data-bearing short-frame statuses, so use it here as the primary path.
+  uint8_t frame[8] = {0xA2, page, data[0], data[1], data[2], data[3], 0, 0};
+  const uint16_t crc = _crcA(frame, 6);
+  frame[6] = (uint8_t)(crc & 0xFFU);
+  frame[7] = (uint8_t)(crc >> 8);
+
+  uint8_t rxPacked[2] = {};
+  size_t rxBits = 0;
+  const bool gotShortReply = _transceivePacked(
+      frame, sizeof(frame) * 8U, rxPacked, 4U, rxBits, 12, true) && rxBits == 4U;
+  _lastType2WriteBits = (uint16_t)rxBits;
+  if (gotShortReply) {
+    _lastType2WriteAckNibble = (uint8_t)(rxPacked[0] & 0x0FU);
+    if (_lastType2WriteAckNibble != 0x0AU) return false;  // genuine Type-2 NAK
+    // NTAG21x permits up to 10 ms for WRITE completion.  Wait the full window
+    // before callers issue a verification READ or another configuration write.
+    delay(10);
+    return true;
+  }
+
+  // Keep the RFAL helper only as a transport fallback when the raw path did
+  // not yield a short reply at all. Do not retry a genuine NAK.
+  const ReturnCode rc = _nfc->rfalT2TPollerWrite(page, const_cast<uint8_t*>(data));
+  _lastType2WriteCode = (uint16_t)rc;
+  if (rc == ST_ERR_NONE) {
+    delay(10);
+    return true;
+  }
+  return false;
+}
+
+
+bool ST25R3916Backend::type2WritePageRfalFirst(uint8_t page, const uint8_t data[4]) {
+  _lastType2WriteAckNibble = 0xFF;
+  _lastType2WriteBits = 0;
+  _lastType2WriteCode = 0xFFFF;
+  if (!_active || _activeTag.technology != Technology::NFC_A || !_nfc || !_hw || !data) return false;
+
+  // For NTAG configuration pages, prefer RFAL's native Type-2 WRITE helper.
+  // Some ST25R3916 RFAL forks normalize the 4-bit ACK correctly here even
+  // when the lower-level raw path is sensitive to short-frame packing.
+  const ReturnCode rc = _nfc->rfalT2TPollerWrite(page, const_cast<uint8_t*>(data));
+  _lastType2WriteCode = (uint16_t)rc;
+  if (rc == ST_ERR_NONE) {
+    delay(10);
+    return true;
+  }
+
+  // Fall back to the raw ACK-aware implementation. Writing the same four
+  // bytes twice is harmless for NTAG PWD/config pages if RFAL transmitted the
+  // first WRITE but reported only an ACK-normalization error.
+  return type2WritePage(page, data);
 }
 
 bool ST25R3916Backend::type2PwdAuth(const uint8_t pwd[4], uint8_t pack[2]) {
@@ -617,37 +675,46 @@ bool ST25R3916Backend::type2PwdAuth(const uint8_t pwd[4], uint8_t pack[2]) {
   _lastPwdAuthBits = 0;
   if (!_active || _activeTag.technology != Technology::NFC_A || !_hw || !pwd) return false;
 
-  // PWD_AUTH (0x1B) is an NXP proprietary Type-2 command, but it still uses
-  // normal ISO14443A framing. Use RFAL's blocking helper exactly like the
-  // standard Type-2 poller primitives: automatic parity/CRC and a normal FWT.
-  // This avoids subtle state differences between a hand-driven start/worker
-  // loop and the RFAL transaction path used by the working T2T operations.
-  uint8_t tx[5] = {0x1B, pwd[0], pwd[1], pwd[2], pwd[3]};
+  // PWD_AUTH (0x1B) is proprietary to NXP Type-2 tags, but uses ordinary
+  // ISO14443A framing (automatic CRC/parity). ST's RFAL guidance is to send
+  // the five command bytes through the generic blocking transceive and expect
+  // exactly the two-byte PACK on success.
+  const uint8_t tx[5] = {0x1B, pwd[0], pwd[1], pwd[2], pwd[3]};
   uint8_t rx[4] = {};
   uint16_t receivedLen = 0;
 
   ReturnCode rc = _hw->rfalTransceiveBlockingTxRx(
-      tx,
-      sizeof(tx),
-      rx,
-      sizeof(rx),
-      &receivedLen,
-      RFAL_TXRX_FLAGS_DEFAULT,
-      rfalConvMsTo1fc(10));
+      const_cast<uint8_t*>(tx), sizeof(tx), rx, sizeof(rx), &receivedLen,
+      RFAL_TXRX_FLAGS_DEFAULT, rfalConvMsTo1fc(20));
 
   _lastPwdAuthCode = (uint16_t)rc;
-  // rfalTransceiveBlockingTxRx() converts actLen from bits to bytes before
-  // returning. Keep the public diagnostic in bits for compatibility.
   _lastPwdAuthBits = (uint16_t)(receivedLen * 8U);
 
-  // Successful NTAG21x PWD_AUTH returns the 2-byte PACK. The blocking RFAL
-  // helper reports the final receive length in BYTES, not bits.
-  if (rc != ST_ERR_NONE || receivedLen != 2U) return false;
-  if (pack) {
-    pack[0] = rx[0];
-    pack[1] = rx[1];
+  if (rc == ST_ERR_NONE && receivedLen == 2U) {
+    if (pack) {
+      pack[0] = rx[0];
+      pack[1] = rx[1];
+    }
+    return true;
   }
-  return true;
+
+  // Some revisions of the Arduino RFAL fork have behaved differently in the
+  // blocking wrapper after a Type-2 WRITE/reselect sequence. Retry once using
+  // the same explicit start/worker path used by the known-good READ helpers.
+  // This is still the same RF frame and flags; only the RFAL driving path
+  // differs. Keep the original diagnostic unless the fallback succeeds.
+  size_t rxLen = 0;
+  memset(rx, 0, sizeof(rx));
+  if (_transceiveBytes(tx, sizeof(tx), rx, sizeof(rx), rxLen, 20) && rxLen == 2U) {
+    _lastPwdAuthCode = ST_ERR_NONE;
+    _lastPwdAuthBits = 16U;
+    if (pack) {
+      pack[0] = rx[0];
+      pack[1] = rx[1];
+    }
+    return true;
+  }
+  return false;
 }
 
 
