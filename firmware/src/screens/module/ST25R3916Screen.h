@@ -3,6 +3,8 @@
 #include "ui/templates/ListScreen.h"
 #include "ui/views/ScrollListView.h"
 #include "ui/views/BrowseFileView.h"
+#include "ui/views/LogView.h"
+#include "utils/nfc/MagicCard.h"
 
 class ST25R3916Backend;
 
@@ -33,6 +35,8 @@ public:
       case STATE_MFU_NDEF_DETAILS: return "NDEF Details";
       case STATE_EMULATING: return "Emulate Tag";
       case STATE_MFC_TAG_MENU: return "Tag Operations";
+      case STATE_MFC_ADVANCED_MENU: return "Advanced";
+      case STATE_MFC_MEMORY: return "Read Memory";
       case STATE_MFC_NDEF_MENU: return "NDEF Operations";
       case STATE_MFC_ATTACKS_MENU: return "Attacks";
       case STATE_MFC_KEYS_MENU: return "Keys";
@@ -69,6 +73,8 @@ private:
     STATE_DETAILS,
     STATE_MFC_MENU,
     STATE_MFC_TAG_MENU,
+    STATE_MFC_ADVANCED_MENU,
+    STATE_MFC_MEMORY,
     STATE_MFC_NDEF_MENU,
     STATE_MFC_ATTACKS_MENU,
     STATE_MFC_KEYS_MENU,
@@ -113,15 +119,14 @@ private:
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
   // Preserve the cursor when returning from child screens/operations.
-  uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcNdef = 0;
+  uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcAdvanced = 0, _selMfcNdef = 0;
   uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
   uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0;
 
-  ListItem _items[5] = {
+  ListItem _items[4] = {
     {"Scan Tag"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
-    {"Detect Magic"},
     {"Device Info"},
   };
   ListItem _mfcItems[4] = {
@@ -139,11 +144,19 @@ private:
     {"Check Known Keys"},
     {"Dictionaries"},
   };
-  ListItem _mfcTagItems[4] = {
+  ListItem _mfcTagItems[6] = {
+    {"Detect Magic"},
     {"Read Tag"},
     {"Write to Tag"},
     {"Erase Tag"},
     {"Emulate UID"},
+    {"Advanced"},
+  };
+  ListItem _mfcAdvancedItems[4] = {
+    {"Read Memory"},
+    {"Edit Memory"},
+    {"Edit UID (Gen1A/Gen3)"},
+    {"Lock UID (Gen3)"},
   };
   ListItem _mfcNdefItems[4] = {
     {"Read NDEF"},
@@ -178,6 +191,8 @@ private:
 
   static constexpr uint8_t kMaxRows = 96;
   ScrollListView _scrollView;
+  LogView _magicLog;
+  bool _magicDetectDone = false;
   ScrollListView::Row _rows[kMaxRows];
   String _rowLabels[kMaxRows];
   String _rowValues[kMaxRows];
@@ -243,6 +258,11 @@ private:
   void _showMenu();
   void _showMfcMenu();
   void _showMfcTagMenu();
+  void _showMfcAdvancedMenu();
+  void _readMfcMemory();
+  void _editMfcMemory();
+  void _editMfcUid();
+  void _lockMfcUidGen3();
   void _showMfcNdefMenu();
   void _showMfcNdefWriteMenu();
   void _showMfcAttacksMenu();
@@ -252,6 +272,9 @@ private:
   void _openMfcDictionary(uint8_t index, bool attackMode = false);
   void _runMfcDictionaryAttack(const String& path);
   void _detectMagic();
+  void _runDetectMagic();
+  MagicCardType _detectMagicType(class ST25R3916Backend& dev);
+  bool _writeMagicUid(class ST25R3916Backend& dev, MagicCardType type, const uint8_t* uid, uint8_t uidLen, const uint8_t block0[16]);
   void _showMfuMenu();
   void _showMfuTagMenu();
   void _showMfuAdvancedMenu();
