@@ -4432,6 +4432,9 @@ void ST25R3916Screen::_experimentalReadTag() {
       (_expFamily == EXP_TYPE4B && (tag.technology != ST25R3916Backend::Technology::NFC_B || !tag.isoDep))) {
     dev.deactivate(); ShowStatusAction::show("Unexpected tag type"); _showExperimentalTagMenu(); return;
   }
+  if (_expFamily == EXP_DESFIRE && !ST25R3916Experimental::desfireProbe(dev)) {
+    dev.deactivate(); ShowStatusAction::show("Not a DESFire tag"); _showExperimentalTagMenu(); return;
+  }
   _rowCount = 0;
   auto add=[&](const char* l,const String& v){ if(_rowCount>=kMaxRows)return; _rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount; };
   String id; for(uint8_t i=0;i<tag.nfcidLen;++i){char h[4];snprintf(h,sizeof(h),"%s%02X",i?":":"",tag.nfcid[i]);id+=h;} if(!id.length())id="--";
@@ -4461,7 +4464,8 @@ void ST25R3916Screen::_experimentalDesfireAction(uint8_t group, uint8_t index) {
 #if defined(DEVICE_HAS_ST25R3916)
   _state=STATE_EXP_WORKING; _advancedOperationTitle = group==1?"Applications":group==2?"Files":"Advanced"; render(); _renderTagPrompt();
   ST25R3916Backend dev; if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found"); _showExperimentalTagMenu();return;}
-  ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||tag.technology!=ST25R3916Backend::Technology::NFC_A||!tag.isoDep){ShowStatusAction::show("No DESFire/Type 4A tag");_showExperimentalTagMenu();return;}
+  ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||tag.technology!=ST25R3916Backend::Technology::NFC_A||!tag.isoDep){ShowStatusAction::show("No ISO-DEP Type 4A tag");_showExperimentalTagMenu();return;}
+  if(!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();ShowStatusAction::show("Not a DESFire tag");_showExperimentalTagMenu();return;}
   auto selectAid=[&](){if(!_expDesfireAidSelected)return true;uint8_t out[8]={};size_t n=0;uint8_t st=0;return ST25R3916Experimental::desfireExchange(dev,0x5A,_expDesfireAid,3,out,sizeof(out),n,st);};
   auto showData=[&](const char* title,const uint8_t* d,size_t n){_expResultReturn=(group==1?STATE_EXP_SUB1_MENU:group==2?STATE_EXP_SUB2_MENU:STATE_EXP_ADVANCED_MENU);dev.deactivate();_showExperimentalHex(title,d,n);};
   uint8_t out[512]={};size_t n=0;uint8_t st=0xFF;
@@ -4523,7 +4527,7 @@ void ST25R3916Screen::_experimentalNfcvAction(uint8_t index) {
   }
   if(index==4){int b=InputNumberAction::popup("Block to lock",0,info.blocks-1,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalAdvancedMenu();return;}static const InputSelectAction::Option o[]={{"Lock permanently","lock"}};const char*c=InputSelectAction::popup("Permanent operation",o,1,nullptr);if(!c){dev.deactivate();_showExperimentalAdvancedMenu();return;}bool ok=ST25R3916Experimental::typeVLockBlock(dev,tag,b);dev.deactivate();ShowStatusAction::show(ok?"Block locked":"Lock failed");_showExperimentalAdvancedMenu();return;}
   if(index==10){int start=InputNumberAction::popup("Start block",0,info.blocks-1,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}String h=InputTextAction::popup("Data (hex, block aligned)","",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}uint8_t d[256];size_t dl=0;if(!st25ParseHex(h,d,sizeof(d),dl)||!dl||dl%info.blockSize){dev.deactivate();ShowStatusAction::show("Data must align to blocks");_showExperimentalTagMenu();return;}bool ok=true;for(size_t off=0;off<dl&&ok;off+=info.blockSize){uint16_t b=(uint16_t)(start+off/info.blockSize);if(b>=info.blocks){ok=false;break;}ok=ST25R3916Experimental::typeVWriteBlock(dev,tag,b,d+off,info.blockSize);}dev.deactivate();ShowStatusAction::show(ok?"Tag written":"Write failed");_showExperimentalTagMenu();return;}
-  static const InputSelectAction::Option o[]={{"Erase user memory","erase"}};const char*c=InputSelectAction::popup("Erase all blocks?",o,1,nullptr);if(!c){dev.deactivate();_showExperimentalTagMenu();return;}uint8_t zero[32]={};bool ok=true;for(uint16_t b=0;b<info.blocks&&ok;++b)ok=ST25R3916Experimental::typeVWriteBlock(dev,tag,b,zero,info.blockSize);dev.deactivate();ShowStatusAction::show(ok?"Tag erased":"Erase failed");_showExperimentalTagMenu();
+  static const InputSelectAction::Option o[]={{"Erase user data","erase"}};const char*c=InputSelectAction::popup("Preserve CC/control TLVs?",o,1,nullptr);if(!c){dev.deactivate();_showExperimentalTagMenu();return;}size_t erasedCapacity=0;bool ok=ST25R3916Experimental::typeVEraseTagSafe(dev,tag,erasedCapacity);dev.deactivate();ShowStatusAction::show(ok?"Tag data erased":"Safe erase unavailable");_showExperimentalTagMenu();
 #endif
 }
 
@@ -4542,7 +4546,7 @@ void ST25R3916Screen::_experimentalType4bAction(uint8_t index) { if(index==0)_ex
 
 void ST25R3916Screen::_experimentalSendApdu(bool desfire) {
 #if defined(DEVICE_HAS_ST25R3916)
-  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid APDU");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;uint16_t mask=desfire?ST25R3916Backend::TECH_A:ST25R3916Backend::TECH_B;if(!dev.scan(mask,tag,5000,true)||!tag.isoDep){ShowStatusAction::show("No ISO-DEP tag");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){ShowStatusAction::show("APDU failed");_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
+  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid APDU");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;uint16_t mask=desfire?ST25R3916Backend::TECH_A:ST25R3916Backend::TECH_B;if(!dev.scan(mask,tag,5000,true)||!tag.isoDep){ShowStatusAction::show("No ISO-DEP tag");_showExperimentalAdvancedMenu();return;}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();ShowStatusAction::show("Not a DESFire tag");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){ShowStatusAction::show("APDU failed");_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
 #endif
 }
 
