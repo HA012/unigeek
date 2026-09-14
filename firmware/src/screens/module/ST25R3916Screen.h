@@ -146,7 +146,7 @@ private:
   uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcAdvanced = 0, _selMfcNdef = 0;
   uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
   uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0;
-  uint8_t _selExp = 0, _selExpTag = 0, _selExpAdvanced = 0, _selExpSub1 = 0, _selExpSub2 = 0, _selExpNdef = 0;
+  uint8_t _selExp = 0, _selExpTag = 0, _selExpAdvanced = 0, _selExpSub1 = 0, _selExpSub2 = 0, _selExpNdef = 0, _selExpNdefWrite = 0;
 
   enum ExperimentalFamily : uint8_t { EXP_NONE, EXP_DESFIRE, EXP_NFCV, EXP_FELICA, EXP_TYPE4B };
   ExperimentalFamily _expFamily = EXP_NONE;

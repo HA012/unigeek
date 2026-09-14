@@ -161,6 +161,43 @@ static bool st25Begin(ST25R3916Backend& dev) {
   return dev.beginSPI(Uni.Spi, ST25R3916_CS_PIN, ST25R3916_IRQ_PIN, ST25R3916_SPI_HZ);
 }
 
+enum class St25Type4bScanResult : uint8_t {
+  FOUND,
+  NO_TAG,
+  WRONG_TECH,
+  NO_ISODEP,
+};
+
+static St25Type4bScanResult st25ScanType4b(ST25R3916Backend& dev,
+                                           ST25R3916Backend::ScanResult& tag,
+                                           bool requireIsoDep) {
+  if (dev.scan(ST25R3916Backend::TECH_B, tag, 1500, true)) {
+    if (requireIsoDep && !tag.isoDep) {
+      dev.deactivate();
+      return St25Type4bScanResult::NO_ISODEP;
+    }
+    return St25Type4bScanResult::FOUND;
+  }
+
+  ST25R3916Backend::ScanResult other;
+  const uint16_t otherTechs =
+      ST25R3916Backend::TECH_A | ST25R3916Backend::TECH_F | ST25R3916Backend::TECH_V;
+  if (dev.scan(otherTechs, other, 250, false)) {
+    return St25Type4bScanResult::WRONG_TECH;
+  }
+  return St25Type4bScanResult::NO_TAG;
+}
+
+static void st25ShowType4bScanError(St25Type4bScanResult result) {
+  if (result == St25Type4bScanResult::WRONG_TECH) {
+    ShowStatusAction::show("No Type B tag detected", 1200);
+  } else if (result == St25Type4bScanResult::NO_ISODEP) {
+    ShowStatusAction::show("ISO-DEP not supported", 1600);
+  } else {
+    ShowStatusAction::show("No tag detected", 1200);
+  }
+}
+
 static uint16_t st25MfuConfig0(const String& type) {
   if (type == "NTAG210" || type == "Ultralight EV1 11") return 16;
   if (type == "NTAG212" || type == "Ultralight EV1 21") return 37;
@@ -759,6 +796,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     return;
   }
   if (_state == STATE_EXP_NDEF_WRITE_MENU) {
+    _selExpNdefWrite = index;
     if(index<4)_writeNdefBuilt(index); else if(index==4)_writeNdefVcard(); else if(index==5)_openNdefFilePicker();
     return;
   }
@@ -4591,7 +4629,7 @@ void ST25R3916Screen::_showExperimentalNdefWriteMenu() {
   _ndefWritePreview = false;
   _ndefWritePreviewFromFile = false;
   _state = STATE_EXP_NDEF_WRITE_MENU;
-  setItems(_mfcNdefWriteItems, 6);
+  setItems(_mfcNdefWriteItems, 6, _selExpNdefWrite);
   render();
 }
 
@@ -4626,13 +4664,21 @@ void ST25R3916Screen::_experimentalReadTag() {
 #if defined(DEVICE_HAS_ST25R3916)
   _state = STATE_EXP_WORKING; _advancedOperationTitle = "Read Tag"; render(); _renderTagPrompt();
   ST25R3916Backend dev; if (!st25Begin(dev)) { ShowStatusAction::show("ST25R3916 not found"); _showExperimentalTagMenu(); return; }
-  uint16_t mask = _expFamily == EXP_NFCV ? ST25R3916Backend::TECH_V : _expFamily == EXP_FELICA ? ST25R3916Backend::TECH_F : _expFamily == EXP_TYPE4B ? ST25R3916Backend::TECH_B : ST25R3916Backend::TECH_A;
+  uint16_t mask = _expFamily == EXP_NFCV ? ST25R3916Backend::TECH_V : _expFamily == EXP_FELICA ? ST25R3916Backend::TECH_F : ST25R3916Backend::TECH_A;
   ST25R3916Backend::ScanResult tag;
-  if (!dev.scan(mask, tag, 5000, true)) { ShowStatusAction::show("No tag detected"); _showExperimentalTagMenu(); return; }
+  if (_expFamily == EXP_TYPE4B) {
+    const auto scanResult = st25ScanType4b(dev, tag, true);
+    if (scanResult != St25Type4bScanResult::FOUND) {
+      st25ShowType4bScanError(scanResult);
+      _showExperimentalTagMenu();
+      return;
+    }
+  } else if (!dev.scan(mask, tag, 5000, true)) {
+    ShowStatusAction::show("No tag detected"); _showExperimentalTagMenu(); return;
+  }
   if ((_expFamily == EXP_DESFIRE && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) ||
       (_expFamily == EXP_NFCV && tag.technology != ST25R3916Backend::Technology::NFC_V) ||
-      (_expFamily == EXP_FELICA && tag.technology != ST25R3916Backend::Technology::NFC_F) ||
-      (_expFamily == EXP_TYPE4B && (tag.technology != ST25R3916Backend::Technology::NFC_B || !tag.isoDep))) {
+      (_expFamily == EXP_FELICA && tag.technology != ST25R3916Backend::Technology::NFC_F)) {
     dev.deactivate(); ShowStatusAction::show("Unexpected tag type"); _showExperimentalTagMenu(); return;
   }
   if (_expFamily == EXP_DESFIRE && !ST25R3916Experimental::desfireProbe(dev)) {
@@ -4750,25 +4796,25 @@ void ST25R3916Screen::_experimentalType4bAction(uint8_t index) { if(index==0)_ex
 
 void ST25R3916Screen::_experimentalSendApdu(bool desfire) {
 #if defined(DEVICE_HAS_ST25R3916)
-  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid APDU");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;uint16_t mask=desfire?ST25R3916Backend::TECH_A:ST25R3916Backend::TECH_B;if(!dev.scan(mask,tag,5000,true)||!tag.isoDep){ShowStatusAction::show("No ISO-DEP tag");_showExperimentalAdvancedMenu();return;}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();ShowStatusAction::show("Not a DESFire tag");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){ShowStatusAction::show("APDU failed");_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
+  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid APDU");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;if(desfire){if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||!tag.isoDep){ShowStatusAction::show("No ISO-DEP tag");_showExperimentalAdvancedMenu();return;}}else{const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();ShowStatusAction::show("Not a DESFire tag");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){ShowStatusAction::show("APDU failed",1600);_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
 #endif
 }
 
 void ST25R3916Screen::_experimentalRawCommand() {
 #if defined(DEVICE_HAS_ST25R3916)
-  String h=InputTextAction::popup("Raw command (hex)","",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid command");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="Raw Response";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;uint16_t mask=_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:ST25R3916Backend::TECH_B;if(!dev.scan(mask,tag,5000,true)){ShowStatusAction::show("No tag detected");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=(_expFamily==EXP_TYPE4B&&tag.isoDep)?dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n):dev.activeRfTransceive(tx,tl,rx,sizeof(rx),n,250);dev.deactivate();if(!ok){ShowStatusAction::show("Command failed");_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("Raw Response",rx,n);
+  String h=InputTextAction::popup("Raw command (hex)","",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){ShowStatusAction::show("Invalid command");_showExperimentalAdvancedMenu();return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="Raw Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalAdvancedMenu();return;}ST25R3916Backend::ScanResult tag;if(_expFamily==EXP_TYPE4B){const auto scanResult=st25ScanType4b(dev,tag,false);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}else if(!dev.scan(ST25R3916Backend::TECH_F,tag,5000,true)){ShowStatusAction::show("No tag detected");_showExperimentalAdvancedMenu();return;}uint8_t rx[512]={};size_t n=0;bool ok=(_expFamily==EXP_TYPE4B&&tag.isoDep)?dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n):dev.activeRfTransceive(tx,tl,rx,sizeof(rx),n,250);dev.deactivate();if(!ok){ShowStatusAction::show("Command failed",1600);_showExperimentalAdvancedMenu();return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("Raw Response",rx,n);
 #endif
 }
 
 void ST25R3916Screen::_experimentalReadNdef() {
 #if defined(DEVICE_HAS_ST25R3916)
-  _state=STATE_EXP_WORKING;_advancedOperationTitle="Read NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalNdefMenu();return;}ST25R3916Backend::ScanResult tag;uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:_expFamily==EXP_TYPE4B?ST25R3916Backend::TECH_B:ST25R3916Backend::TECH_A;if(!dev.scan(mask,tag,5000,true)){ShowStatusAction::show("No tag detected");_showExperimentalNdefMenu();return;}uint8_t b[kMaxNdefBytes]={};size_t n=0,cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVReadNdef(dev,tag,b,sizeof(b),n,cap);else if(_expFamily==EXP_FELICA)ok=ST25R3916Experimental::felicaReadNdef(dev,tag,b,sizeof(b),n,cap);else if(tag.isoDep)ok=ST25R3916Experimental::type4ReadNdef(dev,b,sizeof(b),n,cap);dev.deactivate();if(!ok){ShowStatusAction::show("NDEF not found / unsupported");_showExperimentalNdefMenu();return;}_ndefCapacity=cap;_ndefExperimentalTarget=true;_showNdefDetails(tag.nfcid,tag.nfcidLen,b,n);
+  _state=STATE_EXP_WORKING;_advancedOperationTitle="Read NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");_showExperimentalNdefMenu();return;}ST25R3916Backend::ScanResult tag;if(_expFamily==EXP_TYPE4B){const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalNdefMenu();return;}}else{uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:ST25R3916Backend::TECH_A;if(!dev.scan(mask,tag,5000,true)){ShowStatusAction::show("No tag detected");_showExperimentalNdefMenu();return;}}uint8_t b[kMaxNdefBytes]={};size_t n=0,cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVReadNdef(dev,tag,b,sizeof(b),n,cap);else if(_expFamily==EXP_FELICA)ok=ST25R3916Experimental::felicaReadNdef(dev,tag,b,sizeof(b),n,cap);else if(tag.isoDep)ok=ST25R3916Experimental::type4ReadNdef(dev,b,sizeof(b),n,cap);dev.deactivate();if(!ok){ShowStatusAction::show("NDEF not found / unsupported",2000);_showExperimentalNdefMenu();return;}_ndefCapacity=cap;_ndefExperimentalTarget=true;_showNdefDetails(tag.nfcid,tag.nfcidLen,b,n);
 #endif
 }
 
 bool ST25R3916Screen::_experimentalWriteNdef(const uint8_t* ndef, size_t ndefLen, bool formatOnly) {
 #if defined(DEVICE_HAS_ST25R3916)
-  _state=STATE_EXP_WORKING;_advancedOperationTitle=formatOnly?"Format NDEF":"Write NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");return false;}ST25R3916Backend::ScanResult tag;uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:_expFamily==EXP_TYPE4B?ST25R3916Backend::TECH_B:ST25R3916Backend::TECH_A;if(!dev.scan(mask,tag,5000,true)){ShowStatusAction::show("No tag detected");return false;}size_t cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVWriteNdef(dev,tag,ndef,ndefLen,cap,formatOnly);else if(_expFamily==EXP_FELICA){if(formatOnly){dev.deactivate();ShowStatusAction::show("Requires Type 3 NDEF area");return false;}ok=ST25R3916Experimental::felicaWriteNdef(dev,tag,ndef,ndefLen,cap);}else if(tag.isoDep){if(formatOnly){dev.deactivate();ShowStatusAction::show("Requires provisioned Type 4 NDEF");return false;}ok=ST25R3916Experimental::type4WriteNdef(dev,ndef,ndefLen,cap);}dev.deactivate();_ndefCapacity=cap;ShowStatusAction::show(ok?(formatOnly?"NDEF formatted":"NDEF written"):(formatOnly?"Format failed":"Write failed"));return ok;
+  _state=STATE_EXP_WORKING;_advancedOperationTitle=formatOnly?"Format NDEF":"Write NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev)){ShowStatusAction::show("ST25R3916 not found");return false;}ST25R3916Backend::ScanResult tag;if(_expFamily==EXP_TYPE4B){const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);return false;}}else{uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:ST25R3916Backend::TECH_A;if(!dev.scan(mask,tag,5000,true)){ShowStatusAction::show("No tag detected");return false;}}size_t cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVWriteNdef(dev,tag,ndef,ndefLen,cap,formatOnly);else if(_expFamily==EXP_FELICA){if(formatOnly){dev.deactivate();ShowStatusAction::show("Requires Type 3 NDEF area");return false;}ok=ST25R3916Experimental::felicaWriteNdef(dev,tag,ndef,ndefLen,cap);}else if(tag.isoDep){if(formatOnly){dev.deactivate();ShowStatusAction::show("Requires provisioned Type 4 NDEF",2000);return false;}ok=ST25R3916Experimental::type4WriteNdef(dev,ndef,ndefLen,cap);}dev.deactivate();_ndefCapacity=cap;ShowStatusAction::show(ok?(formatOnly?"NDEF formatted":"NDEF written"):(formatOnly?"Format failed":"Write failed"),1600);return ok;
 #else
   return false;
 #endif
