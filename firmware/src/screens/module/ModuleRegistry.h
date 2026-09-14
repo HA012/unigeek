@@ -21,7 +21,10 @@ namespace ModuleRegistry
     MOD_M5_RF433,
     MOD_NRF24,
     MOD_PIN_SETTING,
+    // Keep the original ST25 id in place for persisted hide-mask compatibility.
     MOD_ST25R3916,
+    // New module ids must be appended only.
+    MOD_ST25R3916_SPI,
     MOD_COUNT
   };
 
@@ -35,7 +38,23 @@ namespace ModuleRegistry
     "M5 RF433",
     "NRF24L01",
     "Pin Setting",
-    "ST25R3916",
+    "ST25R3916 I2C",
+    "ST25R3916 SPI",
+  };
+
+  // Visual order only. Persisted ids above remain append-only.
+  static const uint8_t DISPLAY_ORDER[MOD_COUNT] = {
+    MOD_MFRC522_I2C,
+    MOD_PN532_UART,
+    MOD_PN532_I2C,
+    MOD_ST25R3916,
+    MOD_ST25R3916_SPI,
+    MOD_GPS,
+    MOD_IR,
+    MOD_SUBGHZ,
+    MOD_M5_RF433,
+    MOD_NRF24,
+    MOD_PIN_SETTING,
   };
 
   inline uint32_t hiddenMask()
