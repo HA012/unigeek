@@ -16,9 +16,6 @@ void ModuleMenuScreen::onInit() {
   _visibleCount = 0;
   for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
     const uint8_t id = ModuleRegistry::DISPLAY_ORDER[i];
-#ifndef DEVICE_HAS_ST25R3916
-    if (id == ModuleRegistry::MOD_ST25R3916 || id == ModuleRegistry::MOD_ST25R3916_SPI) continue;
-#endif
     if (ModuleRegistry::isHidden(id)) continue;
     _items[_visibleCount].label    = ModuleRegistry::LABELS[id];
     _items[_visibleCount].sublabel = nullptr;
@@ -44,9 +41,7 @@ void ModuleMenuScreen::onItemSelected(uint8_t index) {
     case ModuleRegistry::MOD_M5_RF433:    Screen.push(new M5RF433Screen());    break;
     case ModuleRegistry::MOD_NRF24:       Screen.push(new NRF24Screen());      break;
     case ModuleRegistry::MOD_PIN_SETTING: Screen.push(new PinSettingScreen()); break;
-#ifdef DEVICE_HAS_ST25R3916
     case ModuleRegistry::MOD_ST25R3916:     Screen.push(new ST25R3916Screen(ST25R3916Screen::Interface::I2C)); break;
     case ModuleRegistry::MOD_ST25R3916_SPI: Screen.push(new ST25R3916Screen(ST25R3916Screen::Interface::SPI)); break;
-#endif
   }
 }
