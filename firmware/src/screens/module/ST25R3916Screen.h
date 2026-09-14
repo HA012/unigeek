@@ -10,6 +10,10 @@ class ST25R3916Backend;
 
 class ST25R3916Screen : public ListScreen {
 public:
+  enum class Interface : uint8_t { I2C, SPI };
+
+  explicit ST25R3916Screen(Interface interface = Interface::I2C) : _interface(interface) {}
+
   const char* title() override {
     switch (_state) {
       case STATE_SCANNING: return "Scan Tag";
@@ -79,6 +83,8 @@ public:
   void onBack() override;
 
 private:
+  Interface _interface = Interface::I2C;
+
   enum State : uint8_t {
     STATE_MENU,
     STATE_SCANNING,
