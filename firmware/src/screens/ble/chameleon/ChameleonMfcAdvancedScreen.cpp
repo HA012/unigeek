@@ -37,16 +37,17 @@ void ChameleonMfcAdvancedScreen::onInit(){
   _items[1] = {"Edit Memory"};
   _items[2] = {"Edit UID (Gen1A/Gen3)"};
   _items[3] = {"Lock UID (Gen3)"};
-  setItems(_items);
+  setItems(_items, 4, _selMenu);
 }
 void ChameleonMfcAdvancedScreen::_addRow(const String& l,const String& v){ if(_rowCount>=MAX_ROWS)return; _labels[_rowCount]=l;_values[_rowCount]=v;_rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount].c_str()};++_rowCount; }
 void ChameleonMfcAdvancedScreen::onItemSelected(uint8_t i){
+  _selMenu = i;
   if (i == 0) _readMemory();
   else if (i == 1) _editMemory();
   else if (i == 2) _editUid();
   else if (i == 3) _lockUidGen3();
 }
-void ChameleonMfcAdvancedScreen::onBack(){ if(_showingMemory){_showingMemory=false;setItems(_items);render();} else Screen.goBack(); }
+void ChameleonMfcAdvancedScreen::onBack(){ if(_showingMemory){_showingMemory=false;setItems(_items, 4, _selMenu);render();} else Screen.goBack(); }
 void ChameleonMfcAdvancedScreen::onUpdate(){ if(!_showingMemory){ListScreen::onUpdate();return;} if(Uni.Nav->wasPressed()){auto d=Uni.Nav->readDirection();if(d==INavigation::DIR_BACK)onBack();else _view.onNav(d);} }
 void ChameleonMfcAdvancedScreen::onRender(){ if(_showingMemory){_view.render(bodyX(),bodyY(),bodyW(),bodyH());return;} ListScreen::onRender(); }
 
@@ -106,13 +107,13 @@ void ChameleonMfcAdvancedScreen::_editUid(){
 
   uint8_t currentUid[7] = {}, currentUidLen = 0, atqa[2] = {}, sak = 0;
   if (!c.scan14A(currentUid, &currentUidLen, atqa, &sak)) {
-    restore(); render(); ShowStatusAction::show("No tag detected"); render(); return;
+    restore(); render(); ShowStatusAction::show("No tag detected", 1200); render(); return;
   }
 
   const MagicCardType magic = c.detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
     restore(); render();
-    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 1800);
+    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 2000);
     render();
     return;
   }
@@ -186,7 +187,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   hex.replace(" ", "");
   hex.replace(":", "");
   if (hex.length() != 8 && hex.length() != 14) {
-    restore(); render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1500); render(); return;
+    restore(); render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1600); render(); return;
   }
 
   const uint8_t newUidLen = (uint8_t)(hex.length() / 2);
@@ -258,7 +259,7 @@ void ChameleonMfcAdvancedScreen::_lockUidGen3(){
   auto restore=[&](){ if(restoreMode) c.setMode(previousMode); };
 
   if (c.detectMagicType() != MagicCardType::GEN3) {
-    restore(); render(); ShowStatusAction::show("Tag is not Gen3", 1500); render(); return;
+    restore(); render(); ShowStatusAction::show("Tag is not Gen3", 1600); render(); return;
   }
 
   static const InputSelectAction::Option opts[] = {{"Lock UID permanently", "lock"}};

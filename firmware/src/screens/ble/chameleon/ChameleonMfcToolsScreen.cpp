@@ -65,7 +65,7 @@ void ChameleonMfcToolsScreen::_writeFromFile() {
   uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin", 1024));
   if (!n) {
     render();
-    ShowStatusAction::show("No Classic 1K .bin", 1500);
+    ShowStatusAction::show("No Classic 1K .bin", 1600);
     render();
     return;
   }
@@ -90,7 +90,7 @@ void ChameleonMfcToolsScreen::_writeFromSlot() {
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) {
     render();
-    ShowStatusAction::show("Could not read slots", 1500);
+    ShowStatusAction::show("Could not read slots", 1600);
     render();
     return;
   }
@@ -119,7 +119,7 @@ void ChameleonMfcToolsScreen::_writeFromSlot() {
   }
   if (!(hfType == 1001)) {
     render();
-    ShowStatusAction::show("Tag not supported", 1500);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }
@@ -162,7 +162,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   if (!c.scan14A(uid, &uidLen, atqa, &sak) || sak != 0x08) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Tag must be MFC1K", 1500);
+    ShowStatusAction::show("Tag must be MFC1K", 1600);
     render();
     return;
   }
@@ -197,7 +197,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   if (!keysOk) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Erase failed: missing key", 1700);
+    ShowStatusAction::show("Erase failed: missing key", 1600);
     render();
     return;
   }

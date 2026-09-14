@@ -21,6 +21,8 @@ private:
 
   State _state   = MENU;
   bool  _running = false;
+  uint8_t _selMenu = 0;
+  uint8_t _selWrite = 0;
 
   ListItem _menu[4] = {
     {"Read NDEF"},

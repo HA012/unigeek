@@ -19,6 +19,7 @@ private:
   static constexpr uint16_t    kMaxRows = 256;
 
   State               _state = STATE_MENU;
+  uint8_t             _selMenu = 0;
   ListItem            _menu[2];
   BrowseFileView      _browser;
   String              _pickDir;

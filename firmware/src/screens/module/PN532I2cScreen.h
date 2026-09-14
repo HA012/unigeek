@@ -45,6 +45,11 @@ private:
     STATE_ULTRALIGHT_TAG_MENU,
     STATE_ULTRALIGHT_ADVANCED_MENU,
     STATE_ULTRALIGHT_NDEF_MENU,
+    STATE_TYPEB_MENU,
+    STATE_TYPEB_TAG_MENU,
+    STATE_TYPEB_ADVANCED_MENU,
+    STATE_TYPEB_NDEF_MENU,
+    STATE_TYPEB_RESULT,
     STATE_MAGIC_DETECT,
     STATE_RAW_RESULT,
     STATE_ULTRALIGHT_DUMP,
@@ -66,6 +71,28 @@ private:
   uint8_t  _sak    = 0;
   bool     _hasCard = false;
   bool     _rawResultMifare = false;
+  bool     _rawResultTypeB = false;
+  bool     _rawResultTypeBRaw = false;
+
+  // Last scanned ISO/IEC 14443 Type B card. InListPassiveTarget returns the
+  // 12-byte ATQB plus the ATTRIB response after activation.
+  uint8_t  _typeBAtqb[12] = {};
+  uint8_t  _typeBAttrib[32] = {};
+  uint8_t  _typeBAttribLen = 0;
+  uint8_t  _typeBTg = 1;
+  bool     _hasTypeB = false;
+  bool     _typeBFromMainScan = false;
+  bool     _typeBRfConfigured = false;
+
+  // Remember the cursor position of each internal menu. PN532I2cScreen uses
+  // one ListScreen instance for several menu states, so Back must restore the
+  // parent menu explicitly instead of relying on pointer-based list caching.
+  uint8_t _selMain = 0;
+  uint8_t _selMifare = 0, _selMifareTag = 0, _selMifareAdvanced = 0;
+  uint8_t _selMifareNdef = 0, _selMifareAttacks = 0, _selMifareKeys = 0;
+  uint8_t _selUltralight = 0, _selUltralightTag = 0, _selUltralightAdvanced = 0, _selUltralightNdef = 0;
+  uint8_t _selTypeB = 0, _selTypeBTag = 0, _selTypeBAdvanced = 0, _selTypeBNdef = 0;
+  uint8_t _selNdefWrite = 0;
   std::array<std::pair<NFCUtility::MIFARE_Key, NFCUtility::MIFARE_Key>, 40> _mfKeys;
 
   // Device information reported by GetFirmwareVersion
@@ -82,10 +109,11 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[4] = {
+  ListItem _mainItems[5] = {
     {"Scan Tag"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
+    {"Type B (experimental)"},
     {"Device Info"},
   };
 
@@ -154,6 +182,28 @@ private:
     {"Erase NDEF"},
   };
 
+  ListItem _typeBItems[2] = {
+    {"Tag Operations"},
+    {"NDEF Operations"},
+  };
+
+  ListItem _typeBTagItems[2] = {
+    {"Read Tag"},
+    {"Advanced"},
+  };
+
+  ListItem _typeBAdvancedItems[2] = {
+    {"Send APDU"},
+    {"Raw Commands"},
+  };
+
+  ListItem _typeBNdefItems[4] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+    {"Format NDEF"},
+    {"Erase NDEF"},
+  };
+
   LogView _magicLog;
   bool _magicDetectDone = false;
 
@@ -188,6 +238,7 @@ private:
   enum NdefTarget_e {
     NDEF_TARGET_ULTRALIGHT,
     NDEF_TARGET_MIFARE_CLASSIC,
+    NDEF_TARGET_TYPE_B,
   };
   NdefTarget_e _ndefTarget = NDEF_TARGET_ULTRALIGHT;
 
@@ -222,10 +273,25 @@ private:
   void _goUltralightTag();
   void _goUltralightAdvanced();
   void _goUltralightNdef();
+  void _goTypeB();
+  void _goTypeBTag();
+  void _goTypeBAdvanced();
+  void _goTypeBNdef();
   void _goDetectMagic();
 
   void _showDeviceInfo();
   void _doScan14A();
+  bool _scanTypeB(uint32_t timeoutMs = 500);
+  bool _isoATagPresent(uint32_t timeoutMs = 120);
+  void _showTypeBDetails(bool scanAgainHint = false);
+  void _doTypeBReadTag();
+  void _doTypeBSendApdu(bool rawMode);
+  bool _typeBExchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxCap, size_t& rxLen);
+  bool _typeBSelectNdef(size_t& capacity, bool& writable);
+  void _doTypeBReadNdef();
+  bool _writeTypeBNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  void _doTypeBEraseNdef();
+  void _doTypeBFormatNdef();
   bool _discoverDefaultKeys(bool checkingProgress = false);
   void _loadSavedKeys();
   void _saveKeys();

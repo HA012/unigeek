@@ -39,7 +39,7 @@ void ChameleonMfuToolsScreen::_writeFromFile() {
   uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin", 540));
   if (!n) {
     render();
-    ShowStatusAction::show("No NTAG215 .bin", 1500);
+    ShowStatusAction::show("No NTAG215 .bin", 1600);
     render();
     return;
   }
@@ -64,7 +64,7 @@ void ChameleonMfuToolsScreen::_writeFromSlot() {
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) {
     render();
-    ShowStatusAction::show("Could not read slots", 1500);
+    ShowStatusAction::show("Could not read slots", 1600);
     render();
     return;
   }
@@ -93,7 +93,7 @@ void ChameleonMfuToolsScreen::_writeFromSlot() {
   }
   if (!(hfType == ChameleonClient::MFU_NTAG215)) {
     render();
-    ShowStatusAction::show("Tag not supported", 1500);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }
@@ -135,7 +135,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
       info.pages != 135) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Tag must be NTAG215", 1500);
+    ShowStatusAction::show("Tag must be NTAG215", 1600);
     render();
     return;
   }
@@ -144,7 +144,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
   if (!image) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Out of memory", 1500);
+    ShowStatusAction::show("Out of memory", 1600);
     render();
     return;
   }
@@ -157,7 +157,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
     free(image);
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Cannot build empty tag", 1500);
+    ShowStatusAction::show("Cannot build empty tag", 1600);
     render();
     return;
   }

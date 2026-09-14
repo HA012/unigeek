@@ -53,7 +53,7 @@ void ChameleonMfcNdefScreen::_goMenu() {
   _state = STATE_MENU;
   _writePreview = false;
   _writePreviewFromFile = false;
-  setItems(_menuItems);
+  setItems(_menuItems, 4, _selMenu);
   render();
 }
 
@@ -61,7 +61,7 @@ void ChameleonMfcNdefScreen::_goWriteMenu() {
   _state = STATE_WRITE_MENU;
   _writePreview = false;
   _writePreviewFromFile = false;
-  setItems(_writeItems);
+  setItems(_writeItems, 6, _selWrite);
   render();
 }
 
@@ -103,6 +103,7 @@ void ChameleonMfcNdefScreen::onRender() {
 
 void ChameleonMfcNdefScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _selMenu = index;
     if (index == 0) _doRead();
     else if (index == 1) _goWriteMenu();
     else if (index == 2) {
@@ -117,6 +118,7 @@ void ChameleonMfcNdefScreen::onItemSelected(uint8_t index) {
     return;
   }
   if (_state == STATE_WRITE_MENU) {
+    _selWrite = index;
     if (index == 0) _writeText();
     else if (index == 1) _writeUrl();
     else if (index == 2) _writePhone();
@@ -172,7 +174,7 @@ bool ChameleonMfcNdefScreen::_scanClassic() {
   uint8_t atqa[2] = {}, sak = 0;
   if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {
     c.setMode(0);
-    ShowStatusAction::show("No tag detected");
+    ShowStatusAction::show("No tag detected", 1200);
     return false;
   }
   if (!c.mf1Support()) {
@@ -735,7 +737,7 @@ void ChameleonMfcNdefScreen::_saveCurrent() {
   fs::File f = Uni.Storage->open(path.c_str(), "w"); bool ok = false;
   if (f) { ok = f.write(_ndef, _ndefLen) == _ndefLen; f.close(); }
   render();
-  ShowStatusAction::show(ok ? "NDEF saved" : "Save failed", 1500);
+  ShowStatusAction::show(ok ? "NDEF saved" : "Save failed", 1600);
   if (ok) { _goMenu(); return; }
   render();
 }

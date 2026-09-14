@@ -20,7 +20,7 @@ void ChameleonMfcKeysScreen::_goMenu() {
   _state   = STATE_MENU;
   _menu[0] = {"Check Known Keys"};
   _menu[1] = {"Dictionaries"};
-  setItems(_menu);
+  setItems(_menu, 2, _selMenu);
   render();
 }
 
@@ -82,6 +82,7 @@ void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& nam
 
 void ChameleonMfcKeysScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _selMenu = index;
     if (index == 0) {
       Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_SHOW_KEYS));
     } else if (index == 1) {

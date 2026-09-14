@@ -87,13 +87,13 @@ void ChameleonMfuNdefScreen::onInit() {
 
 void ChameleonMfuNdefScreen::goMenu() {
   _state = MENU;
-  setItems(_menu);
+  setItems(_menu, 4, _selMenu);
   render();
 }
 
 void ChameleonMfuNdefScreen::goWrite() {
   _state = WRITE_MENU;
-  setItems(_write);
+  setItems(_write, 6, _selWrite);
   render();
 }
 
@@ -457,6 +457,7 @@ void ChameleonMfuNdefScreen::fileSelected(uint8_t index) {
 
 void ChameleonMfuNdefScreen::onItemSelected(uint8_t index) {
   if (_state == MENU) {
+    _selMenu = index;
     switch (index) {
       case 0: read();    break;
       case 1: goWrite(); break;
@@ -467,6 +468,7 @@ void ChameleonMfuNdefScreen::onItemSelected(uint8_t index) {
   }
 
   if (_state == WRITE_MENU) {
+    _selWrite = index;
     if (index < 4) {
       writeBuilt(index);
       return;
@@ -528,8 +530,15 @@ void ChameleonMfuNdefScreen::onBack() {
   }
 
   if (_state == FILE_SELECT) {
-    _pickDir = "";
-    goWrite();
+    if (_pickDir.length() == 0 || _pickDir == kNdefDir) {
+      _pickDir = "";
+      goWrite();
+    } else {
+      int slash = _pickDir.lastIndexOf('/');
+      _pickDir = (slash > 0) ? _pickDir.substring(0, slash) : String(kNdefDir);
+      if (!_pickDir.startsWith(kNdefDir)) _pickDir = kNdefDir;
+      files();
+    }
     return;
   }
 

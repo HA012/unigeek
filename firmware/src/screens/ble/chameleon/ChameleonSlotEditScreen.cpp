@@ -557,14 +557,14 @@ void ChameleonSlotEditScreen::_downloadDump() {
   const uint16_t dumpSize = _dumpSizeForType(_hfType);
   if (dumpSize == 0) {
     render();
-    ShowStatusAction::show("Tag type not supported", 1400);
+    ShowStatusAction::show("Tag type not supported", 1600);
     render();
     return;
   }
 
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     render();
-    ShowStatusAction::show("Storage unavailable", 1400);
+    ShowStatusAction::show("Storage unavailable", 1600);
     render();
     return;
   }
@@ -577,7 +577,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
   if (!c.setActiveSlot(_slot)) {
     render();
-    ShowStatusAction::show("Select slot failed", 1400);
+    ShowStatusAction::show("Select slot failed", 1600);
     render();
     return;
   }
@@ -586,7 +586,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (!dump) {
     if (restoreSlot) c.setActiveSlot(previousSlot);
     render();
-    ShowStatusAction::show("Out of memory", 1400);
+    ShowStatusAction::show("Out of memory", 1600);
     render();
     return;
   }
@@ -665,7 +665,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (!ok) {
     free(dump);
     render();
-    ShowStatusAction::show("Download failed", 1500);
+    ShowStatusAction::show("Download failed", 1600);
     render();
     return;
   }
@@ -728,7 +728,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (!f) {
     free(dump);
     render();
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Save failed", 1600);
     render();
     return;
   }
@@ -739,14 +739,14 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
   render();
   if (written != dumpSize) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Save failed", 1600);
     render();
     return;
   }
 
   const int slash = path.lastIndexOf('/');
   const String saved = (slash >= 0) ? path.substring(slash + 1) : path;
-  ShowStatusAction::show(("Saved: " + saved).c_str(), 1700);
+  ShowStatusAction::show(("Saved: " + saved).c_str(), 1600);
   render();
 }
 
@@ -764,7 +764,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
     if (n == 0) {
       render();
-      ShowStatusAction::show("No .bin in nfc/dumps", 1500);
+      ShowStatusAction::show("No .bin in nfc/dumps", 1600);
       render();
       return;
     }
@@ -790,7 +790,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1500);
+    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1600);
     render();
 
     if (ok) {
@@ -809,7 +809,7 @@ void ChameleonSlotEditScreen::_writeContent() {
     _rebuildLabels();
     render();
 
-    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1500);
+    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1600);
     render();
 
     if (ok) {
@@ -829,7 +829,7 @@ void ChameleonSlotEditScreen::_writeTag() {
     return;
   }
   render();
-  ShowStatusAction::show("Tag type not supported", 1400);
+  ShowStatusAction::show("Tag type not supported", 1600);
   render();
 }
 

@@ -27,6 +27,7 @@ public:
     _selectedIndex    = 0;
     _scrollOffset     = 0;
     _partialTopActive = false;
+    _scrollIfNeeded();
     render();
   }
 
@@ -36,6 +37,8 @@ public:
     _count         = count;
     _selectedIndex = 0;
     _scrollOffset  = 0;
+    _partialTopActive = false;
+    _scrollIfNeeded();
     render();
   }
 
@@ -333,6 +336,7 @@ private:
   bool          _stackedSublabels = false;
   bool          _preferSublabel = false;
 
+
   uint32_t      _marqueeTimer     = 0;
   int16_t       _marqueeOffset    = 0;
 
@@ -344,6 +348,7 @@ private:
     if (rssi >= -75) return TFT_YELLOW;
     return TFT_RED;
   }
+
 
   void _resetMarquee()
   {

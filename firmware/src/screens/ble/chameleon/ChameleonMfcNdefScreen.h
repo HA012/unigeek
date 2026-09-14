@@ -30,6 +30,8 @@ private:
   bool _running = false;
   bool _writePreview = false;
   bool _writePreviewFromFile = false;
+  uint8_t _selMenu = 0;
+  uint8_t _selWrite = 0;
 
   uint8_t _uid[7] = {};
   uint8_t _uidLen = 0;

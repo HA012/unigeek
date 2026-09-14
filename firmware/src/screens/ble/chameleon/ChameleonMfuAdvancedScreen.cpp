@@ -226,7 +226,7 @@ void ChameleonMfuAdvancedScreen::_setPassword() {
   // mfuPwdAuth() leaves the RF field/session active. If configuration pages
   // were already protected, continue in that authenticated session.
   if(ok && !configLocked) ok=c.mfuWritePageSession((uint8_t)cfg,c0);
-  if(restoreMode)c.setMode(previousMode); render(); ShowStatusAction::show(ok?"Password set\nRetap tag to activate":"Password setup failed", 1800); render();
+  if(restoreMode)c.setMode(previousMode); render(); ShowStatusAction::show(ok?"Password set\nRetap tag to activate":"Password setup failed", 2000); render();
 }
 
 void ChameleonMfuAdvancedScreen::_removePassword() {

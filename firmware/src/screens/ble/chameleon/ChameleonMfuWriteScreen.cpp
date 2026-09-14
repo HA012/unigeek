@@ -250,7 +250,7 @@ void ChameleonMfuWriteScreen::_detectTarget() {
   if (!ok) {
     _restoreContext();
     render();
-    ShowStatusAction::show("Tag must be NTAG215", 1500);
+    ShowStatusAction::show("Tag must be NTAG215", 1600);
     render();
     return;
   }

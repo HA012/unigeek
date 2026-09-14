@@ -42,9 +42,9 @@ void ChameleonMfkey32Screen::_toggle() {
   bool next = !_logEnabled;
   if (ChameleonClient::get().mf1SetDetectEnable(next)) {
     _logEnabled = next;
-    ShowStatusAction::show(next ? "Logging ON" : "Logging OFF", 1000);
+    ShowStatusAction::show(next ? "Logging ON" : "Logging OFF", 1200);
   } else {
-    ShowStatusAction::show("Toggle failed", 1000);
+    ShowStatusAction::show("Toggle failed", 1200);
   }
   _refresh();
   render();

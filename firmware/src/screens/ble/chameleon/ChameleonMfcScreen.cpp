@@ -770,7 +770,7 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
   if (ok) ok = c.setSlotEnable(slot, 2, true);
   restoreContext();
   render();
-  ShowStatusAction::show(ok ? "Dump loaded to slot" : "Load to slot failed", 1500);
+  ShowStatusAction::show(ok ? "Dump loaded to slot" : "Load to slot failed", 1600);
   render();
 }
 
@@ -793,7 +793,7 @@ void ChameleonMfcScreen::_showDumpActions() {
   } else if (strcmp(r, "slot") == 0) {
     _loadDumpToSlot();
   } else if (_dumpLen != 1024) {
-    ShowStatusAction::show("Classic 1K only for now", 1500);
+    ShowStatusAction::show("Classic 1K only for now", 1600);
     render();
   } else {
     Screen.push(new ChameleonMfcWriteScreen(_dump, _dumpLen, _uid, _uidLen));
@@ -842,7 +842,7 @@ void ChameleonMfcScreen::_saveDump() {
   render();
   if (ok) {
     String msg = String("Saved: ") + filename;
-    ShowStatusAction::show(msg.c_str(), 1500);
+    ShowStatusAction::show(msg.c_str(), 1600);
     int n = Achievement.inc("chameleon_mfc_dump");
     if (n == 1) Achievement.unlock("chameleon_mfc_dump");
     render();

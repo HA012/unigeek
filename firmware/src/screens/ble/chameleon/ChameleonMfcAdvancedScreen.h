@@ -13,6 +13,7 @@ public:
 private:
   ListItem _items[4];
   bool _showingMemory = false;
+  uint8_t _selMenu = 0;
   ScrollListView _view;
   // Keep the same capacity as PN532: 3 header rows + 2 rows for each
   // of the 256 MIFARE Classic 4K blocks.

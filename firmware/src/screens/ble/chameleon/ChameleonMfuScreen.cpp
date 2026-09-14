@@ -202,7 +202,7 @@ void ChameleonMfuScreen::_read() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("Tag not supported", 1400);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }
@@ -296,7 +296,7 @@ void ChameleonMfuScreen::_save() {
   render();
   if (ok) {
     String msg = String("Saved: ") + filename;
-    ShowStatusAction::show(msg.c_str(), 1500);
+    ShowStatusAction::show(msg.c_str(), 1600);
     Screen.goBack();
     return;
   } else {
@@ -322,7 +322,7 @@ void ChameleonMfuScreen::_resultActions() {
   if (_info.type != ChameleonClient::MFU_NTAG215 || _info.pages != 135 ||
       !_dump || _dumpLen != 540) {
     render();
-    ShowStatusAction::show("Write supports NTAG215", 1400);
+    ShowStatusAction::show("Write supports NTAG215", 1600);
     render();
     return;
   }
