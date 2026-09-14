@@ -37,7 +37,7 @@ namespace ModuleRegistry
     "Sub-GHz",
     "M5 RF433",
     "NRF24L01",
-    "Pin Setting",
+    "Pin Settings",
     "ST25R3916 I2C",
     "ST25R3916 SPI",
   };

@@ -20,13 +20,14 @@ private:
 
   enum : uint8_t {
     SETT_NAME = 0,
+    SETT_WEB_PASSWORD,
+    SETT_BRIGHTNESS,
     SETT_DISP_OFF_EN,
     SETT_DISP_OFF,
 #ifdef APP_MENU_POWER_OFF
     SETT_POWER_OFF_EN,
     SETT_POWER_OFF,
 #endif
-    SETT_BRIGHTNESS,
 #if defined(DEVICE_HAS_SOUND) && defined(DEVICE_HAS_VOLUME_CONTROL)
     SETT_VOLUME,
 #endif
@@ -34,14 +35,10 @@ private:
     SETT_NAV_SOUND,
     SETT_SPEAKER_TEST,
 #endif
-    SETT_KEYBOARD,
     SETT_COLOR,
     SETT_MASCOT,
 #ifdef DEVICE_HAS_LED_RING
     SETT_LED_MODE,
-#endif
-#ifdef DEVICE_HAS_NAV_MODE_SWITCH
-    SETT_NAV_MODE,
 #endif
 #ifdef DEVICE_HAS_SCREEN_ORIENT
     SETT_SCREEN_ORIENT,
@@ -53,7 +50,10 @@ private:
 #ifdef DEVICE_CYD
     SETT_TOUCH_CAL,
 #endif
-    SETT_WEB_PASSWORD,
+    SETT_KEYBOARD,
+#ifdef DEVICE_HAS_NAV_MODE_SWITCH
+    SETT_NAV_MODE,
+#endif
     SETT_PIN_SETTING,
     SETT_HIDE_MODULE,
     SETT_DEVICE_STATUS,
@@ -94,13 +94,14 @@ private:
 
   ListItem _items[SETT_COUNT] = {
     {"Name",             ""},
+    {"Web Password",     ""},
+    {"Brightness",       ""},
     {"Auto Display Off", ""},
     {"Display Off",      ""},
 #ifdef APP_MENU_POWER_OFF
     {"Auto Power Off",   ""},
     {"Power Off",        ""},
 #endif
-    {"Brightness",       ""},
 #if defined(DEVICE_HAS_SOUND) && defined(DEVICE_HAS_VOLUME_CONTROL)
     {"Volume",           ""},
 #endif
@@ -108,14 +109,10 @@ private:
     {"Navigation Sound", ""},
     {"Speaker Test"},
 #endif
-    {"Keyboard",         ""},
     {"Primary Color",    ""},
     {"Mascot",           ""},
 #ifdef DEVICE_HAS_LED_RING
     {"LED Effect",       ""},
-#endif
-#ifdef DEVICE_HAS_NAV_MODE_SWITCH
-    {"Navigation Mode",  ""},
 #endif
 #ifdef DEVICE_HAS_SCREEN_ORIENT
     {"Screen Orientation", ""},
@@ -127,9 +124,12 @@ private:
 #ifdef DEVICE_CYD
     {"Touch Calibration"},
 #endif
-    {"Web Password",     ""},
-    {"Pin Setting"},
-    {"Hide Module"},
+    {"Keyboard",         ""},
+#ifdef DEVICE_HAS_NAV_MODE_SWITCH
+    {"Navigation Mode",  ""},
+#endif
+    {"Pin Settings"},
+    {"Show/Hide Modules"},
     {"Device Status"},
     {"About"},
   };

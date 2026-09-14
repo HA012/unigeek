@@ -3,15 +3,15 @@
 #include "ui/templates/ListScreen.h"
 #include "core/IScreen.h"
 
-class PinSettingScreen : public ListScreen
+class PinSettingsScreen : public ListScreen
 {
 public:
   using BackFactory = IScreen*(*)();
 
-  PinSettingScreen() = default;
-  explicit PinSettingScreen(BackFactory backFn) : _backFn(backFn) {}
+  PinSettingsScreen() = default;
+  explicit PinSettingsScreen(BackFactory backFn) : _backFn(backFn) {}
 
-  const char* title() override { return "Pin Setting"; }
+  const char* title() override { return "Pin Settings"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;

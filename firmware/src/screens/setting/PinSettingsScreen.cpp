@@ -1,4 +1,4 @@
-#include "screens/setting/PinSettingScreen.h"
+#include "screens/setting/PinSettingsScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/PinConfigManager.h"
@@ -7,7 +7,7 @@
 #include "ui/actions/InputNumberAction.h"
 
 
-void PinSettingScreen::onInit() {
+void PinSettingsScreen::onInit() {
   _itemCount = 0;
 
   // GPS pins — always shown
@@ -83,7 +83,7 @@ void PinSettingScreen::onInit() {
   _refresh();
 }
 
-void PinSettingScreen::_refresh() {
+void PinSettingsScreen::_refresh() {
   _gpsTxSub = PinConfig.get(PIN_CONFIG_GPS_TX, PIN_CONFIG_GPS_TX_DEFAULT);
   _gpsRxSub = PinConfig.get(PIN_CONFIG_GPS_RX, PIN_CONFIG_GPS_RX_DEFAULT);
   _gpsBaudSub = PinConfig.get(PIN_CONFIG_GPS_BAUD, PIN_CONFIG_GPS_BAUD_DEFAULT);
@@ -123,7 +123,7 @@ void PinSettingScreen::_refresh() {
   render();
 }
 
-void PinSettingScreen::onItemSelected(uint8_t index) {
+void PinSettingsScreen::onItemSelected(uint8_t index) {
   if (index >= _itemCount) return;
 
   switch (_map[index]) {
@@ -267,6 +267,6 @@ void PinSettingScreen::onItemSelected(uint8_t index) {
   _refresh();
 }
 
-void PinSettingScreen::onBack() {
+void PinSettingsScreen::onBack() {
   Screen.goBack();
 }
