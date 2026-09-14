@@ -1,9 +1,9 @@
-#include "screens/setting/HideModuleScreen.h"
+#include "screens/setting/ShowHideModulesScreen.h"
 #include "core/Device.h"
 #include "core/ConfigManager.h"
 #include "core/ScreenManager.h"
 
-void HideModuleScreen::onInit() {
+void ShowHideModulesScreen::onInit() {
   for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
     const uint8_t id = ModuleRegistry::DISPLAY_ORDER[i];
     _ids[i] = id;
@@ -14,7 +14,7 @@ void HideModuleScreen::onInit() {
   _refresh();
 }
 
-void HideModuleScreen::_refresh() {
+void ShowHideModulesScreen::_refresh() {
   for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
     const uint8_t id = _ids[i];
     _subs[i]           = ModuleRegistry::isHidden(id) ? "Hidden" : "Shown";
@@ -23,7 +23,7 @@ void HideModuleScreen::_refresh() {
   render();
 }
 
-void HideModuleScreen::onItemSelected(uint8_t index) {
+void ShowHideModulesScreen::onItemSelected(uint8_t index) {
   if (index >= ModuleRegistry::MOD_COUNT) return;
   const uint8_t id = _ids[index];
   ModuleRegistry::setHidden(id, !ModuleRegistry::isHidden(id));
@@ -31,6 +31,6 @@ void HideModuleScreen::onItemSelected(uint8_t index) {
   _refresh();
 }
 
-void HideModuleScreen::onBack() {
+void ShowHideModulesScreen::onBack() {
   Screen.goBack();
 }

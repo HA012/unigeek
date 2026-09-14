@@ -5,10 +5,10 @@
 
 // Toggle which entries appear in the Modules menu. State is persisted in the
 // APP_CONFIG_HIDDEN_MODULES bitmask so hidden modules stay hidden across reboots.
-class HideModuleScreen : public ListScreen
+class ShowHideModulesScreen : public ListScreen
 {
 public:
-  const char* title() override { return "Hide Module"; }
+  const char* title() override { return "Show/Hide Modules"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;
