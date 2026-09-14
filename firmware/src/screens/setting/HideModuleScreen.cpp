@@ -5,7 +5,9 @@
 
 void HideModuleScreen::onInit() {
   for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
-    _items[i].label    = ModuleRegistry::LABELS[i];
+    const uint8_t id = ModuleRegistry::DISPLAY_ORDER[i];
+    _ids[i] = id;
+    _items[i].label    = ModuleRegistry::LABELS[id];
     _items[i].sublabel = nullptr;
   }
   setItems(_items);
@@ -14,7 +16,8 @@ void HideModuleScreen::onInit() {
 
 void HideModuleScreen::_refresh() {
   for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
-    _subs[i]           = ModuleRegistry::isHidden(i) ? "Hidden" : "Shown";
+    const uint8_t id = _ids[i];
+    _subs[i]           = ModuleRegistry::isHidden(id) ? "Hidden" : "Shown";
     _items[i].sublabel = _subs[i].c_str();
   }
   render();
@@ -22,7 +25,8 @@ void HideModuleScreen::_refresh() {
 
 void HideModuleScreen::onItemSelected(uint8_t index) {
   if (index >= ModuleRegistry::MOD_COUNT) return;
-  ModuleRegistry::setHidden(index, !ModuleRegistry::isHidden(index));
+  const uint8_t id = _ids[index];
+  ModuleRegistry::setHidden(id, !ModuleRegistry::isHidden(id));
   Config.save(Uni.Storage);
   _refresh();
 }

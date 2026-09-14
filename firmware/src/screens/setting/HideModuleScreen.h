@@ -19,4 +19,5 @@ private:
 
   String   _subs[ModuleRegistry::MOD_COUNT];
   ListItem _items[ModuleRegistry::MOD_COUNT];
+  uint8_t  _ids[ModuleRegistry::MOD_COUNT];
 };
