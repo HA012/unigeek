@@ -83,6 +83,12 @@ public:
   void stopEmulation();
   bool emulationActive() const { return _emulating; }
 
+  // Passive-target scan for an external NFC-A reader. A positive result
+  // requires WU_A/WU_A_X; external-field detection alone is not enough.
+  bool startReaderScan();
+  bool readerScanDetected();
+  void stopReaderScan();
+
   // Raw NFC-A helpers used by ST25-specific diagnostics such as Magic-card
   // detection. The caller is responsible for framing semantics.
   bool nfcATransceive(const uint8_t* tx, size_t txLen, uint8_t* rx,
@@ -138,6 +144,7 @@ private:
   bool _listenRespond(const uint8_t* data, uint16_t len, bool withCrc = true);
 
   bool _emulating = false;
+  bool _readerScanning = false;
   bool _emuMfc = false;
   uint8_t* _emuDump = nullptr;
   size_t _emuDumpLen = 0;

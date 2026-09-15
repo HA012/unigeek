@@ -656,7 +656,7 @@ void ST25R3916Screen::onRender() {
     ListScreen::onRender();
     return;
   }
-  if (_state == STATE_SCANNING || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
+  if (_state == STATE_SCANNING || _state == STATE_SCAN_READER || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
       _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING ||
       _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING || _state == STATE_EXP_WORKING) {
     _renderTagPrompt();
@@ -675,7 +675,8 @@ void ST25R3916Screen::onRender() {
 
 void ST25R3916Screen::onBack() {
   if (_state == STATE_EMULATING) { _stopEmulation(); return; }
-  if (_state == STATE_SCANNING || _state == STATE_DETAILS) {
+  if (_state == STATE_SCANNING ||
+      _state == STATE_SCAN_READER_RESULT || _state == STATE_DETAILS) {
     _showMenu();
     return;
   }
@@ -913,16 +914,67 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   _selMain = index;
   switch (index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
-    case 1: _showMfcMenu(); break;
-    case 2: _showMfuMenu(); break;
-    case 3: _showExperimentalMenu(EXP_DESFIRE); break;
-    case 4: _showExperimentalMenu(EXP_NFCV); break;
-    case 5: _showExperimentalMenu(EXP_FELICA); break;
-    case 6: _showExperimentalMenu(EXP_TYPE4B); break;
-    case 7: _showDeviceInfo(); break;
+    case 1: _scanReader(); break;
+    case 2: _showMfcMenu(); break;
+    case 3: _showMfuMenu(); break;
+    case 4: _showExperimentalMenu(EXP_DESFIRE); break;
+    case 5: _showExperimentalMenu(EXP_NFCV); break;
+    case 6: _showExperimentalMenu(EXP_FELICA); break;
+    case 7: _showExperimentalMenu(EXP_TYPE4B); break;
+    case 8: _showDeviceInfo(); break;
   }
 #else
   (void)index;
+  ShowStatusAction::show("ST25R3916 not supported");
+#endif
+}
+
+
+void ST25R3916Screen::_scanReader() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _state = STATE_SCAN_READER;
+  render();
+
+  ST25R3916Backend dev;
+  if (!st25Begin(dev, _interface)) {
+    _showStatusAndReturn("ST25R3916 not found", STATE_MENU, 1200);
+    return;
+  }
+  if (!dev.startReaderScan()) {
+    dev.end();
+    _showStatusAndReturn("Reader scan unavailable", STATE_MENU, 1200);
+    return;
+  }
+  bool detected = false, cancelled = false;
+  const uint32_t started = millis();
+  while ((uint32_t)(millis() - started) < 15000U) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      cancelled = true; break;
+    }
+    if (dev.readerScanDetected()) { detected = true; break; }
+    delay(10);
+  }
+  dev.stopReaderScan();
+  dev.end();
+  if (cancelled) { _showMenu(); return; }
+  if (!detected) {
+    _showStatusAndReturn("No reader detected", STATE_MENU, 1200);
+    return;
+  }
+  _rowCount = 0;
+  _rowLabels[_rowCount]="Technology"; _rowValues[_rowCount]="ISO 14443-A";
+  _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; ++_rowCount;
+  _rowLabels[_rowCount]="Likely tag"; _rowValues[_rowCount]="Unknown";
+  _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; ++_rowCount;
+  _rowLabels[_rowCount]="Confidence"; _rowValues[_rowCount]="Low";
+  _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; ++_rowCount;
+  _rowLabels[_rowCount]="Reader action"; _rowValues[_rowCount]="NFC-A activation";
+  _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; ++_rowCount;
+  _scrollView.setRows(_rows,_rowCount);
+  _state = STATE_SCAN_READER_RESULT;
+  render();
+#else
   ShowStatusAction::show("ST25R3916 not supported");
 #endif
 }
@@ -959,7 +1011,7 @@ void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, in
 
 void ST25R3916Screen::_showMenu() {
   _state = STATE_MENU;
-  setItems(_items, 8, _selMain);
+  setItems(_items, 9, _selMain);
 }
 
 void ST25R3916Screen::_showMfcMenu() {
@@ -1044,7 +1096,7 @@ void ST25R3916Screen::_renderTagPrompt() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  lcd.drawString(_state == STATE_SCAN_READER ? "Place device on reader..." : "Place tag on reader...", bx + bw / 2, by + bh / 2);
 }
 
 void ST25R3916Screen::_scan(uint16_t techMask) {
