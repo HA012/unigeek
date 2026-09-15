@@ -876,6 +876,41 @@ bool ST25R3916Backend::emulationWorker() {
   return true;
 }
 
+bool ST25R3916Backend::startReaderScan() {
+  if (!_hw || !_nfc || !_info.initialized) return false;
+  stopReaderScan();
+  stopEmulation();
+  ScanResult identity{};
+  identity.technology = Technology::NFC_A;
+  identity.nfcidLen = 4;
+  identity.nfcid[0] = 0x12; identity.nfcid[1] = 0x34;
+  identity.nfcid[2] = 0x56; identity.nfcid[3] = 0x78;
+  identity.atqa[0] = 0x04; identity.atqa[1] = 0x00;
+  identity.sak = 0x08;
+  if (!_startNfcaListen(identity)) return false;
+  _readerScanning = true;
+  return true;
+}
+
+bool ST25R3916Backend::readerScanDetected() {
+  if (!_readerScanning || !_hw) return false;
+  // EON proves only an external RF field. Require an NFC-A wake-up event.
+  const uint32_t irqs = _hw->st25r3916WaitForInterruptsTimed(
+      ST25R3916_IRQ_MASK_WU_A | ST25R3916_IRQ_MASK_WU_A_X, 3);
+  return (irqs & (ST25R3916_IRQ_MASK_WU_A | ST25R3916_IRQ_MASK_WU_A_X)) != 0U;
+}
+
+void ST25R3916Backend::stopReaderScan() {
+  const bool wasScanning = _readerScanning;
+  _readerScanning = false;
+  if (!_hw || !wasScanning) return;
+  _hw->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+  _hw->st25r3916DisableInterrupts(ST25R3916_IRQ_MASK_ALL);
+  _hw->st25r3916ClearInterrupts();
+  _hw->rfalSetMode(RFAL_MODE_POLL_NFCA, RFAL_BR_106, RFAL_BR_106);
+  _hw->rfalFieldOff();
+}
+
 void ST25R3916Backend::stopEmulation() {
   const bool wasEmulating = _emulating;
   _emulating = false;
@@ -891,6 +926,7 @@ void ST25R3916Backend::stopEmulation() {
 }
 
 void ST25R3916Backend::end() {
+  stopReaderScan();
   stopEmulation();
   if (_crypto) {
     crypto1_destroy(_crypto);
