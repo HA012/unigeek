@@ -2349,117 +2349,23 @@ void PN532I2cScreen::_appendDumpNdefDetails() {
 
 void PN532I2cScreen::_appendDumpNdefDetails(const uint8_t* dump, size_t dumpLen,
                                               size_t totalSectors) {
-  if (!dump || totalSectors == 0) return;
-  const size_t totalBlocks = totalSectors == 5 ? 20u :
-                             (totalSectors == 40 ? 256u : 64u);
-  if (dumpLen < totalBlocks * 16u) return;
-
-  uint8_t sectors[39] = {};
-  size_t sectorCount = 0;
-
-  auto addIfNdef = [&](uint8_t sector, uint8_t lo, uint8_t hi) {
-    if (sector >= totalSectors || sectorCount >= sizeof(sectors)) return;
-    if (lo == 0x03 && hi == 0xE1) sectors[sectorCount++] = sector;
-  };
-
-  // MAD1: block 1 maps sectors 1..7; block 2 maps sectors 8..15.
-  const uint8_t* b1 = &dump[1u * 16u];
-  const uint8_t* b2 = &dump[2u * 16u];
-  for (uint8_t sector = 1; sector <= 7; ++sector) {
-    const size_t off = 2u + (size_t)(sector - 1u) * 2u;
-    addIfNdef(sector, b1[off], b1[off + 1u]);
-  }
-  for (uint8_t sector = 8; sector <= 15; ++sector) {
-    const size_t off = (size_t)(sector - 8u) * 2u;
-    addIfNdef(sector, b2[off], b2[off + 1u]);
-  }
-
-  // MAD2 lives in sector 16 on Classic 4K and maps sectors 17..39.
-  if (totalSectors > 16 && dumpLen >= 67u * 16u) {
-    const uint8_t* m0 = &dump[64u * 16u];
-    const uint8_t* m1 = &dump[65u * 16u];
-    const uint8_t* m2 = &dump[66u * 16u];
-    for (uint8_t sector = 17; sector <= 23; ++sector) {
-      const size_t off = 2u + (size_t)(sector - 17u) * 2u;
-      addIfNdef(sector, m0[off], m0[off + 1u]);
-    }
-    for (uint8_t sector = 24; sector <= 31; ++sector) {
-      const size_t off = (size_t)(sector - 24u) * 2u;
-      addIfNdef(sector, m1[off], m1[off + 1u]);
-    }
-    for (uint8_t sector = 32; sector <= 39; ++sector) {
-      const size_t off = (size_t)(sector - 32u) * 2u;
-      addIfNdef(sector, m2[off], m2[off + 1u]);
-    }
-  }
-
-  if (sectorCount == 0) {
-    _pushRow("NDEF", "Not found");
-    return;
-  }
-
-  size_t areaLen = 0;
-  for (size_t i = 0; i < sectorCount; ++i)
-    areaLen += (sectors[i] < 32) ? 48u : 240u;
-
-  uint8_t* area = new uint8_t[areaLen];
-  if (!area) {
-    _pushRow("NDEF", "Present");
-    return;
-  }
-
-  size_t out = 0;
-  for (size_t i = 0; i < sectorCount; ++i) {
-    const uint8_t sector = sectors[i];
-    const size_t firstBlock = (sector < 32)
-        ? (size_t)sector * 4u
-        : 128u + (size_t)(sector - 32u) * 16u;
-    const uint8_t dataBlocks = (sector < 32) ? 3 : 15;
-    for (uint8_t bi = 0; bi < dataBlocks; ++bi) {
-      memcpy(area + out, &dump[(firstBlock + bi) * 16u], 16u);
-      out += 16u;
-    }
-  }
-
-  const uint8_t* ndef = nullptr;
+  uint8_t* ndef = nullptr;
   size_t ndefLen = 0;
-  size_t pos = 0;
-  while (pos < out) {
-    const uint8_t tlv = area[pos++];
-    if (tlv == 0x00) continue;
-    if (tlv == 0xFE) break;
-    if (pos >= out) break;
-
-    size_t len = area[pos++];
-    if (len == 0xFF) {
-      if (pos + 1 >= out) break;
-      len = ((size_t)area[pos] << 8) | area[pos + 1];
-      pos += 2;
-    }
-    if (pos + len > out) break;
-    if (tlv == 0x03) {
-      ndef = area + pos;
-      ndefLen = len;
-      break;
-    }
-    pos += len;
-  }
-
-  if (!ndef) {
+  if (!NdefParser::extractMifareClassicNdef(dump, dumpLen, totalSectors,
+                                             &ndef, &ndefLen)) {
     _pushRow("NDEF", "Not found");
-    delete[] area;
     return;
   }
   if (ndefLen == 0) {
     _pushRow("NDEF", "Empty");
-    delete[] area;
+    delete[] ndef;
     return;
   }
 
   NdefParser::Result parsed;
   if (!NdefParser::parse(ndef, ndefLen, parsed)) {
     _pushRow("NDEF", "Invalid record");
-    delete[] area;
+    delete[] ndef;
     return;
   }
 
@@ -2496,7 +2402,7 @@ void PN532I2cScreen::_appendDumpNdefDetails(const uint8_t* dump, size_t dumpLen,
       break;
   }
 
-  delete[] area;
+  delete[] ndef;
 }
 
 void PN532I2cScreen::_showDumpHex() {

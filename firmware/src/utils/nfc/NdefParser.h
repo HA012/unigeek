@@ -46,6 +46,13 @@ public:
   static bool extractType2Ndef(const uint8_t* dump, size_t dumpLen,
                                const uint8_t** ndef, size_t* ndefLen);
 
+  // Extract the NDEF Message TLV from a raw MIFARE Classic image using MAD1
+  // and, for 4K images, MAD2. On success `*ndef` is heap-allocated and must
+  // be released by the caller with delete[].
+  static bool extractMifareClassicNdef(const uint8_t* dump, size_t dumpLen,
+                                       size_t totalSectors, uint8_t** ndef,
+                                       size_t* ndefLen);
+
 private:
   static String _uriPrefix(uint8_t code);
   static String _bytesToString(const uint8_t* data, size_t len);

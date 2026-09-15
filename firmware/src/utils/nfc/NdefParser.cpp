@@ -125,6 +125,105 @@ bool NdefParser::extractType2Ndef(const uint8_t* dump, size_t dumpLen,
   return false;
 }
 
+
+bool NdefParser::extractMifareClassicNdef(const uint8_t* dump, size_t dumpLen,
+                                          size_t totalSectors, uint8_t** ndef,
+                                          size_t* ndefLen) {
+  if (ndef) *ndef = nullptr;
+  if (ndefLen) *ndefLen = 0;
+  if (!dump || !ndef || !ndefLen) return false;
+  if (totalSectors != 5 && totalSectors != 16 &&
+      totalSectors != 32 && totalSectors != 40) return false;
+
+  const size_t totalBlocks = totalSectors == 5 ? 20u :
+                             totalSectors == 32 ? 128u :
+                             totalSectors == 40 ? 256u : 64u;
+  if (dumpLen < totalBlocks * 16u) return false;
+
+  uint8_t sectors[39] = {};
+  size_t sectorCount = 0;
+  auto addIfNdef = [&](uint8_t sector, uint8_t lo, uint8_t hi) {
+    if (sector >= totalSectors || sectorCount >= sizeof(sectors)) return;
+    if (lo == 0x03 && hi == 0xE1) sectors[sectorCount++] = sector;
+  };
+
+  const uint8_t* b1 = &dump[16u];
+  const uint8_t* b2 = &dump[32u];
+  for (uint8_t sector = 1; sector <= 7 && sector < totalSectors; ++sector) {
+    const size_t off = 2u + (size_t)(sector - 1u) * 2u;
+    addIfNdef(sector, b1[off], b1[off + 1u]);
+  }
+  for (uint8_t sector = 8; sector <= 15 && sector < totalSectors; ++sector) {
+    const size_t off = (size_t)(sector - 8u) * 2u;
+    addIfNdef(sector, b2[off], b2[off + 1u]);
+  }
+
+  if (totalSectors > 16 && dumpLen >= 67u * 16u) {
+    const uint8_t* m0 = &dump[64u * 16u];
+    const uint8_t* m1 = &dump[65u * 16u];
+    const uint8_t* m2 = &dump[66u * 16u];
+    for (uint8_t sector = 17; sector <= 23 && sector < totalSectors; ++sector) {
+      const size_t off = 2u + (size_t)(sector - 17u) * 2u;
+      addIfNdef(sector, m0[off], m0[off + 1u]);
+    }
+    for (uint8_t sector = 24; sector <= 31 && sector < totalSectors; ++sector) {
+      const size_t off = (size_t)(sector - 24u) * 2u;
+      addIfNdef(sector, m1[off], m1[off + 1u]);
+    }
+    for (uint8_t sector = 32; sector <= 39 && sector < totalSectors; ++sector) {
+      const size_t off = (size_t)(sector - 32u) * 2u;
+      addIfNdef(sector, m2[off], m2[off + 1u]);
+    }
+  }
+  if (sectorCount == 0) return false;
+
+  size_t areaLen = 0;
+  for (size_t i = 0; i < sectorCount; ++i)
+    areaLen += (sectors[i] < 32) ? 48u : 240u;
+  uint8_t* area = new uint8_t[areaLen];
+  if (!area) return false;
+
+  size_t out = 0;
+  for (size_t i = 0; i < sectorCount; ++i) {
+    const uint8_t sector = sectors[i];
+    const size_t firstBlock = (sector < 32)
+        ? (size_t)sector * 4u
+        : 128u + (size_t)(sector - 32u) * 16u;
+    const uint8_t dataBlocks = (sector < 32) ? 3 : 15;
+    for (uint8_t bi = 0; bi < dataBlocks; ++bi) {
+      memcpy(area + out, &dump[(firstBlock + bi) * 16u], 16u);
+      out += 16u;
+    }
+  }
+
+  size_t pos = 0;
+  while (pos < out) {
+    const uint8_t tlv = area[pos++];
+    if (tlv == 0x00) continue;
+    if (tlv == 0xFE) break;
+    if (pos >= out) break;
+    size_t len = area[pos++];
+    if (len == 0xFF) {
+      if (pos + 1 >= out) break;
+      len = ((size_t)area[pos] << 8) | area[pos + 1];
+      pos += 2;
+    }
+    if (pos + len > out) break;
+    if (tlv == 0x03) {
+      uint8_t* result = new uint8_t[len];
+      if (!result && len != 0) { delete[] area; return false; }
+      if (len) memcpy(result, area + pos, len);
+      delete[] area;
+      *ndef = result;
+      *ndefLen = len;
+      return true;
+    }
+    pos += len;
+  }
+  delete[] area;
+  return false;
+}
+
 bool NdefParser::parse(const uint8_t* ndef, size_t ndefLen, Result& out) {
   out = Result{};
   if (!ndef || ndefLen < 3) return false;
