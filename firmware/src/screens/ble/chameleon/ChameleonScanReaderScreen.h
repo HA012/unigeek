@@ -2,13 +2,13 @@
 #include "ui/templates/BaseScreen.h"
 #include "ui/views/ScrollListView.h"
 
-class ChameleonProbeReaderScreen : public BaseScreen {
+class ChameleonScanReaderScreen : public BaseScreen {
 public:
-  const char* title() override { return "Probe Reader"; }
+  const char* title() override { return "Scan Reader"; }
   void onInit() override;
   void onUpdate() override;
   void onRender() override;
-  ~ChameleonProbeReaderScreen() override;
+  ~ChameleonScanReaderScreen() override;
 private:
   enum State { WAITING, RESULT, ERROR } _state = WAITING;
   bool _armed = false;

@@ -764,7 +764,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_MAIN_MENU:
       switch (index) {
         case 0: _doScan14A();         break;
-        case 1: _doProbeReader();     break;
+        case 1: _doScanReader();     break;
         case 2: _goMifare();          break;
         case 3: _goUltralight();      break;
         case 4: _goTypeB();           break;
@@ -1024,10 +1024,10 @@ void PN532I2cScreen::onBack() {
 }
 
 
-void PN532I2cScreen::_doProbeReader() {
+void PN532I2cScreen::_doScanReader() {
   if (!_nfc || !_wire) return;
   _selMain = 1;
-  renderOperationTitle("Probe Reader");
+  renderOperationTitle("Scan Reader");
   renderTagPrompt("Place device on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   bool cancelled = false;
@@ -1125,7 +1125,7 @@ void PN532I2cScreen::_doProbeReader() {
   _rowLabels[_rowCount]="Reader action"; _rowValues[_rowCount]=detected?action:"No command observed"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
   _scrollView.setRows(_rows,_rowCount);
   _state=STATE_DEVICE_INFO; // generic scroll-result state; title is overridden below only during operation
-  renderOperationTitle("Probe Reader");
+  renderOperationTitle("Scan Reader");
   _scrollView.render(bodyX(),bodyY(),bodyW(),bodyH());
 
   // Keep result visible and preserve standard Back semantics without adding an on-screen Back item.

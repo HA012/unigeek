@@ -1,10 +1,10 @@
-#include "ChameleonProbeReaderScreen.h"
+#include "ChameleonScanReaderScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 
-void ChameleonProbeReaderScreen::_drawWaiting() {
+void ChameleonScanReaderScreen::_drawWaiting() {
   auto& lcd = Uni.Lcd;
   const int bx=bodyX(), by=bodyY(), bw=bodyW(), bh=bodyH();
   lcd.fillRect(bx,by,bw,bh,TFT_BLACK);
@@ -12,12 +12,12 @@ void ChameleonProbeReaderScreen::_drawWaiting() {
   lcd.setTextColor(TFT_YELLOW,TFT_BLACK);
   lcd.drawString("Place device on reader...", bx+bw/2, by+bh/2);
 }
-void ChameleonProbeReaderScreen::_setError(const char* msg) {
+void ChameleonScanReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;
   _labels[0]="Status"; _values[0]=msg; _rows[0]={_labels[0].c_str(),_values[0]}; _rowCount=1;
   _scroll.setRows(_rows,_rowCount);
 }
-void ChameleonProbeReaderScreen::_restore() {
+void ChameleonScanReaderScreen::_restore() {
   if (!_armed) return;
   auto& c=ChameleonClient::get();
   if (_restoreDetection) c.mf1SetDetectEnable(_previousDetection);
@@ -26,13 +26,13 @@ void ChameleonProbeReaderScreen::_restore() {
   if (_restoreMode) c.setMode(_previousMode);
   _armed=false;
 }
-void ChameleonProbeReaderScreen::onInit() {
+void ChameleonScanReaderScreen::onInit() {
   _state=WAITING; _rowCount=0; _armed=false;
   auto& c=ChameleonClient::get();
   _restoreMode=c.getMode(&_previousMode);
   _restoreSlot=c.getActiveSlot(&_previousSlot);
   _restoreDetection=c.mf1GetDetectEnable(&_previousDetection);
-  // Probe Reader temporarily mutates all three states.  If any original state
+  // Scan Reader temporarily mutates all three states.  If any original state
   // cannot be read, fail before changing the Chameleon so Back can never leave
   // the device in a different configuration.
   if (!_restoreMode || !_restoreSlot || !_restoreDetection) {
@@ -62,7 +62,7 @@ void ChameleonProbeReaderScreen::onInit() {
   _lastPoll=0;
   _probeStartedAt=millis();
 }
-void ChameleonProbeReaderScreen::_showRecord(uint32_t index) {
+void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
   uint8_t rec[18] = {};
   if (!ChameleonClient::get().mf1GetDetectRecord(index,rec)) {
     _setError("Unable to read detection");
@@ -76,7 +76,7 @@ void ChameleonProbeReaderScreen::_showRecord(uint32_t index) {
   _labels[_rowCount]="Reader action"; _values[_rowCount]="Authentication"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   _scroll.setRows(_rows,_rowCount);
 }
-void ChameleonProbeReaderScreen::onUpdate() {
+void ChameleonScanReaderScreen::onUpdate() {
   if (Uni.Nav->wasPressed()) {
     auto d=Uni.Nav->readDirection();
     if (d==INavigation::DIR_BACK) { _restore(); Screen.goBack(); return; }
@@ -95,7 +95,7 @@ void ChameleonProbeReaderScreen::onUpdate() {
     _showRecord(count-1); _restore();
   }
 }
-void ChameleonProbeReaderScreen::onRender() {
+void ChameleonScanReaderScreen::onRender() {
   if (_state==WAITING) _drawWaiting(); else _scroll.render(bodyX(),bodyY(),bodyW(),bodyH());
 }
-ChameleonProbeReaderScreen::~ChameleonProbeReaderScreen() { _restore(); }
+ChameleonScanReaderScreen::~ChameleonScanReaderScreen() { _restore(); }
