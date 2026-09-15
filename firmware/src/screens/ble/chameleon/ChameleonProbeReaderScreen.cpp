@@ -2,6 +2,7 @@
 #include "utils/ble/ChameleonClient.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
+#include "ui/actions/ShowStatusAction.h"
 
 void ChameleonProbeReaderScreen::_drawWaiting() {
   auto& lcd = Uni.Lcd;
@@ -9,7 +10,7 @@ void ChameleonProbeReaderScreen::_drawWaiting() {
   lcd.fillRect(bx,by,bw,bh,TFT_BLACK);
   lcd.setTextDatum(MC_DATUM); lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW,TFT_BLACK);
-  lcd.drawString("Waiting for reader...", bx+bw/2, by+bh/2);
+  lcd.drawString("Place device on reader...", bx+bw/2, by+bh/2);
 }
 void ChameleonProbeReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;
@@ -59,6 +60,7 @@ void ChameleonProbeReaderScreen::onInit() {
     _setError("Probe unavailable"); _restore(); return;
   }
   _lastPoll=0;
+  _probeStartedAt=millis();
 }
 void ChameleonProbeReaderScreen::_showRecord(uint32_t index) {
   uint8_t rec[18] = {};
@@ -80,7 +82,14 @@ void ChameleonProbeReaderScreen::onUpdate() {
     if (d==INavigation::DIR_BACK) { _restore(); Screen.goBack(); return; }
     if (_state==RESULT || _state==ERROR) _scroll.onNav(d);
   }
-  if (_state!=WAITING || !_armed || millis()-_lastPoll<500) return;
+  if (_state!=WAITING || !_armed) return;
+  if (millis()-_probeStartedAt >= 15000) {
+    _restore();
+    ShowStatusAction::show("No reader detected", 1200);
+    Screen.goBack();
+    return;
+  }
+  if (millis()-_lastPoll<500) return;
   _lastPoll=millis(); uint32_t count=0;
   if (ChameleonClient::get().mf1GetDetectCount(&count) && count>_baseline) {
     _showRecord(count-1); _restore();

@@ -22,6 +22,7 @@ private:
   uint8_t _previousSlot = 0;
   uint32_t _baseline = 0;
   uint32_t _lastPoll = 0;
+  uint32_t _probeStartedAt = 0;
   uint8_t _probeSlot = 0;
   ScrollListView _scroll;
   ScrollListView::Row _rows[6];

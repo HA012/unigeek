@@ -1028,7 +1028,7 @@ void PN532I2cScreen::_doProbeReader() {
   if (!_nfc || !_wire) return;
   _selMain = 1;
   renderOperationTitle("Probe Reader");
-  renderTagPrompt("Waiting for reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Place device on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   bool cancelled = false;
   auto checkBack = [&]() -> bool {
@@ -1044,8 +1044,12 @@ void PN532I2cScreen::_doProbeReader() {
   String likely = "Unknown", confidence = "Low", action = "Activation";
   bool detected = false;
 
-  for (const auto& profile : profiles) {
-    if (cancelled) break;
+  const uint32_t probeStartedAt = millis();
+  const uint32_t probeTimeoutMs = 15000;
+
+  while (!detected && !cancelled && millis() - probeStartedAt < probeTimeoutMs) {
+    for (const auto& profile : profiles) {
+      if (cancelled || detected || millis() - probeStartedAt >= probeTimeoutMs) break;
     _nfc->SAMConfig();
     uint8_t target[38] = {};
     target[0] = 0x8C; // TgInitAsTarget
@@ -1057,7 +1061,7 @@ void PN532I2cScreen::_doProbeReader() {
 
     bool activated=false;
     uint32_t start=millis();
-    while (millis()-start<2500) {
+    while (millis()-start<2500 && millis()-probeStartedAt<probeTimeoutMs) {
       if (checkBack()) break;
       if (_wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)1)==1 && _wire->available() && (_wire->read()&1)) {
         uint8_t buf[24]={}; _nfcReadI2C(_wire,buf,sizeof(buf));
@@ -1078,7 +1082,7 @@ void PN532I2cScreen::_doProbeReader() {
       detected=true; likely="Unknown"; confidence="Low"; action="Activated; probe command failed"; break;
     }
     start=millis();
-    while (millis()-start<1800) {
+    while (millis()-start<1800 && millis()-probeStartedAt<probeTimeoutMs) {
       if (checkBack()) break;
       if (_wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)1)==1 && _wire->available() && (_wire->read()&1)) {
         uint8_t buf[70]={}; _nfcReadI2C(_wire,buf,sizeof(buf));
@@ -1100,13 +1104,19 @@ void PN532I2cScreen::_doProbeReader() {
       }
       delay(15);
     }
-    if (detected || cancelled) break;
-    _nfc->SAMConfig();
+      if (detected || cancelled) break;
+      _nfc->SAMConfig();
+    }
   }
 
   // Always restore normal reader/SAM state before returning to the UI.
   _nfc->SAMConfig();
   if (cancelled) { _goMain(); return; }
+  if (!detected) {
+    ShowStatusAction::show("No reader detected", 1200);
+    _goMain();
+    return;
+  }
 
   _rowCount=0;
   _rowLabels[_rowCount]="Technology"; _rowValues[_rowCount]=detected?technology:"Unknown"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
