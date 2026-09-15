@@ -17,6 +17,8 @@ public:
   const char* title() override {
     switch (_state) {
       case STATE_SCANNING: return "Scan Tag";
+      case STATE_SCAN_READER:
+      case STATE_SCAN_READER_RESULT: return "Scan Reader";
       case STATE_DETAILS:
       case STATE_MFC_DETAILS: return "Tag Details";
       case STATE_MFC_MENU: return "MIFARE Classic";
@@ -88,6 +90,8 @@ private:
   enum State : uint8_t {
     STATE_MENU,
     STATE_SCANNING,
+    STATE_SCAN_READER,
+    STATE_SCAN_READER_RESULT,
     STATE_DETAILS,
     STATE_MFC_MENU,
     STATE_MFC_TAG_MENU,
@@ -160,8 +164,9 @@ private:
   uint8_t _expDesfireAid[3] = {};
   bool _expDesfireAidSelected = false;
 
-  ListItem _items[8] = {
+  ListItem _items[9] = {
     {"Scan Tag"},
+    {"Scan Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"DESFire (experimental)"},
@@ -296,6 +301,7 @@ private:
   bool _emuReturnMfc = false;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
+  void _scanReader();
   void _scan(uint16_t techMask);
   void _readMfcTag();
   void _emulateMfcTag();
