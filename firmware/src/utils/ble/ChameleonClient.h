@@ -66,6 +66,7 @@ public:
   static constexpr uint16_t CMD_MF1_DET_ENABLE   = 4004;
   static constexpr uint16_t CMD_MF1_DET_COUNT    = 4005;
   static constexpr uint16_t CMD_MF1_DET_RESULT   = 4006;
+  static constexpr uint16_t CMD_MF1_GET_DET_ENABLE = 4007;
   static constexpr uint16_t CMD_MF1_GET_BLOCK    = 4008;
   static constexpr uint16_t CMD_HF14A_GET_ANTI_COLL = 4018;
   static constexpr uint16_t CMD_MF0_NTAG_READ_EMU_PAGE_DATA  = 4021;
@@ -262,6 +263,7 @@ public:
 
   // ── MFKey32 detection log ──
   bool mf1SetDetectEnable(bool on);
+  bool mf1GetDetectEnable(bool* on);
   bool mf1GetDetectCount(uint32_t* count);
   bool mf1GetDetectRecord(uint32_t index, uint8_t out[18]);
 

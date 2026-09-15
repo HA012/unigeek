@@ -109,8 +109,9 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[5] = {
+  ListItem _mainItems[6] = {
     {"Scan Tag"},
+    {"Probe Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"Type B (experimental)"},
@@ -280,6 +281,7 @@ private:
   void _goDetectMagic();
 
   void _showDeviceInfo();
+  void _doProbeReader();
   void _doScan14A();
   bool _scanTypeB(uint32_t timeoutMs = 500);
   bool _isoATagPresent(uint32_t timeoutMs = 120);

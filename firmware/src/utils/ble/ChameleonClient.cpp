@@ -1422,6 +1422,16 @@ bool ChameleonClient::mf1SetDetectEnable(bool on) {
   return sendCommand(CMD_MF1_DET_ENABLE, &v, 1, nullptr, nullptr, &st);
 }
 
+bool ChameleonClient::mf1GetDetectEnable(bool* on) {
+  if (!on) return false;
+  uint8_t buf[4] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_MF1_GET_DET_ENABLE, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
+  if (st != 0 || len < 1) return false;
+  *on = buf[0] != 0;
+  return true;
+}
+
 bool ChameleonClient::mf1GetDetectCount(uint32_t* count) {
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;

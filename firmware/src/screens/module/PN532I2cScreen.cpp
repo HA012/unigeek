@@ -98,6 +98,31 @@ static bool _nfcCommandResponse(Adafruit_PN532* nfc, TwoWire* wire,
   return true;
 }
 
+static bool _nfcSendCmdReadAckProbe(TwoWire* wire, const uint8_t* cmd, uint8_t cmdlen, uint32_t timeoutMs) {
+  if (!wire || !cmd || !cmdlen) return false;
+  const uint8_t len = cmdlen + 1;
+  uint8_t packet[48] = {};
+  if ((size_t)(8 + cmdlen) > sizeof(packet)) return false;
+  packet[0]=0x00; packet[1]=0x00; packet[2]=0xFF; packet[3]=len; packet[4]=(uint8_t)(~len+1); packet[5]=0xD4;
+  uint8_t sum=0xD4;
+  for (uint8_t i=0;i<cmdlen;i++) { packet[6+i]=cmd[i]; sum=(uint8_t)(sum+cmd[i]); }
+  packet[6+cmdlen]=(uint8_t)(~sum+1); packet[7+cmdlen]=0x00;
+  wire->beginTransmission(PN532_I2C_ADDRESS); wire->write(packet,8+cmdlen);
+  if (wire->endTransmission()!=0) return false;
+  delay(1);
+  uint32_t start=millis();
+  while (millis()-start<timeoutMs) {
+    if (wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)1)==1 && wire->available() && (wire->read()&1)) break;
+    delay(5);
+  }
+  if (millis()-start>=timeoutMs) return false;
+  uint8_t ack[7]={};
+  if (wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)7)!=7) return false;
+  wire->read();
+  for (uint8_t i=0;i<6;i++) ack[i]=wire->available()?wire->read():0;
+  return ack[0]==0x00 && ack[1]==0x00 && ack[2]==0xFF && ack[3]==0x00 && ack[4]==0xFF && ack[5]==0x00;
+}
+
 static void _nfcReadI2C(TwoWire* wire, uint8_t* buf, uint8_t n) {
   uint8_t total = n + 1;
   if (wire->requestFrom((uint8_t)PN532_I2C_ADDRESS, total) != total) return;
@@ -739,10 +764,11 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_MAIN_MENU:
       switch (index) {
         case 0: _doScan14A();         break;
-        case 1: _goMifare();          break;
-        case 2: _goUltralight();      break;
-        case 3: _goTypeB();           break;
-        case 4: _showDeviceInfo();    break;
+        case 1: _doProbeReader();     break;
+        case 2: _goMifare();          break;
+        case 3: _goUltralight();      break;
+        case 4: _goTypeB();           break;
+        case 5: _showDeviceInfo();    break;
       }
       break;
     case STATE_MIFARE_MENU:
@@ -997,6 +1023,113 @@ void PN532I2cScreen::onBack() {
   }
 }
 
+
+void PN532I2cScreen::_doProbeReader() {
+  if (!_nfc || !_wire) return;
+  _selMain = 1;
+  renderOperationTitle("Probe Reader");
+  renderTagPrompt("Waiting for reader...", bodyX(), bodyY(), bodyW(), bodyH());
+
+  bool cancelled = false;
+  auto checkBack = [&]() -> bool {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      cancelled = true; return true;
+    }
+    return false;
+  };
+
+  struct ProbeProfile { uint8_t sak; bool isoDep; } profiles[] = {{0x08,false},{0x20,true}};
+  const char* technology = "ISO 14443-A";
+  String likely = "Unknown", confidence = "Low", action = "Activation";
+  bool detected = false;
+
+  for (const auto& profile : profiles) {
+    if (cancelled) break;
+    _nfc->SAMConfig();
+    uint8_t target[38] = {};
+    target[0] = 0x8C; // TgInitAsTarget
+    target[1] = profile.isoDep ? 0x05 : 0x01; // PICC, passive; DEP enabled only for ISO-DEP profile
+    target[2] = 0x04; target[3] = 0x00;       // SENS_RES / ATQA
+    target[4] = 0x12; target[5] = 0x34; target[6] = 0x56;
+    target[7] = profile.sak;
+    if (!_nfcSendCmdReadAckProbe(_wire, target, sizeof(target), 800)) continue;
+
+    bool activated=false;
+    uint32_t start=millis();
+    while (millis()-start<2500) {
+      if (checkBack()) break;
+      if (_wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)1)==1 && _wire->available() && (_wire->read()&1)) {
+        uint8_t buf[24]={}; _nfcReadI2C(_wire,buf,sizeof(buf));
+        if (buf[5]==PN532_PN532TOHOST && buf[6]==0x8D) activated=true;
+        break;
+      }
+      delay(15);
+    }
+    if (cancelled) break;
+    if (!activated) { _nfc->SAMConfig(); continue; }
+
+    // Ask for the first command that distinguishes what the reader intends to do.
+    uint8_t getCmd = profile.isoDep ? 0x86 : 0x88; // TgGetData / TgGetInitiatorCommand
+    if (!_nfcSendCmdReadAckProbe(_wire,&getCmd,1,500)) {
+      // Activation proves ISO-A presence, but failure to send the follow-up
+      // command is not evidence for Classic or ISO-DEP.  Do not manufacture a
+      // tag-family classification from a transport/ACK failure.
+      detected=true; likely="Unknown"; confidence="Low"; action="Activated; probe command failed"; break;
+    }
+    start=millis();
+    while (millis()-start<1800) {
+      if (checkBack()) break;
+      if (_wire->requestFrom((uint8_t)PN532_I2C_ADDRESS,(uint8_t)1)==1 && _wire->available() && (_wire->read()&1)) {
+        uint8_t buf[70]={}; _nfcReadI2C(_wire,buf,sizeof(buf));
+        if (buf[5]==PN532_PN532TOHOST && buf[6]==(uint8_t)(getCmd+1)) {
+          detected=true;
+          if (profile.isoDep) {
+            likely="ISO-DEP / Type 4"; confidence="High"; action="APDU exchange";
+            if (buf[3]>5 && buf[9]==0xA4) action="SELECT application";
+          } else {
+            const uint8_t c=buf[8];
+            if (c==0x60) { likely="MIFARE Classic"; confidence="High"; action="AUTH A"; }
+            else if (c==0x61) { likely="MIFARE Classic"; confidence="High"; action="AUTH B"; }
+            else if (c==0xA0) { likely="MIFARE Classic"; confidence="High"; action="WRITE"; }
+            else if (c==0x30) { likely="MIFARE / Type 2"; confidence="Medium"; action="READ"; }
+            else { likely="ISO 14443-A"; confidence="Medium"; action="Command 0x" + String(c, HEX); action.toUpperCase(); }
+          }
+        }
+        break;
+      }
+      delay(15);
+    }
+    if (detected || cancelled) break;
+    _nfc->SAMConfig();
+  }
+
+  // Always restore normal reader/SAM state before returning to the UI.
+  _nfc->SAMConfig();
+  if (cancelled) { _goMain(); return; }
+
+  _rowCount=0;
+  _rowLabels[_rowCount]="Technology"; _rowValues[_rowCount]=detected?technology:"Unknown"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
+  _rowLabels[_rowCount]="Likely tag"; _rowValues[_rowCount]=detected?likely:"Unknown"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
+  _rowLabels[_rowCount]="Confidence"; _rowValues[_rowCount]=detected?confidence:"Low"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
+  _rowLabels[_rowCount]="Reader action"; _rowValues[_rowCount]=detected?action:"No command observed"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
+  _scrollView.setRows(_rows,_rowCount);
+  _state=STATE_DEVICE_INFO; // generic scroll-result state; title is overridden below only during operation
+  renderOperationTitle("Probe Reader");
+  _scrollView.render(bodyX(),bodyY(),bodyW(),bodyH());
+
+  // Keep result visible and preserve standard Back semantics without adding an on-screen Back item.
+  while (true) {
+    Uni.update();
+    if (Uni.Nav->wasPressed()) {
+      auto d=Uni.Nav->readDirection();
+      if (d==INavigation::DIR_BACK) { _goMain(); return; }
+      _scrollView.onNav(d); _scrollView.render(bodyX(),bodyY(),bodyW(),bodyH());
+    }
+    delay(10);
+  }
+}
+
 // ── init / cleanup ─────────────────────────────────────────────────────────
 
 bool PN532I2cScreen::_initModule() {
@@ -1100,7 +1233,7 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5, _selMain);
+  setItems(_mainItems, 6, _selMain);
   render();
 }
 
