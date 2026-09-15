@@ -93,30 +93,35 @@ bool NdefParser::extractType2Ndef(const uint8_t* dump, size_t dumpLen,
   if (ndefLen) *ndefLen = 0;
   if (!dump || dumpLen < 20 || !ndef || !ndefLen) return false;
 
-  // NFC Forum Type 2 CC is page 3. Require NDEF magic.
+  // NFC Forum Type 2 CC is page 3. Require NDEF magic and bound TLV
+  // parsing to the data area advertised by the CC, excluding dynamic-lock
+  // and configuration pages that may follow in a full raw dump.
   if (dump[12] != 0xE1) return false;
+  const size_t dataLen = (size_t)dump[14] * 8u;
+  if (dataLen == 0 || dataLen > dumpLen - 16u) return false;
+  const size_t end = 16u + dataLen;
 
   size_t p = 16; // page 4
-  while (p < dumpLen) {
+  while (p < end) {
     uint8_t type = dump[p++];
 
     if (type == 0x00) continue; // NULL TLV
     if (type == 0xFE) return false; // Terminator before NDEF
 
-    if (p >= dumpLen) return false;
+    if (p >= end) return false;
     size_t len = dump[p++];
     if (len == 0xFF) {
-      if (p + 1 >= dumpLen) return false;
+      if (p + 1 >= end) return false;
       len = ((size_t)dump[p] << 8) | dump[p + 1];
       p += 2;
     }
 
-    if (p + len > dumpLen) return false;
+    if (len > end - p) return false;
 
     if (type == 0x03) {
       *ndef = dump + p;
       *ndefLen = len;
-      return len > 0;
+      return true; // A present zero-length NDEF TLV is valid.
     }
 
     p += len;
