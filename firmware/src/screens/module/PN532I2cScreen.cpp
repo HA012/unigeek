@@ -1160,6 +1160,10 @@ void PN532I2cScreen::_doScanReader() {
 // ── init / cleanup ─────────────────────────────────────────────────────────
 
 bool PN532I2cScreen::_initModule() {
+  // BaseScreen::init() calls onInit() before the first normal render(), so
+  // draw the screen chrome explicitly before ProgressView paints the body.
+  // This keeps the PN532 loading screen consistent with later operations.
+  render();
   ProgressView::init();
   ProgressView::progress("Probing PN532 I2C...", 10);
 
