@@ -13,20 +13,24 @@ void FileHexViewerScreen::onInit()
   strncpy(_titleBuf, name.c_str(), sizeof(_titleBuf) - 1);
   _titleBuf[sizeof(_titleBuf) - 1] = '\0';
 
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available");
-    _goBack();
-    return;
-  }
+  if (_data) {
+    _fileSize = _dataLen;
+  } else {
+    if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+      ShowStatusAction::show("Storage not available");
+      _goBack();
+      return;
+    }
 
-  fs::File f = Uni.Storage->open(_path.c_str(), "r");
-  if (!f) {
-    ShowStatusAction::show("Cannot open file");
-    _goBack();
-    return;
+    fs::File f = Uni.Storage->open(_path.c_str(), "r");
+    if (!f) {
+      ShowStatusAction::show("Cannot open file");
+      _goBack();
+      return;
+    }
+    _fileSize = f.size();
+    f.close();
   }
-  _fileSize = f.size();
-  f.close();
 
   if (_fileSize == 0) {
     ShowStatusAction::show("Empty file");
@@ -95,17 +99,20 @@ void FileHexViewerScreen::_renderHex()
   // Char area is right-aligned with 2px gap before the scrollbar
   uint16_t charAreaX = (uint16_t)(bodyW() - (uint16_t)n * kCharW - 4);
 
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-    return;
-  }
+  fs::File f;
+  if (!_data) {
+    if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+      lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+      return;
+    }
 
-  fs::File f = Uni.Storage->open(_path.c_str(), "r");
-  if (!f) {
-    lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-    return;
+    f = Uni.Storage->open(_path.c_str(), "r");
+    if (!f) {
+      lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+      return;
+    }
+    f.seek(_byteOffset);
   }
-  f.seek(_byteOffset);
 
   Sprite spr(&lcd);
   spr.createSprite(bodyW(), kLineH);
@@ -117,7 +124,16 @@ void FileHexViewerScreen::_renderHex()
   for (uint8_t row = 0; row < _visibleRows; row++) {
     spr.fillSprite(TFT_BLACK);
 
-    int bytesRead = (f && f.available()) ? (int)f.read(buf, n) : 0;
+    int bytesRead = 0;
+    if (_data) {
+      const size_t pos = (size_t)_byteOffset + (size_t)row * n;
+      if (pos < _dataLen) {
+        bytesRead = (int)min((size_t)n, _dataLen - pos);
+        memcpy(buf, _data + pos, (size_t)bytesRead);
+      }
+    } else {
+      bytesRead = (f && f.available()) ? (int)f.read(buf, n) : 0;
+    }
 
     if (bytesRead > 0) {
       // Hex section: "XX " per byte, left-aligned
@@ -140,7 +156,7 @@ void FileHexViewerScreen::_renderHex()
     spr.pushSprite(bodyX(), bodyY() + (int)(row * kLineH));
   }
   spr.deleteSprite();
-  f.close();
+  if (f) f.close();
 
   // Clear any leftover pixels below the last row
   int usedH = _visibleRows * kLineH;

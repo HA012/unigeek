@@ -1,4 +1,5 @@
 #include "NfcDumpGeneratorScreen.h"
+#include <new>
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "screens/utility/NdefGeneratorScreen.h"
@@ -6,46 +7,22 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "utils/nfc/NfcDumpBuilder.h"
 #include "utils/nfc/NdefParser.h"
-#include "utils/ble/ChameleonClient.h"
 #include "screens/utility/NfcScreen.h"
+#include "screens/utility/NfcDumpEditorScreen.h"
 
 #if defined(ESP32)
 #include <esp_system.h>
 #endif
 
-static String _sanitizeDumpName(String name) {
-  name.trim();
-  if (name.length() == 0) name = "ntag215";
-
-  if (name.endsWith(".bin")) name.remove(name.length() - 4);
-  if (name.endsWith(".ndef")) name.remove(name.length() - 5);
-
-  for (int i = 0; i < (int)name.length(); i++) {
-    const char c = name[i];
-    const bool ok =
-        (c >= 'a' && c <= 'z') ||
-        (c >= 'A' && c <= 'Z') ||
-        (c >= '0' && c <= '9') ||
-        c == '-' || c == '_';
-    if (!ok) name.setCharAt(i, '_');
-  }
-
-  while (name.indexOf("__") >= 0) name.replace("__", "_");
-  while (name.startsWith("_")) name.remove(0, 1);
-  while (name.endsWith("_")) name.remove(name.length() - 1);
-  if (name.length() == 0) name = "ntag215";
-  return name;
-}
-
 const char* NfcDumpGeneratorScreen::title() {
   switch (_state) {
-    case STATE_TAG_TYPE:         return "Generate Dump";
+    case STATE_TAG_TYPE:         return "New Dump";
     case STATE_NDEF_CONTENT:     return "NDEF Content";
     case STATE_NDEF_TYPE:        return "New NDEF Record";
     case STATE_NDEF_FILE_SELECT: return "NDEF Files";
     case STATE_NDEF_PREVIEW:     return "NDEF Preview";
   }
-  return "Generate Dump";
+  return "New Dump";
 }
 
 void NfcDumpGeneratorScreen::onInit() {
@@ -72,7 +49,6 @@ void NfcDumpGeneratorScreen::onUpdate() {
           _previewSuggestedName = "";
           _previewFromFile = false;
           _ndefPickDir = "";
-          Screen.goBack();
           return;
         } else {
           render();
@@ -175,10 +151,7 @@ void NfcDumpGeneratorScreen::onItemSelected(uint8_t index) {
           case TAG_NTAG215: emptyName = "ntag215_empty"; break;
           case TAG_NTAG216: emptyName = "ntag216_empty"; break;
         }
-        if (_saveDump(nullptr, 0, emptyName)) {
-          Screen.goBack();
-          return;
-        }
+        if (_saveDump(nullptr, 0, emptyName)) return;
         render();
       }
       break;
@@ -372,13 +345,14 @@ void NfcDumpGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLe
   _pushRow("NDEF Size", lenBuf);
 
   auto finishPreview = [&]() {
-    if (_previewNdefLen > 0) _pushRow("[Press]", "Generate Dump");
+    if (_previewNdefLen > 0) _pushRow("[Press]", "New Dump");
     _scrollView.setRows(_rows, _rowCount);
     render();
   };
 
   NdefParser::Result parsed;
   if (!NdefParser::parse(ndef, ndefLen, parsed)) {
+    _previewNdefLen = 0;
     _pushRow("NDEF", "Invalid record");
     finishPreview();
     return;
@@ -481,80 +455,33 @@ void NfcDumpGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
 
 bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
     const uint8_t* ndef, size_t ndefLen, const String&) {
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage unavailable", 1500);
-    return false;
-  }
-
   uint8_t uid[4] = {};
   _generateMifareUid(uid);
 
-  uint8_t image[NfcDumpBuilder::MIFARE_CLASSIC_1K_SIZE] = {};
+  uint8_t* image = new (std::nothrow) uint8_t[NfcDumpBuilder::MIFARE_CLASSIC_1K_SIZE];
+  if (!image) {
+    ShowStatusAction::show("Out of memory", 1500);
+    return false;
+  }
   size_t imageLen = 0;
   if (!NfcDumpBuilder::buildMifareClassic1K(
-          uid, ndef, ndefLen, image, imageLen, sizeof(image))) {
+          uid, ndef, ndefLen, image, imageLen, NfcDumpBuilder::MIFARE_CLASSIC_1K_SIZE)) {
+    delete[] image;
     ShowStatusAction::show("Cannot build MFC1K", 1500);
     return false;
   }
 
-  char suggested[32] = {};
-  size_t suggestedPos = snprintf(suggested, sizeof(suggested), "%s_",
-                                 ChameleonClient::tagTypeName(1001));
-  for (uint8_t i = 0; i < 4 && suggestedPos + 2 < sizeof(suggested); ++i) {
-    suggestedPos += snprintf(suggested + suggestedPos,
-                             sizeof(suggested) - suggestedPos, "%02X", uid[i]);
-  }
-  String name = InputTextAction::popup("File name", suggested);
-  if (InputTextAction::wasCancelled()) return false;
-
-  Uni.Storage->makeDir(_nfcPath);
-  Uni.Storage->makeDir(_dumpPath);
-
-  const String base = _sanitizeDumpName(name);
-  String path = String(_dumpPath) + "/" + base + ".bin";
-
-  if (Uni.Storage->exists(path.c_str())) {
-    for (int n = 2; n < 1000; n++) {
-      String candidate = String(_dumpPath) + "/" + base + "_(" + n + ").bin";
-      if (!Uni.Storage->exists(candidate.c_str())) {
-        path = candidate;
-        break;
-      }
-    }
-  }
-
-  fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) {
-    ShowStatusAction::show("Save failed", 1500);
-    return false;
-  }
-
-  const size_t written = f.write(image, imageLen);
-  f.close();
-  if (written != imageLen) {
-    ShowStatusAction::show("Save failed", 1500);
-    return false;
-  }
-
-  const int slash = path.lastIndexOf('/');
-  const String saved = (slash >= 0) ? path.substring(slash + 1) : path;
-  ShowStatusAction::show(("Saved: " + saved).c_str(), 1500);
+  _goTagType();
+  Screen.push(new NfcDumpEditorScreen(image, imageLen));
   return true;
 }
 
-
 bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
     const uint8_t* ndef, size_t ndefLen, const String&) {
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage unavailable", 1500);
-    return false;
-  }
-
   uint8_t uid[4] = {};
   _generateMifareUid(uid);
 
-  // Keep the 4 KiB image off the task stack.
-  uint8_t* image = (uint8_t*)malloc(NfcDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
+  uint8_t* image = new (std::nothrow) uint8_t[NfcDumpBuilder::MIFARE_CLASSIC_4K_SIZE];
   if (!image) {
     ShowStatusAction::show("Out of memory", 1500);
     return false;
@@ -564,62 +491,14 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
   const bool built = NfcDumpBuilder::buildMifareClassic4K(
       uid, ndef, ndefLen, image, imageLen,
       NfcDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
-
   if (!built) {
-    free(image);
+    delete[] image;
     ShowStatusAction::show("Cannot build MFC4K", 1500);
     return false;
   }
 
-  char suggested[32] = {};
-  size_t suggestedPos = snprintf(suggested, sizeof(suggested), "%s_",
-                                 ChameleonClient::tagTypeName(1003));
-  for (uint8_t i = 0; i < 4 && suggestedPos + 2 < sizeof(suggested); ++i) {
-    suggestedPos += snprintf(suggested + suggestedPos,
-                             sizeof(suggested) - suggestedPos, "%02X", uid[i]);
-  }
-
-  String name = InputTextAction::popup("File name", suggested);
-  if (InputTextAction::wasCancelled()) {
-    free(image);
-    return false;
-  }
-
-  Uni.Storage->makeDir(_nfcPath);
-  Uni.Storage->makeDir(_dumpPath);
-
-  const String base = _sanitizeDumpName(name);
-  String path = String(_dumpPath) + "/" + base + ".bin";
-
-  if (Uni.Storage->exists(path.c_str())) {
-    for (int n = 2; n < 1000; ++n) {
-      String candidate = String(_dumpPath) + "/" + base + "_(" + n + ").bin";
-      if (!Uni.Storage->exists(candidate.c_str())) {
-        path = candidate;
-        break;
-      }
-    }
-  }
-
-  fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) {
-    free(image);
-    ShowStatusAction::show("Save failed", 1500);
-    return false;
-  }
-
-  const size_t written = f.write(image, imageLen);
-  f.close();
-  free(image);
-
-  if (written != imageLen) {
-    ShowStatusAction::show("Save failed", 1500);
-    return false;
-  }
-
-  const int slash = path.lastIndexOf('/');
-  const String saved = (slash >= 0) ? path.substring(slash + 1) : path;
-  ShowStatusAction::show(("Saved: " + saved).c_str(), 1500);
+  _goTagType();
+  Screen.push(new NfcDumpEditorScreen(image, imageLen));
   return true;
 }
 
@@ -642,57 +521,33 @@ void NfcDumpGeneratorScreen::_generateUid(uint8_t uid[7]) {
 
 bool NfcDumpGeneratorScreen::_saveNtag21x(
     const uint8_t* ndef, size_t ndefLen, const String&) {
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage unavailable", 1500); return false;
-  }
-
   NfcDumpBuilder::Ntag21xType bt;
-  uint16_t cuType=0;
-  size_t imageSize=0;
+  size_t imageSize = 0;
   switch (_tagType) {
-    case TAG_NTAG210: bt=NfcDumpBuilder::Ntag21xType::NTAG210; cuType=1107; imageSize=NfcDumpBuilder::NTAG210_SIZE; break;
-    case TAG_NTAG212: bt=NfcDumpBuilder::Ntag21xType::NTAG212; cuType=1108; imageSize=NfcDumpBuilder::NTAG212_SIZE; break;
-    case TAG_NTAG213: bt=NfcDumpBuilder::Ntag21xType::NTAG213; cuType=1100; imageSize=NfcDumpBuilder::NTAG213_SIZE; break;
-    case TAG_NTAG215: bt=NfcDumpBuilder::Ntag21xType::NTAG215; cuType=1101; imageSize=NfcDumpBuilder::NTAG215_SIZE; break;
-    case TAG_NTAG216: bt=NfcDumpBuilder::Ntag21xType::NTAG216; cuType=1102; imageSize=NfcDumpBuilder::NTAG216_SIZE; break;
+    case TAG_NTAG210: bt = NfcDumpBuilder::Ntag21xType::NTAG210; imageSize = NfcDumpBuilder::NTAG210_SIZE; break;
+    case TAG_NTAG212: bt = NfcDumpBuilder::Ntag21xType::NTAG212; imageSize = NfcDumpBuilder::NTAG212_SIZE; break;
+    case TAG_NTAG213: bt = NfcDumpBuilder::Ntag21xType::NTAG213; imageSize = NfcDumpBuilder::NTAG213_SIZE; break;
+    case TAG_NTAG215: bt = NfcDumpBuilder::Ntag21xType::NTAG215; imageSize = NfcDumpBuilder::NTAG215_SIZE; break;
+    case TAG_NTAG216: bt = NfcDumpBuilder::Ntag21xType::NTAG216; imageSize = NfcDumpBuilder::NTAG216_SIZE; break;
     default: return false;
   }
 
-  uint8_t uid[7]={}; _generateUid(uid);
-  uint8_t* image=(uint8_t*)malloc(imageSize);
-  if (!image) { ShowStatusAction::show("Out of memory",1500); return false; }
-
-  size_t imageLen=0;
-  if (!NfcDumpBuilder::buildNtag21x(bt,uid,ndef,ndefLen,image,imageLen,imageSize)) {
-    free(image); ShowStatusAction::show("Cannot build NTAG",1500); return false;
+  uint8_t uid[7] = {};
+  _generateUid(uid);
+  uint8_t* image = new (std::nothrow) uint8_t[imageSize];
+  if (!image) {
+    ShowStatusAction::show("Out of memory", 1500);
+    return false;
   }
 
-  char suggested[40]={};
-  size_t n=snprintf(suggested,sizeof(suggested),"%s_",ChameleonClient::tagTypeName(cuType));
-  for (uint8_t k=0;k<7 && n+2<sizeof(suggested);++k)
-    n+=snprintf(suggested+n,sizeof(suggested)-n,"%02X",uid[k]);
-
-  String name=InputTextAction::popup("File name",suggested);
-  if (InputTextAction::wasCancelled()) { free(image); return false; }
-
-  Uni.Storage->makeDir(_nfcPath); Uni.Storage->makeDir(_dumpPath);
-  const String base=_sanitizeDumpName(name);
-  String path=String(_dumpPath)+"/"+base+".bin";
-  if (Uni.Storage->exists(path.c_str())) {
-    for (int k=2;k<1000;++k) {
-      String candidate=String(_dumpPath)+"/"+base+"_("+k+").bin";
-      if (!Uni.Storage->exists(candidate.c_str())) { path=candidate; break; }
-    }
+  size_t imageLen = 0;
+  if (!NfcDumpBuilder::buildNtag21x(bt, uid, ndef, ndefLen, image, imageLen, imageSize)) {
+    delete[] image;
+    ShowStatusAction::show("Cannot build NTAG", 1500);
+    return false;
   }
 
-  fs::File f=Uni.Storage->open(path.c_str(),"w");
-  if (!f) { free(image); ShowStatusAction::show("Save failed",1500); return false; }
-  const size_t written=f.write(image,imageLen);
-  f.close(); free(image);
-  if (written!=imageLen) { ShowStatusAction::show("Save failed",1500); return false; }
-
-  const int slash=path.lastIndexOf('/');
-  const String saved=(slash>=0)?path.substring(slash+1):path;
-  ShowStatusAction::show(("Saved: "+saved).c_str(),1500);
+  _goTagType();
+  Screen.push(new NfcDumpEditorScreen(image, imageLen));
   return true;
 }

@@ -11,9 +11,10 @@ public:
   void onItemSelected(uint8_t index) override;
 
 private:
-  ListItem _items[3] = {
+  ListItem _items[4] = {
+    {"New Dump"},
+    {"Edit Dump"},
     {"New NDEF Record"},
     {"Edit NDEF Record"},
-    {"Generate Dump"},
   };
 };

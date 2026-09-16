@@ -39,7 +39,6 @@ private:
 
   static constexpr const char* _nfcPath   = "/unigeek/nfc";
   static constexpr const char* _ndefPath  = "/unigeek/nfc/ndefs";
-  static constexpr const char* _dumpPath  = "/unigeek/nfc/dumps";
   static constexpr size_t MAX_INPUT_NDEF  = 491;
 
   ListItem _tagItems[7] = {

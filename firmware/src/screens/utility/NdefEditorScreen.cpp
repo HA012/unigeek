@@ -93,6 +93,14 @@ static String _vcardValue(const String& card, const char* key) {
   return "";
 }
 
+NdefEditorScreen::NdefEditorScreen(const uint8_t* ndef, size_t len, SaveCallback callback, void* context)
+    : _bufferMode(true), _saveCallback(callback), _saveContext(context) {
+  if (ndef && len > 0 && len <= MAX_NDEF_BYTES) {
+    memcpy(_ndef, ndef, len);
+    _ndefLen = len;
+  }
+}
+
 const char* NdefEditorScreen::title() {
   if (_state == STATE_PREVIEW_INITIAL || _state == STATE_PREVIEW_FINAL)
     return "NDEF Preview";
@@ -102,6 +110,16 @@ const char* NdefEditorScreen::title() {
 }
 
 void NdefEditorScreen::onInit() {
+  if (_bufferMode) {
+    if (_ndefLen == 0 || !_parseNdef(_ndef, _ndefLen)) {
+      ShowStatusAction::show("Invalid NDEF record", 1500);
+      Screen.goBack();
+      return;
+    }
+    _state = STATE_PREVIEW_INITIAL;
+    _showPreview();
+    return;
+  }
   _pickDir = _ndefPath;
   _openFiles();
 }
@@ -112,7 +130,8 @@ void NdefEditorScreen::onUpdate() {
       auto dir = Uni.Nav->readDirection();
 
       if (dir == INavigation::DIR_BACK) {
-        _openFiles();
+        if (_bufferMode) Screen.goBack();
+        else _openFiles();
         return;
       }
 
@@ -132,7 +151,8 @@ void NdefEditorScreen::onUpdate() {
           }
 
           if (!_editRecord()) {
-            _openFiles();
+            if (_bufferMode) _showPreview();
+            else _openFiles();
             return;
           }
 
@@ -150,7 +170,8 @@ void NdefEditorScreen::onUpdate() {
 
         // Final preview: PRESS saves; successful save returns to file list.
         if (_saveEdited(_ndef, _ndefLen)) {
-          _openFiles();
+          if (_bufferMode) Screen.goBack();
+          else _openFiles();
           return;
         }
 
@@ -182,7 +203,8 @@ void NdefEditorScreen::onBack() {
   }
 
   if (_state == STATE_PREVIEW_INITIAL || _state == STATE_PREVIEW_FINAL) {
-    _openFiles();
+    if (_bufferMode) Screen.goBack();
+    else _openFiles();
     return;
   }
 
@@ -283,6 +305,13 @@ bool NdefEditorScreen::_parseNdef(const uint8_t* ndef, size_t len) {
 
   size_t p = 0;
   uint8_t hdr = ndef[p++];
+  // This editor rebuilds one record. Refuse chunked/multi-record messages
+  // instead of silently dropping records after the first one.
+  const bool mb = (hdr & 0x80) != 0;
+  const bool me = (hdr & 0x40) != 0;
+  const bool cf = (hdr & 0x20) != 0;
+  if (!mb || !me || cf) return false;
+
   bool sr = (hdr & 0x10) != 0;
   bool il = (hdr & 0x08) != 0;
   uint8_t tnf = hdr & 0x07;
@@ -423,7 +452,7 @@ void NdefEditorScreen::_pushWrappedRow(const String& label, const String& value)
 void NdefEditorScreen::_showPreview() {
   _resetRows();
 
-  _pushRow("File", _baseName + ".ndef");
+  if (!_bufferMode) _pushRow("File", _baseName + ".ndef");
 
   switch (_recordType) {
     case REC_TEXT:
@@ -528,7 +557,8 @@ void NdefEditorScreen::_finishVcardEdit() {
 
   // The form is already the final vCard content view, so save directly.
   if (_saveEdited(edited, editedLen)) {
-    _openFiles();
+    if (_bufferMode) Screen.goBack();
+    else _openFiles();
     return;
   }
 
@@ -624,6 +654,15 @@ bool NdefEditorScreen::_rebuildRecord(uint8_t* out, size_t& outLen) {
 
 bool NdefEditorScreen::_saveEdited(const uint8_t* ndef, size_t len) {
   if (!ndef || len == 0) return false;
+
+  if (_bufferMode) {
+    if (!_saveCallback || !_saveCallback(_saveContext, ndef, len)) {
+      ShowStatusAction::show("NDEF update failed", 1500);
+      return false;
+    }
+    ShowStatusAction::show("NDEF updated in working copy", 1500);
+    return true;
+  }
 
   static constexpr InputSelectAction::Option opts[] = {
     {"Overwrite", "overwrite"},
