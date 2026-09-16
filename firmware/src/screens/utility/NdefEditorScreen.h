@@ -7,6 +7,12 @@
 class NdefEditorScreen : public ListScreen
 {
 public:
+  using SaveCallback = bool (*)(void* context, const uint8_t* ndef, size_t len);
+
+  NdefEditorScreen() = default;
+  NdefEditorScreen(const uint8_t* ndef, size_t len, SaveCallback callback, void* context);
+  static constexpr size_t maxEditableNdefBytes() { return MAX_NDEF_BYTES; }
+
   const char* title() override;
 
   void onInit() override;
@@ -53,6 +59,9 @@ private:
   size_t _ndefLen = 0;
   String _filePath;
   String _baseName;
+  bool _bufferMode = false;
+  SaveCallback _saveCallback = nullptr;
+  void* _saveContext = nullptr;
 
   // Parsed editable values.
   String _text;

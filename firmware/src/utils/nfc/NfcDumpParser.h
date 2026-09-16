@@ -27,12 +27,43 @@ public:
     size_t ndefLen = 0;
   };
 
+  struct PasswordInfo {
+    bool supported = false;
+    bool enabled = false;
+    uint8_t auth0 = 0xFF;
+    uint8_t access = 0;
+    bool protectRead = false;
+    bool configLocked = false;
+    uint8_t authLimit = 0;
+    uint8_t pwd[4] = {};
+    uint8_t pack[2] = {};
+  };
+
   // Identify the raw dump format from the exact image size used by UniGeek.
   static Type typeForSize(size_t size);
   static const char* typeName(Type type);
   static bool isMifareClassic(Type type);
   static bool isType2(Type type);
   static size_t mifareClassicSectorCount(Type type);
+
+  // Inspect password-protection configuration stored in a recognized NTAG21x
+  // raw image. PWD/PACK are the bytes present in the dump; physical NTAG21x
+  // reads may mask these bytes to zero, so they are not used to infer whether
+  // protection is enabled.
+  static PasswordInfo inspectPassword(const uint8_t* dump, size_t dumpLen);
+
+
+  // Configure NTAG21x password protection in a raw dump. Protects from page
+  // 4 onward, resets AUTHLIM to unlimited, preserves unrelated ACCESS bits,
+  // and leaves the buffer unchanged on failure.
+  static bool setPassword(uint8_t* dump, size_t dumpLen,
+                          const uint8_t pwd[4], const uint8_t pack[2],
+                          bool protectRead);
+
+  // Restore NTAG21x password-protection fields to their delivery/open state:
+  // AUTH0=FFh, PROT=0, AUTHLIM=0, PWD=FFFFFFFFh and PACK=0000h. Unrelated
+  // ACCESS bits are preserved. The buffer is left unchanged on failure.
+  static bool removePassword(uint8_t* dump, size_t dumpLen);
 
   // Extract the NDEF message from a recognized dump. On success `*ndef` is
   // heap-allocated and must be released by the caller with delete[]. This

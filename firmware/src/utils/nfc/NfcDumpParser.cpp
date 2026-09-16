@@ -50,6 +50,97 @@ size_t NfcDumpParser::mifareClassicSectorCount(Type type) {
   }
 }
 
+
+NfcDumpParser::PasswordInfo NfcDumpParser::inspectPassword(const uint8_t* dump, size_t dumpLen) {
+  PasswordInfo info;
+  if (!dump) return info;
+
+  const Type type = typeForSize(dumpLen);
+  uint16_t config0 = 0xFFFF;
+  switch (type) {
+    case TYPE_NTAG210: config0 = 16; break;
+    case TYPE_NTAG212: config0 = 37; break;
+    case TYPE_NTAG213: config0 = 41; break;
+    case TYPE_NTAG215: config0 = 131; break;
+    case TYPE_NTAG216: config0 = 227; break;
+    default: return info;
+  }
+
+  const size_t off = (size_t)config0 * 4u;
+  if (off + 16u > dumpLen) return info;
+
+  info.supported = true;
+  info.auth0 = dump[off + 3u];
+  info.access = dump[off + 4u];
+  info.protectRead = (info.access & 0x80u) != 0;
+  info.configLocked = (info.access & 0x40u) != 0;
+  info.authLimit = info.access & 0x07u;
+  // AUTH0 protects from the selected page onward. Values outside this raw
+  // image (including the factory default FFh) leave protection disabled.
+  info.enabled = info.auth0 < (dumpLen / 4u);
+  memcpy(info.pwd, &dump[off + 8u], 4u);
+  memcpy(info.pack, &dump[off + 12u], 2u);
+  return info;
+}
+
+bool NfcDumpParser::setPassword(uint8_t* dump, size_t dumpLen,
+                                    const uint8_t pwd[4], const uint8_t pack[2],
+                                    bool protectRead) {
+  if (!dump || !pwd || !pack) return false;
+  const PasswordInfo current = inspectPassword(dump, dumpLen);
+  if (!current.supported || current.configLocked) return false;
+
+  const Type type = typeForSize(dumpLen);
+  uint16_t config0 = 0xFFFF;
+  switch (type) {
+    case TYPE_NTAG210: config0 = 16; break;
+    case TYPE_NTAG212: config0 = 37; break;
+    case TYPE_NTAG213: config0 = 41; break;
+    case TYPE_NTAG215: config0 = 131; break;
+    case TYPE_NTAG216: config0 = 227; break;
+    default: return false;
+  }
+  const size_t off = (size_t)config0 * 4u;
+  if (off + 16u > dumpLen) return false;
+
+  uint8_t access = dump[off + 4u];
+  access = (uint8_t)((access & ~0x87u) | (protectRead ? 0x80u : 0u));
+  dump[off + 3u] = 4u;       // AUTH0: protect all user pages
+  dump[off + 4u] = access;   // PROT + AUTHLIM=0; preserve other bits
+  memcpy(&dump[off + 8u], pwd, 4u);
+  memcpy(&dump[off + 12u], pack, 2u);
+  return true;
+}
+
+bool NfcDumpParser::removePassword(uint8_t* dump, size_t dumpLen) {
+  if (!dump) return false;
+  const PasswordInfo current = inspectPassword(dump, dumpLen);
+  if (!current.supported || current.configLocked) return false;
+
+  const Type type = typeForSize(dumpLen);
+  uint16_t config0 = 0xFFFF;
+  switch (type) {
+    case TYPE_NTAG210: config0 = 16; break;
+    case TYPE_NTAG212: config0 = 37; break;
+    case TYPE_NTAG213: config0 = 41; break;
+    case TYPE_NTAG215: config0 = 131; break;
+    case TYPE_NTAG216: config0 = 227; break;
+    default: return false;
+  }
+  const size_t off = (size_t)config0 * 4u;
+  if (off + 16u > dumpLen) return false;
+
+  // All validation is complete before the first write. Preserve unrelated
+  // ACCESS bits while restoring the password fields to NXP delivery values.
+  const uint8_t access = (uint8_t)(dump[off + 4u] & ~0x87u);
+  dump[off + 3u] = 0xFFu;
+  dump[off + 4u] = access;
+  memset(&dump[off + 8u], 0xFF, 4u);
+  dump[off + 12u] = 0x00u;
+  dump[off + 13u] = 0x00u;
+  return true;
+}
+
 bool NfcDumpParser::extractNdef(const uint8_t* dump, size_t dumpLen,
                                 uint8_t** ndef, size_t* ndefLen) {
   if (!ndef || !ndefLen) return false;
