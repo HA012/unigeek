@@ -545,8 +545,8 @@ void ChameleonMfuNdefScreen::onUpdate() {
   if (_state == RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto d = Uni.Nav->readDirection();
-      if (d == INavigation::DIR_BACK) goMenu();
-      else                            _view.onNav(d);
+      if (d == INavigation::DIR_BACK || d == INavigation::DIR_PRESS) goMenu();
+      else                                                       _view.onNav(d);
     }
     return;
   }

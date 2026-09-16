@@ -75,7 +75,7 @@ void ChameleonMfcAdvancedScreen::onItemSelected(uint8_t i){
   else if (i == 3) _lockUidGen3();
 }
 void ChameleonMfcAdvancedScreen::onBack(){ if(_showingMemory){_showingMemory=false;setItems(_items, 4, _selMenu);render();} else Screen.goBack(); }
-void ChameleonMfcAdvancedScreen::onUpdate(){ if(!_showingMemory){ListScreen::onUpdate();return;} if(Uni.Nav->wasPressed()){auto d=Uni.Nav->readDirection();if(d==INavigation::DIR_BACK)onBack();else _view.onNav(d);} }
+void ChameleonMfcAdvancedScreen::onUpdate(){ if(!_showingMemory){ListScreen::onUpdate();return;} if(Uni.Nav->wasPressed()){auto d=Uni.Nav->readDirection();if(d==INavigation::DIR_BACK || d==INavigation::DIR_PRESS)onBack();else _view.onNav(d);} }
 void ChameleonMfcAdvancedScreen::onRender(){ if(_showingMemory){_view.render(bodyX(),bodyY(),bodyW(),bodyH());return;} ListScreen::onRender(); }
 
 void ChameleonMfcAdvancedScreen::_readMemory(){

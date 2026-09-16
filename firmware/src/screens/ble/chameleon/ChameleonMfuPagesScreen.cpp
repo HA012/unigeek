@@ -137,7 +137,11 @@ void ChameleonMfuPagesScreen::onUpdate() {
   if (_busy) return;
   if (!Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
-  if (dir == INavigation::DIR_BACK) { _freeDump(); Screen.goBack(); return; }
+  if (dir == INavigation::DIR_BACK || (_ready && dir == INavigation::DIR_PRESS)) {
+    _freeDump();
+    Screen.goBack();
+    return;
+  }
   if (_ready) _view.onNav(dir);
 }
 

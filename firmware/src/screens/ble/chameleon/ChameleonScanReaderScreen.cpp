@@ -79,7 +79,12 @@ void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
 void ChameleonScanReaderScreen::onUpdate() {
   if (Uni.Nav->wasPressed()) {
     auto d=Uni.Nav->readDirection();
-    if (d==INavigation::DIR_BACK) { _restore(); Screen.goBack(); return; }
+    if (d==INavigation::DIR_BACK ||
+        ((d==INavigation::DIR_PRESS) && (_state==RESULT || _state==ERROR))) {
+      _restore();
+      Screen.goBack();
+      return;
+    }
     if (_state==RESULT || _state==ERROR) _scroll.onNav(d);
   }
   if (_state!=WAITING || !_armed) return;
