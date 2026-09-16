@@ -12,8 +12,8 @@ public:
 
 private:
   ListItem _items[4] = {
-    {"New Dump"},
-    {"Edit Dump"},
+    {"New NFC Dump"},
+    {"Edit NFC Dump"},
     {"New NDEF Record"},
     {"Edit NDEF Record"},
   };
