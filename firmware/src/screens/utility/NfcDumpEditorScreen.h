@@ -2,6 +2,7 @@
 
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
+#include "ui/views/ScrollListView.h"
 #include "utils/nfc/NfcDumpParser.h"
 
 class NfcDumpEditorScreen : public ListScreen
@@ -16,6 +17,7 @@ public:
 
   void onInit() override;
   void onUpdate() override;
+  void onRender() override;
   void onBack() override;
   void onItemSelected(uint8_t index) override;
   ~NfcDumpEditorScreen() override;
@@ -42,8 +44,12 @@ private:
   size_t _dumpLen = 0;
   bool _dirty = false;
 
-  String _infoValues[5];
-  ListItem _infoItems[7];
+  ScrollListView _infoView;
+  static constexpr uint8_t INFO_ROW_MAX = 7;
+  ScrollListView::Row _infoRows[INFO_ROW_MAX];
+  String _infoLabels[INFO_ROW_MAX];
+  String _infoValues[INFO_ROW_MAX];
+  uint8_t _infoRowCount = 0;
   ListItem _actionItems[8];
   uint8_t _actionCodes[8] = {};
   uint8_t _actionCount = 0;
