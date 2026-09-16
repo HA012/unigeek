@@ -112,7 +112,7 @@ void NfcDumpEditorScreen::onInit() {
   _pickDir = _dumpPath;
   if (_newUnsaved) {
     if (!_dump || _dumpLen == 0) {
-      ShowStatusAction::show("Out of memory");
+      ShowStatusAction::show("Out of memory", 1600);
       Screen.goBack();
       return;
     }
@@ -129,7 +129,7 @@ void NfcDumpEditorScreen::onInit() {
       _showInfo();
       return;
     }
-    ShowStatusAction::show("Cannot open created dump");
+    ShowStatusAction::show("Cannot open created dump", 1600);
   }
   _openFiles();
 }
@@ -245,7 +245,7 @@ void NfcDumpEditorScreen::_selectFile(uint8_t index) {
   if (!_confirmDiscardChanges()) return;
 
   if (!_loadFile(entry.path)) {
-    ShowStatusAction::show("Unsupported dump");
+    ShowStatusAction::show("Unsupported dump", 1600);
     return;
   }
 
@@ -287,7 +287,7 @@ void NfcDumpEditorScreen::_editMemory() {
 
   if (NfcDumpParser::isMifareClassic(_info.type)) {
     const size_t blocks = _dumpLen / 16u;
-    if (blocks <= 1 || blocks > 256) { ShowStatusAction::show("Invalid Classic dump"); return; }
+    if (blocks <= 1 || blocks > 256) { _showActions(); ShowStatusAction::show("Invalid Classic dump", 1600); return; }
     const int block = InputNumberAction::popup(
         (String("Block (1..") + String((unsigned int)(blocks - 1)) + ")").c_str(),
         1, (int)blocks - 1, 1);
@@ -297,7 +297,7 @@ void NfcDumpEditorScreen::_editMemory() {
     hex.replace(" ", ""); hex.replace(":", "");
     uint8_t data[16] = {};
     if (!parseHexBytes(hex, data, 16)) {
-      ShowStatusAction::show(hex.length() == 32 ? "Bad hex" : "Need 32 hex chars"); return;
+      _showActions(); ShowStatusAction::show(hex.length() == 32 ? "Bad hex" : "Need 32 hex chars", 1600); return;
     }
     memcpy(_dump + (size_t)block * 16u, data, sizeof(data));
     _dirty = true; _info = NfcDumpParser::inspect(_dump, _dumpLen);
@@ -306,7 +306,7 @@ void NfcDumpEditorScreen::_editMemory() {
 
   if (NfcDumpParser::isType2(_info.type)) {
     const size_t pages = _dumpLen / 4u;
-    if (pages <= 4 || pages > 256) { ShowStatusAction::show("Invalid NTAG dump"); return; }
+    if (pages <= 4 || pages > 256) { _showActions(); ShowStatusAction::show("Invalid NTAG dump", 1600); return; }
     const int page = InputNumberAction::popup(
         (String("Page (4..") + String((unsigned int)(pages - 1)) + ")").c_str(),
         4, (int)pages - 1, 4);
@@ -317,20 +317,20 @@ void NfcDumpEditorScreen::_editMemory() {
     hex.replace(" ", ""); hex.replace(":", "");
     uint8_t data[4] = {};
     if (!parseHexBytes(hex, data, 4)) {
-      ShowStatusAction::show(hex.length() == 8 ? "Bad hex" : "Need 8 hex chars"); return;
+      _showActions(); ShowStatusAction::show(hex.length() == 8 ? "Bad hex" : "Need 8 hex chars", 1600); return;
     }
     memcpy(_dump + (size_t)page * 4u, data, sizeof(data));
     _dirty = true; _info = NfcDumpParser::inspect(_dump, _dumpLen);
     _showActions(); ShowStatusAction::show("Page updated in working copy", 1600); return;
   }
 
-  ShowStatusAction::show("Edit Memory not supported");
+  _showActions(); ShowStatusAction::show("Edit Memory not supported", 1600);
 }
 
 
 void NfcDumpEditorScreen::_editUid() {
   if (!_dump || _info.uidLen == 0) return;
-  if (!_info.uidValid) { ShowStatusAction::show("Invalid current UID/BCC"); return; }
+  if (!_info.uidValid) { _showActions(); ShowStatusAction::show("Invalid current UID/BCC", 1600); return; }
 
   String current;
   for (uint8_t i = 0; i < _info.uidLen; ++i) {
@@ -344,19 +344,19 @@ void NfcDumpEditorScreen::_editUid() {
 
   uint8_t uid[10] = {};
   if (!parseHexBytes(text, uid, _info.uidLen)) {
-    ShowStatusAction::show((String("UID must be ") + String(_info.uidLen * 2) + " hex digits").c_str());
+    _showActions(); ShowStatusAction::show((String("UID must be ") + String(_info.uidLen * 2) + " hex digits").c_str(), 1600);
     return;
   }
 
   if (!NfcDumpParser::setUid(_dump, _dumpLen, uid, _info.uidLen)) {
-    ShowStatusAction::show("UID edit not supported");
+    _showActions(); ShowStatusAction::show("UID edit not supported", 1600);
     return;
   }
 
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
   _showInfo();
-  ShowStatusAction::show("UID updated in working copy");
+  ShowStatusAction::show("UID updated in working copy", 1600);
 }
 
 bool NfcDumpEditorScreen::_applyEditedNdef(void* context, const uint8_t* ndef, size_t len) {
@@ -373,17 +373,17 @@ void NfcDumpEditorScreen::_editNdef() {
   uint8_t* ndef = nullptr;
   size_t ndefLen = 0;
   if (!NfcDumpParser::extractNdef(_dump, _dumpLen, &ndef, &ndefLen)) {
-    ShowStatusAction::show("No NDEF record");
+    _showActions(); ShowStatusAction::show("No NDEF record", 1600);
     return;
   }
   if (ndefLen == 0) {
     delete[] ndef;
-    ShowStatusAction::show("Empty NDEF record");
+    _showActions(); ShowStatusAction::show("Empty NDEF record", 1600);
     return;
   }
   if (ndefLen > NdefEditorScreen::maxEditableNdefBytes()) {
     delete[] ndef;
-    ShowStatusAction::show("NDEF too large for editor");
+    _showActions(); ShowStatusAction::show("NDEF too large for editor", 1600);
     return;
   }
 
@@ -395,7 +395,7 @@ void NfcDumpEditorScreen::_editNdef() {
 void NfcDumpEditorScreen::_showPasswordInfo() {
   if (!_dump) return;
   const auto p = NfcDumpParser::inspectPassword(_dump, _dumpLen);
-  if (!p.supported) { ShowStatusAction::show("Password not supported"); return; }
+  if (!p.supported) { _showActions(); ShowStatusAction::show("Password not supported", 1600); return; }
   char msg[160];
   snprintf(msg, sizeof(msg),
            "Protection: %s\nAUTH0: %02X\nAccess: %s\nAUTHLIM: %u\nConfig: %s\nPWD: %02X %02X %02X %02X\nPACK: %02X %02X",
@@ -426,18 +426,18 @@ static bool parseHexBytes(const String& text, uint8_t* out, size_t count) {
 void NfcDumpEditorScreen::_setPassword() {
   if (!_dump) return;
   const auto current = NfcDumpParser::inspectPassword(_dump, _dumpLen);
-  if (!current.supported) { ShowStatusAction::show("Password not supported"); return; }
-  if (current.configLocked) { ShowStatusAction::show("Configuration locked"); return; }
+  if (!current.supported) { _showActions(); ShowStatusAction::show("Password not supported", 1600); return; }
+  if (current.configLocked) { _showActions(); ShowStatusAction::show("Configuration locked", 1600); return; }
 
   String pwdText = InputTextAction::popup("PWD (8 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) return;
   uint8_t pwd[4];
-  if (!parseHexBytes(pwdText, pwd, 4)) { ShowStatusAction::show("PWD must be 8 hex digits"); return; }
+  if (!parseHexBytes(pwdText, pwd, 4)) { _showActions(); ShowStatusAction::show("PWD must be 8 hex digits", 1600); return; }
 
   String packText = InputTextAction::popup("PACK (4 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) return;
   uint8_t pack[2];
-  if (!parseHexBytes(packText, pack, 2)) { ShowStatusAction::show("PACK must be 4 hex digits"); return; }
+  if (!parseHexBytes(packText, pack, 2)) { _showActions(); ShowStatusAction::show("PACK must be 4 hex digits", 1600); return; }
 
   static const InputSelectAction::Option modes[] = {{"Write Only", "w"}, {"Read & Write", "rw"}};
   const char* mode = InputSelectAction::popup("Protection", modes, 2, nullptr);
@@ -445,27 +445,28 @@ void NfcDumpEditorScreen::_setPassword() {
   const bool protectRead = strcmp(mode, "rw") == 0;
 
   if (!NfcDumpParser::setPassword(_dump, _dumpLen, pwd, pack, protectRead)) {
-    ShowStatusAction::show("Password setup failed");
+    _showActions(); ShowStatusAction::show("Password setup failed", 1600);
     return;
   }
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
-  ShowStatusAction::show("Password set in working copy");
+  _showActions(); ShowStatusAction::show("Password set in working copy", 1600);
 }
 
 void NfcDumpEditorScreen::_removePassword() {
   if (!_dump) return;
   const auto current = NfcDumpParser::inspectPassword(_dump, _dumpLen);
-  if (!current.supported) { ShowStatusAction::show("Password not supported"); return; }
-  if (current.configLocked) { ShowStatusAction::show("Configuration locked"); return; }
+  if (!current.supported) { _showActions(); ShowStatusAction::show("Password not supported", 1600); return; }
+  if (current.configLocked) { _showActions(); ShowStatusAction::show("Configuration locked", 1600); return; }
+  if (!current.enabled) { _showActions(); ShowStatusAction::show("Password not set", 1600); return; }
 
   if (!NfcDumpParser::removePassword(_dump, _dumpLen)) {
-    ShowStatusAction::show("Remove failed");
+    _showActions(); ShowStatusAction::show("Remove failed", 1600);
     return;
   }
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
-  ShowStatusAction::show("Password removed from working copy");
+  _showActions(); ShowStatusAction::show("Password removed from working copy", 1600);
 }
 
 String NfcDumpEditorScreen::_suggestedDumpName() const {
@@ -490,15 +491,16 @@ String NfcDumpEditorScreen::_suggestedDumpName() const {
 bool NfcDumpEditorScreen::_saveAs() {
   if (!_dump || _dumpLen == 0) return false;
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage unavailable");
+    ShowStatusAction::show("Storage unavailable", 1600);
     return false;
   }
 
   String name = InputTextAction::popup("File name", _suggestedDumpName().c_str());
-  if (InputTextAction::wasCancelled()) return false;
+  if (InputTextAction::wasCancelled()) { render(); return false; }
+  render();
   const String base = sanitizeDumpName(name);
   if (base.length() == 0) {
-    ShowStatusAction::show("Invalid file name");
+    ShowStatusAction::show("Invalid file name", 1600);
     return false;
   }
 
@@ -517,21 +519,21 @@ bool NfcDumpEditorScreen::_saveAs() {
       }
     }
     if (!found) {
-      ShowStatusAction::show("No free file name");
+      ShowStatusAction::show("No free file name", 1600);
       return false;
     }
   }
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Save failed", 1600);
     return false;
   }
   const size_t written = f.write(_dump, _dumpLen);
   f.close();
   if (written != _dumpLen) {
     Uni.Storage->deleteFile(path.c_str());
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Save failed", 1600);
     return false;
   }
 
