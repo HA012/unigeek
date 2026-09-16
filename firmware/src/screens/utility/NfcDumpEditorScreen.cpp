@@ -135,7 +135,7 @@ void NfcDumpEditorScreen::onInit() {
 }
 
 void NfcDumpEditorScreen::onUpdate() {
-  if (_newUnsaved && _state == STATE_DUMP_INFO) {
+  if (_state == STATE_DUMP_INFO) {
     if (Uni.Nav->wasPressed()) {
       const auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
@@ -143,16 +143,30 @@ void NfcDumpEditorScreen::onUpdate() {
         return;
       }
       if (dir == INavigation::DIR_PRESS) {
-        if (Uni.Nav->pressDuration() >= 700) {
+        if (_newUnsaved) {
+          if (Uni.Nav->pressDuration() >= 700) {
+            _showActions();
+          } else if (_saveAs()) {
+            Screen.goBack();
+          }
+        } else {
           _showActions();
-        } else if (_saveAs()) {
-          Screen.goBack();
         }
+        return;
       }
+      _infoView.onNav(dir);
     }
     return;
   }
   ListScreen::onUpdate();
+}
+
+void NfcDumpEditorScreen::onRender() {
+  if (_state == STATE_DUMP_INFO) {
+    _infoView.render(bodyX(), bodyY(), bodyW(), bodyH());
+    return;
+  }
+  ListScreen::onRender();
 }
 
 void NfcDumpEditorScreen::onBack() {
@@ -560,24 +574,32 @@ String NfcDumpEditorScreen::_uidString() const {
 
 void NfcDumpEditorScreen::_showInfo() {
   _state = STATE_DUMP_INFO;
-  _infoValues[0] = NfcDumpParser::typeName(_info.type);
-  _infoValues[1] = _uidString();
-  _infoValues[2] = String((unsigned int)_info.size) + " bytes";
-  _infoValues[3] = _info.hasNdef ? "Yes" : "No";
-  _infoValues[4] = _info.hasNdef ? (String((unsigned int)_info.ndefLen) + " bytes") : "-";
+  _infoRowCount = 0;
 
-  _infoItems[0] = {"Type", _infoValues[0].c_str()};
-  _infoItems[1] = {"UID", _infoValues[1].c_str()};
-  _infoItems[2] = {"Size", _infoValues[2].c_str()};
-  _infoItems[3] = {"NDEF", _infoValues[3].c_str()};
-  _infoItems[4] = {"NDEF Size", _infoValues[4].c_str()};
+  auto addInfo = [&](const String& label, const String& value) {
+    if (_infoRowCount >= INFO_ROW_MAX) return;
+    _infoLabels[_infoRowCount] = label;
+    _infoValues[_infoRowCount] = value;
+    _infoRows[_infoRowCount] = {_infoLabels[_infoRowCount].c_str(), _infoValues[_infoRowCount]};
+    ++_infoRowCount;
+  };
+
+  addInfo("Type", NfcDumpParser::typeName(_info.type));
+  addInfo("UID", _uidString());
+  addInfo("Size", String((unsigned int)_info.size) + " bytes");
+  addInfo("NDEF", _info.hasNdef ? "Yes" : "No");
+  addInfo("NDEF Size", _info.hasNdef ? (String((unsigned int)_info.ndefLen) + " bytes") : "-");
+
+  // Read-only preview: fields are informational, never selectable.
   if (_newUnsaved) {
-    _infoItems[5] = {"[Press]", "Save"};
-    _infoItems[6] = {"[Hold]", "Edit"};
-    setItems(_infoItems, 7);
+    addInfo("[Press]", "Save");
+    addInfo("[Hold]", "Edit");
   } else {
-    setItems(_infoItems, 5);
+    addInfo("[Press]", "Edit");
   }
+
+  _infoView.resetScroll();
+  _infoView.setRows(_infoRows, _infoRowCount);
   render();
 }
 
