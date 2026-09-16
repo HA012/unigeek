@@ -6,9 +6,16 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/StatusBar.h"
 #include "ui/views/ProgressView.h"
 
 namespace {
+static void renderOperationChrome(const char* title) {
+  Header header;
+  header.render(title);
+  StatusBar::refresh();
+}
+
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
   auto& lcd = Uni.Lcd;
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -16,6 +23,26 @@ static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh)
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
   lcd.drawString(message, bx + bw / 2, by + bh / 2);
+}
+static bool scanClassicOrShow(ChameleonClient& c, uint8_t uid[7], uint8_t& uidLen,
+                              uint8_t atqa[2], uint8_t& sak,
+                              int bx, int by, int bw, int bh,
+                              uint32_t timeoutMs = 5000) {
+  renderTagPrompt("Place tag on reader...", bx, by, bw, bh);
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+      return false;
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) {
+      if (sak == 0x08 || sak == 0x18) return true;
+      ShowStatusAction::show("Tag not supported", 1200);
+      return false;
+    }
+    delay(50);
+  }
+  ShowStatusAction::show("Tag not detected", 1200);
+  return false;
 }
 static const uint8_t kKeys[][6] = {
   {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},
@@ -52,12 +79,14 @@ void ChameleonMfcAdvancedScreen::onUpdate(){ if(!_showingMemory){ListScreen::onU
 void ChameleonMfcAdvancedScreen::onRender(){ if(_showingMemory){_view.render(bodyX(),bodyY(),bodyW(),bodyH());return;} ListScreen::onRender(); }
 
 void ChameleonMfcAdvancedScreen::_readMemory(){
-  Header header; header.render("Read Memory");
+  renderOperationChrome("Read Memory");
   auto& c=ChameleonClient::get();
   uint8_t previousMode=0; const bool restoreMode=c.getMode(&previousMode); c.setMode(1);
   auto restore=[&](){ if(restoreMode) c.setMode(previousMode); };
   uint8_t uid[7]={},ul=0,atqa[2]={},sak=0;
-  if(!c.scan14A(uid,&ul,atqa,&sak)||(sak!=0x08&&sak!=0x18)){restore();render();ShowStatusAction::show("Tag not MIFARE Classic");render();return;}
+  if(!scanClassicOrShow(c,uid,ul,atqa,sak,bodyX(),bodyY(),bodyW(),bodyH())){
+    restore(); render(); return;
+  }
   const uint16_t blocks=sak==0x18?256:64; uint8_t keys[40][6]={},types[40]={}; bool have[40]={};
   _rowCount=0; _addRow("Type",sak==0x18?"MF Classic 4K":"MF Classic 1K");
   String uidText; for(uint8_t i=0;i<ul;++i){char b[4];snprintf(b,sizeof(b),"%s%02X",i?":":"",uid[i]);uidText+=b;} _addRow("UID",uidText);
@@ -78,22 +107,23 @@ void ChameleonMfcAdvancedScreen::_readMemory(){
 }
 
 void ChameleonMfcAdvancedScreen::_editMemory(){
-  Header header; header.render("Edit Memory");
+  renderOperationChrome("Edit Memory");
   auto& c=ChameleonClient::get();
   uint8_t previousMode=0; const bool restoreMode=c.getMode(&previousMode); c.setMode(1);
   auto restore=[&](){ if(restoreMode) c.setMode(previousMode); };
   uint8_t uid[7]={},ul=0,atqa[2]={},sak=0;
-  if(!c.scan14A(uid,&ul,atqa,&sak)||(sak!=0x08&&sak!=0x18)){restore();render();ShowStatusAction::show("Tag not MIFARE Classic");render();return;}
+  if(!scanClassicOrShow(c,uid,ul,atqa,sak,bodyX(),bodyY(),bodyW(),bodyH())){
+    restore(); render(); return;
+  }
   const int max=sak==0x18?255:63; int block=InputNumberAction::popup((String("Block (1..")+String(max)+")").c_str(),1,max,1); if(InputNumberAction::wasCancelled()){restore();render();return;}
   String h=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX); if(InputTextAction::wasCancelled()){restore();render();return;} h.replace(" ","");h.replace(":","");
-  if(h.length()!=32){restore();render();ShowStatusAction::show("Need 32 hex chars");render();return;} uint8_t d[16]={}; for(int i=0;i<16;++i){char x[3]={h[i*2],h[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(x,&e,16);if(!e||*e){restore();render();ShowStatusAction::show("Bad hex");render();return;}d[i]=(uint8_t)v;}
-  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Write failed: missing key",1600);render();
+  if(h.length()!=32){restore();render();ShowStatusAction::show("Need 32 hex chars", 1600);return;} uint8_t d[16]={}; for(int i=0;i<16;++i){char x[3]={h[i*2],h[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(x,&e,16);if(!e||*e){restore();render();ShowStatusAction::show("Bad hex", 1200);return;}d[i]=(uint8_t)v;}
+  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Write failed: missing key",1600);
 }
 
 
 void ChameleonMfcAdvancedScreen::_editUid(){
-  Header header;
-  header.render("Edit UID");
+  renderOperationChrome("Edit UID");
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
   const bool restoreMode = c.getMode(&previousMode);
@@ -107,14 +137,13 @@ void ChameleonMfcAdvancedScreen::_editUid(){
 
   uint8_t currentUid[7] = {}, currentUidLen = 0, atqa[2] = {}, sak = 0;
   if (!c.scan14A(currentUid, &currentUidLen, atqa, &sak)) {
-    restore(); render(); ShowStatusAction::show("No tag detected", 1200); render(); return;
+    restore(); render(); ShowStatusAction::show("Tag not detected", 1200); return;
   }
 
   const MagicCardType magic = c.detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
     restore(); render();
     ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 2000);
-    render();
     return;
   }
 
@@ -123,13 +152,13 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   currentUidLen = 0;
   if (!c.scan14A(currentUid, &currentUidLen, atqa, &sak) ||
       (currentUidLen != 4 && currentUidLen != 7)) {
-    restore(); render(); ShowStatusAction::show("Edit UID failed"); render(); return;
+    restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
   }
 
   uint8_t block0[16] = {};
   if (magic == MagicCardType::GEN1A) {
     if (currentUidLen != 4) {
-      restore(); render(); ShowStatusAction::show("Edit UID failed"); render(); return;
+      restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
     }
 
     // Open the Gen1A backdoor, then read block 0 so only UID+BCC are replaced.
@@ -165,7 +194,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
                          reselectUidLen == currentUidLen &&
                          memcmp(reselectUid, currentUid, currentUidLen) == 0;
     if (!ok || !sameTag) {
-      restore(); render(); ShowStatusAction::show("Edit UID failed"); render(); return;
+      restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
     }
   }
 
@@ -187,12 +216,12 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   hex.replace(" ", "");
   hex.replace(":", "");
   if (hex.length() != 8 && hex.length() != 14) {
-    restore(); render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1600); render(); return;
+    restore(); render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1600); return;
   }
 
   const uint8_t newUidLen = (uint8_t)(hex.length() / 2);
   if (magic == MagicCardType::GEN1A && newUidLen != 4) {
-    restore(); render(); ShowStatusAction::show("Gen1A UID must be 4 bytes", 1600); render(); return;
+    restore(); render(); ShowStatusAction::show("Gen1A UID must be 4 bytes", 1600); return;
   }
 
   uint8_t newUid[7] = {};
@@ -201,17 +230,16 @@ void ChameleonMfcAdvancedScreen::_editUid(){
     char* end = nullptr;
     const unsigned long v = strtoul(b, &end, 16);
     if (!end || *end) {
-      restore(); render(); ShowStatusAction::show("Bad hex", 1200); render(); return;
+      restore(); render(); ShowStatusAction::show("Bad hex", 1200); return;
     }
     newUid[i] = (uint8_t)v;
   }
 
   // Final preview/confirmation. Back cancels; Press performs the write.
-  // InputTextAction may leave pixels outside the body rectangle. Clear the
-  // whole display before drawing the preview to avoid stale popup artefacts.
-  lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
-  header.render("Edit UID");
-  StatusBar::refresh();
+  // Rebuild only the operation body/chrome: generic render() would restore
+  // the parent "Advanced" title and clearing from y=0 needlessly erases chrome.
+  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  renderOperationChrome("Edit UID");
   lcd.setTextDatum(TL_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_CYAN, TFT_BLACK);
@@ -242,24 +270,26 @@ void ChameleonMfcAdvancedScreen::_editUid(){
       c.detectMagicType() != magic) {
     restore(); render();
     ShowStatusAction::show("Edit UID failed", 1600);
-    render();
     return;
   }
 
   const bool ok = c.writeMagicUid(magic, newUid, newUidLen, block0);
   restore(); render();
   ShowStatusAction::show(ok ? "UID edited" : "Edit UID failed", 1600);
-  render();
 }
 
 void ChameleonMfcAdvancedScreen::_lockUidGen3(){
-  Header header; header.render("Lock UID");
+  renderOperationChrome("Lock UID");
   auto& c = ChameleonClient::get();
   uint8_t previousMode=0; const bool restoreMode=c.getMode(&previousMode); c.setMode(1);
   auto restore=[&](){ if(restoreMode) c.setMode(previousMode); };
 
+  uint8_t uid[7]={},uidLen=0,atqa[2]={},sak=0;
+  if(!scanClassicOrShow(c,uid,uidLen,atqa,sak,bodyX(),bodyY(),bodyW(),bodyH())){
+    restore(); render(); return;
+  }
   if (c.detectMagicType() != MagicCardType::GEN3) {
-    restore(); render(); ShowStatusAction::show("Tag is not Gen3", 1600); render(); return;
+    restore(); render(); ShowStatusAction::show("Tag is not Gen3", 1600); return;
   }
 
   static const InputSelectAction::Option opts[] = {{"Lock UID permanently", "lock"}};
@@ -275,5 +305,5 @@ void ChameleonMfcAdvancedScreen::_lockUidGen3(){
                               sizeof(cmd) * 8u, cmd, sizeof(cmd),
                               resp, &respLen, sizeof(resp), &st) &&
                   (st == 0 || st == 0x68);
-  restore(); ShowStatusAction::show(ok ? "Gen3 UID locked" : "Lock failed", 1600); render();
+  restore(); ShowStatusAction::show(ok ? "Gen3 UID locked" : "Lock failed", 1600);
 }

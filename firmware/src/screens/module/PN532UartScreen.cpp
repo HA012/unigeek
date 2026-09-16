@@ -461,7 +461,7 @@ void PN532UartScreen::_doAuthenticate() {
 
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) {
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     _goMifare();
     return;
   }
@@ -515,7 +515,7 @@ void PN532UartScreen::_doAuthenticate() {
 void PN532UartScreen::_doDumpMemory() {
   if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
@@ -593,7 +593,7 @@ void PN532UartScreen::_doDumpMemory() {
 void PN532UartScreen::_doShowKeys() {
   if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_KEYS;
   _resetRows();
@@ -662,7 +662,7 @@ void PN532UartScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
 
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   size_t totalSectors = dims.first;
   int recovered = 0;

@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/StatusBar.h"
 #include "ui/views/ProgressView.h"
 #include "ChameleonMfcWriteScreen.h"
 #include "utils/nfc/NdefParser.h"
@@ -144,7 +145,7 @@ void ChameleonMfcScreen::_callAuth() {
     c.setMode(0);
     _running = false;
     render();
-    ShowStatusAction::show("No tag detected", 1200);
+    ShowStatusAction::show("Tag not detected", 1200);
     Screen.goBack();
     return;
   }
@@ -159,7 +160,7 @@ void ChameleonMfcScreen::_callAuth() {
     c.setMode(0);
     _running = false;
     render();
-    ShowStatusAction::show("Not MIFARE Classic", 1200);
+    ShowStatusAction::show("Tag not supported", 1200);
     Screen.goBack();
     return;
   }
@@ -627,9 +628,9 @@ void ChameleonMfcScreen::_buildDumpPreview() {
     strcat(uid, b);
   }
 
-  const char* type = (_sectors == 5) ? "MIFARE Classic Mini"
-                   : (_sectors == 40) ? "MIFARE Classic 4K"
-                                      : "MIFARE Classic 1K";
+  const char* type = (_sectors == 5) ? "MF Classic Mini"
+                   : (_sectors == 40) ? "MF Classic 4K"
+                                      : "MF Classic 1K";
   addRow("Type", type);
   addRow("UID", uid);
   addRow("Blocks", String(_dumpBlocks));
@@ -906,7 +907,8 @@ void ChameleonMfcScreen::_callDump() {
   _running = false;
   _state = STATE_DUMP_RESULT;
   _buildDumpPreview();
-  render();
+  render();  // BaseScreen redraws header + sidebar before the result body.
+  StatusBar::refresh();
 }
 
 // ── Dictionary Attack ──

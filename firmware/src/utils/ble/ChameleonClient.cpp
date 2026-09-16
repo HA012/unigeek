@@ -1193,11 +1193,13 @@ bool ChameleonClient::mfuDetect(MfuTagInfo* out) {
 bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
                                   uint16_t outSize, uint16_t* bytesRead,
                                   MfuProgressCallback progress,
-                                  const uint8_t* password) {
+                                  const uint8_t* password,
+                                  bool alreadyAuthenticated) {
   if (bytesRead) *bytesRead = 0;
   const uint32_t total = (uint32_t)info.pages * 4u;
   if (!out || outSize < total || info.pages < 4) return false;
-  const bool authenticated = password && mfuPwdAuth(password, nullptr);
+  bool authenticated = alreadyAuthenticated;
+  if (!authenticated && password) authenticated = mfuPwdAuth(password, nullptr);
   if (password && !authenticated) return false;
 
   uint16_t page = 0;
@@ -1269,8 +1271,23 @@ bool ChameleonClient::mfuReadPageSession(uint8_t page, uint8_t data[4]) {
 bool ChameleonClient::mfuPwdAuth(const uint8_t password[4], uint8_t pack[2]) {
   if (!password) return false;
   const uint8_t cmd[5] = {0x1B, password[0], password[1], password[2], password[3]};
-  uint8_t rsp[8] = {}; uint16_t len = 0;
-  if (!_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) || len < 2) return false;
+
+  uint8_t rsp[8] = {};
+  uint16_t len = 0;
+  if (_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) && len >= 2) {
+    if (pack) { pack[0] = rsp[0]; pack[1] = rsp[1]; }
+    return true;
+  }
+
+  // A rejected PROT=1 READ may leave the RF/session in a state where the
+  // next raw authentication fails. Re-establish the target and retry in the
+  // selected session, mirroring the PN532 read-protection recovery.
+  uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
+  if (!scan14A(uid, &uidLen, atqa, &sak)) return false;
+  memset(rsp, 0, sizeof(rsp));
+  len = 0;
+  if (!_mfuRawSession(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) || len < 2)
+    return false;
   if (pack) { pack[0] = rsp[0]; pack[1] = rsp[1]; }
   return true;
 }

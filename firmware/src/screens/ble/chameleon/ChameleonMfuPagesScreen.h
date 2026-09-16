@@ -1,6 +1,7 @@
 #pragma once
 #include "ui/templates/BaseScreen.h"
 #include "utils/ble/ChameleonClient.h"
+#include "ui/views/ScrollListView.h"
 
 class ChameleonMfuPagesScreen : public BaseScreen {
 public:
@@ -16,8 +17,13 @@ private:
   ChameleonClient::MfuTagInfo _info = {};
   uint8_t* _dump = nullptr;
   uint16_t _dumpLen = 0;
-  uint16_t _topPage = 0;
+  static constexpr uint16_t MAX_ROWS = 260;
+  ScrollListView _view;
+  ScrollListView::Row _rows[MAX_ROWS];
+  String _labels[MAX_ROWS];
+  uint16_t _rowCount = 0;
 
+  void _addRow(const String& label, const String& value);
   void _read();
   void _freeDump();
 };

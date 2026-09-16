@@ -34,12 +34,12 @@ void ChameleonMfcKeysScreen::_loadDatabases() {
   setItems(_browser.items(), n);
   render();
 
-  if (!n && _pickDir == kDictDir) ShowStatusAction::show("No dictionaries");
+  if (!n && _pickDir == kDictDir) ShowStatusAction::show("No dictionaries", 1600);
 }
 
 void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& name) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage unavailable");
+    ShowStatusAction::show("Storage unavailable", 1600);
     return;
   }
 
@@ -67,7 +67,7 @@ void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& nam
   }
 
   if (!_rowCount) {
-    ShowStatusAction::show("No keys in file");
+    ShowStatusAction::show("No keys in file", 1600);
     return;
   }
 

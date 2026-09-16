@@ -11,6 +11,32 @@ void pageReadProgress(uint16_t done, uint16_t total) {
   snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...", (unsigned)done, (unsigned)total);
   ProgressView::progress(msg, total ? (int)((uint32_t)done * 100u / total) : 0);
 }
+
+static bool waitForMfuTag(ChameleonClient& c, ChameleonClient::MfuTagInfo& info,
+                          bool& tagPresent, uint32_t timeoutMs = 5000) {
+  tagPresent = false;
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+      return false;
+    uint8_t uid[7]={}, uidLen=0, atqa[2]={}, sak=0;
+    if (c.scan14A(uid,&uidLen,atqa,&sak)) {
+      tagPresent = true;
+      if (sak != 0x00) return false;
+      return c.mfuDetect(&info);
+    }
+    delay(50);
+  }
+  return false;
+}
+}
+
+void ChameleonMfuPagesScreen::_addRow(const String& label, const String& value) {
+  if (_rowCount >= MAX_ROWS) return;
+  _labels[_rowCount] = label;
+  _rows[_rowCount] = {_labels[_rowCount].c_str(), value};
+  ++_rowCount;
 }
 
 void ChameleonMfuPagesScreen::_freeDump() {
@@ -26,6 +52,8 @@ void ChameleonMfuPagesScreen::_read() {
   const bool restoreMode = c.getMode(&previousMode);
   c.setMode(1);
 
+  // Keep the standard header/sidebar visible while waiting for the tag.
+  render();
   auto& lcd = Uni.Lcd;
   const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -33,10 +61,12 @@ void ChameleonMfuPagesScreen::_read() {
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
   lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
 
-  if (!c.mfuDetect(&_info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, _info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
     _busy = false;
-    ShowStatusAction::show("Tag not supported", 1600);
+    render();
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     Screen.goBack();
     return;
   }
@@ -60,10 +90,13 @@ void ChameleonMfuPagesScreen::_read() {
     return;
   }
 
+  // Password/input actions may repaint outside the body. Restore the owning
+  // screen chrome before ProgressView starts.
+  render();
   ProgressView::init();
   uint16_t got = 0;
   const bool ok = c.mfuReadDump(_info, _dump, (uint16_t)bytes, &got, pageReadProgress,
-                                usePwd ? pwd : nullptr);
+                                usePwd ? pwd : nullptr, usePwd);
   ProgressView::finish();
   if (restoreMode) c.setMode(previousMode);
   _busy = false;
@@ -76,8 +109,25 @@ void ChameleonMfuPagesScreen::_read() {
   }
 
   _dumpLen = got;
+  _rowCount = 0;
+  _addRow("Type", ChameleonClient::mfuTagTypeName(_info.type));
+  String uidText;
+  for (uint8_t i = 0; i < _info.uidLen; ++i) {
+    char b[4]; snprintf(b, sizeof(b), "%s%02X", i ? ":" : "", _info.uid[i]); uidText += b;
+  }
+  _addRow("UID", uidText);
+  _addRow("Pages", String(_info.pages));
+  for (uint16_t page = 0; page < _info.pages; ++page) {
+    const uint8_t* d = _dump + page * 4u;
+    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C && page >= 44) {
+      _addRow("P" + String(page), "Unreadable (key)");
+    } else {
+      char value[9]; snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
+      _addRow("P" + String(page), value);
+    }
+  }
+  _view.resetScroll(); _view.setRows(_rows, _rowCount);
   _ready = true;
-  _topPage = 0;
   render();
 }
 
@@ -87,50 +137,10 @@ void ChameleonMfuPagesScreen::onUpdate() {
   if (_busy) return;
   if (!Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
-  if (dir == INavigation::DIR_BACK) {
-    _freeDump();
-    Screen.goBack();
-    return;
-  }
-  if (!_ready) return;
-  if (dir == INavigation::DIR_UP && _topPage > 0) {
-    --_topPage;
-    render();
-  } else if (dir == INavigation::DIR_DOWN && _topPage + 1 < _info.pages) {
-    ++_topPage;
-    render();
-  }
+  if (dir == INavigation::DIR_BACK) { _freeDump(); Screen.goBack(); return; }
+  if (_ready) _view.onNav(dir);
 }
 
 void ChameleonMfuPagesScreen::onRender() {
-  if (!_ready || !_dump) return;
-  auto& lcd = Uni.Lcd;
-  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(TL_DATUM);
-  lcd.setTextSize(1);
-
-  char head[48];
-  snprintf(head, sizeof(head), "%s  %u pages",
-           ChameleonClient::mfuTagTypeName(_info.type), (unsigned)_info.pages);
-  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-  lcd.drawString(head, bx + 2, by + 2);
-
-  const int lineH = 16;
-  const int firstY = by + 20;
-  const int visible = max(1, (bh - 22) / lineH);
-  for (int row = 0; row < visible; ++row) {
-    const uint16_t page = _topPage + row;
-    if (page >= _info.pages) break;
-    const uint8_t* d = _dump + page * 4u;
-    char line[40];
-    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C && page >= 44) {
-      snprintf(line, sizeof(line), "P%-3u  Unreadable (key)", (unsigned)page);
-    } else {
-      snprintf(line, sizeof(line), "P%-3u  %02X %02X %02X %02X",
-               (unsigned)page, d[0], d[1], d[2], d[3]);
-    }
-    lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-    lcd.drawString(line, bx + 2, firstY + row * lineH);
-  }
+  if (_ready) _view.render(bodyX(), bodyY(), bodyW(), bodyH());
 }

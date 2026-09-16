@@ -358,9 +358,9 @@ static uint16_t _ultralightDynamicLockPage(const char* typeName) {
 
 static bool _pn532UltralightPwdAuth(Adafruit_PN532* nfc, TwoWire* wire,
                                      const uint8_t pwd[4]) {
-  // If a PROT=1 tag rejected the preceding config READ, establish a fresh
-  // Type-2 target before PWD_AUTH. Keep this target selected for all protected
-  // I/O that follows.
+  // Historical PROT=1 fix (29e30c49): a failed protected config READ can
+  // leave the PN532 without a usable Type-2 target. Re-select first, then
+  // authenticate and keep that selected session for protected I/O.
   uint8_t uid[7] = {};
   uint8_t uidLen = 0;
   if (!nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 500))
@@ -373,7 +373,7 @@ static bool _pn532UltralightPwdAuth(Adafruit_PN532* nfc, TwoWire* wire,
     len = sizeof(rsp);
     if (!_nfcCommThru(nfc, wire, cmd, sizeof(cmd), rsp, len, 500)) return false;
   }
-  return len >= 2; // successful PWD_AUTH returns the 2-byte PACK (+ optional CRC)
+  return len >= 2;
 }
 
 static bool _pn532EnsureUltralightAuth(Adafruit_PN532* nfc, TwoWire* wire,
@@ -385,9 +385,23 @@ static bool _pn532EnsureUltralightAuth(Adafruit_PN532* nfc, TwoWire* wire,
   uint8_t pwd[4] = {};
   if (!_promptUltralightPassword(pwd)) return false;
   if (!_pn532UltralightPwdAuth(nfc, wire, pwd)) {
-    ShowStatusAction::show("Authentication failed");
+    ShowStatusAction::show("Authentication failed", 1600);
     return false;
   }
+  return true;
+}
+
+static bool _pn532Type2ReadPageSession(Adafruit_PN532* nfc, TwoWire* wire,
+                                       uint8_t page, uint8_t out[4]) {
+  const uint8_t cmd[2] = {0x30, page};
+  uint8_t rsp[24] = {};
+  uint8_t len = sizeof(rsp);
+  if (!_nfcDataExch(nfc, wire, cmd, sizeof(cmd), rsp, len, 500)) {
+    len = sizeof(rsp);
+    if (!_nfcCommThru(nfc, wire, cmd, sizeof(cmd), rsp, len, 500)) return false;
+  }
+  if (len < 4) return false;
+  memcpy(out, rsp, 4);
   return true;
 }
 
@@ -405,7 +419,9 @@ static bool _pn532ReadUltralightProtection(Adafruit_PN532* nfc, TwoWire* wire,
 static bool _pn532EnsureUltralightAuthForRange(Adafruit_PN532* nfc, TwoWire* wire,
                                                 const char* typeName, uint16_t pages,
                                                 uint16_t firstPage, uint16_t lastPage,
-                                                bool forRead) {
+                                                bool forRead,
+                                                bool* authenticatedOut = nullptr) {
+  if (authenticatedOut) *authenticatedOut = false;
   if (_ultralightConfig0(typeName) == 0xFFFF) return true;
   uint8_t auth0 = 0xFF, access = 0;
   const bool readable = _pn532ReadUltralightProtection(nfc, wire, typeName, pages, auth0, access);
@@ -418,9 +434,10 @@ static bool _pn532EnsureUltralightAuthForRange(Adafruit_PN532* nfc, TwoWire* wir
   uint8_t pwd[4] = {};
   if (!_promptUltralightPassword(pwd)) return false;
   if (!_pn532UltralightPwdAuth(nfc, wire, pwd)) {
-    ShowStatusAction::show("Authentication failed");
+    ShowStatusAction::show("Authentication failed", 1600);
     return false;
   }
+  if (authenticatedOut) *authenticatedOut = true;
   return true;
 }
 
@@ -1635,7 +1652,7 @@ bool PN532I2cScreen::_scanCardOrShow(uint32_t timeoutMs) {
     }
     delay(50);
   }
-  ShowStatusAction::show("No tag detected", 1200);
+  ShowStatusAction::show("Tag not detected", 1200);
   return false;
 }
 
@@ -1737,7 +1754,7 @@ void PN532I2cScreen::_doTypeBReadTag() {
     if (_isoATagPresent()) { otherTagDetected = true; break; }
     delay(30);
   }
-  ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "No tag detected", 1200);
+  ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "Tag not detected", 1200);
   _goTypeBTag();
 }
 
@@ -1788,7 +1805,7 @@ void PN532I2cScreen::_doTypeBSendApdu(bool rawMode) {
     if (_isoATagPresent()) { otherTagDetected = true; break; }
     delay(30);
   }
-  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "No tag detected", 1200); _goTypeBAdvanced(); return; }
+  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "Tag not detected", 1200); _goTypeBAdvanced(); return; }
 
   uint8_t rx[64] = {};
   size_t rxLen = 0;
@@ -1859,7 +1876,7 @@ void PN532I2cScreen::_doTypeBReadNdef() {
     if (_isoATagPresent()) { otherTagDetected = true; break; }
     delay(30);
   }
-  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "No tag detected", 1200); _goTypeBNdef(); return; }
+  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "Tag not detected", 1200); _goTypeBNdef(); return; }
 
   size_t cap = 0; bool writable = false;
   if (!_typeBSelectNdef(cap, writable)) { ShowStatusAction::show("NDEF not found / unsupported"); _goTypeBNdef(); return; }
@@ -1901,7 +1918,7 @@ bool PN532I2cScreen::_writeTypeBNdefRecord(const uint8_t* ndef, size_t ndefLen) 
     if (_isoATagPresent()) { otherTagDetected = true; break; }
     delay(30);
   }
-  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "No tag detected", 1200); return false; }
+  if (!found) { ShowStatusAction::show(otherTagDetected ? "No Type B tag detected" : "Tag not detected", 1200); return false; }
   size_t cap = 0; bool writable = false;
   if (!_typeBSelectNdef(cap, writable)) { ShowStatusAction::show("NDEF not found / unsupported"); return false; }
   if (!writable) { ShowStatusAction::show("NDEF is read-only"); return false; }
@@ -2011,7 +2028,7 @@ void PN532I2cScreen::_doScan14A() {
     }
     delay(30);
   }
-  if (!ok) { ShowStatusAction::show("No tag detected", 1200); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected", 1200); _goMain(); return; }
 
   int n = Achievement.inc("nfc_uid_first");
   if (n == 1)  Achievement.unlock("nfc_uid_first");
@@ -2189,7 +2206,7 @@ bool PN532I2cScreen::_hasReadableKeyForEverySector() const {
 void PN532I2cScreen::_doReadTag() {
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
-  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifareTag(); return; }
+  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
   if (!_hasReadableKeyForEverySector()) {
@@ -2211,7 +2228,7 @@ void PN532I2cScreen::_doReadTag() {
 void PN532I2cScreen::_doDumpMemory() {
   if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
@@ -2431,7 +2448,7 @@ void PN532I2cScreen::_doShowKeys() {
   // No authentication or attack is needed to inspect the saved results.
   if (!_scanCardOrShow(5000)) { _goMifareKeys(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifareKeys(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareKeys(); return; }
   _mfKeys.fill({});
   _loadSavedKeys();
 
@@ -2521,7 +2538,7 @@ void PN532I2cScreen::_doDictionaryPicker() {
   }
   if (_mfDims(_sak).first == 0) {
     _resumeReadAfterDict = false;
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     _goMifareAttacks();
     return;
   }
@@ -2579,7 +2596,7 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
 
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   size_t totalSectors = dims.first;
   int recovered = 0;
@@ -2916,7 +2933,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightTag();
     return;
   }
@@ -3003,68 +3020,41 @@ void PN532I2cScreen::_doMifareReadMemory() {
   renderOperationTitle("Read Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
   auto dims = _mfDims(_sak);
-  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag not MIFARE Classic"); _goMifareAdvanced(); return; }
+  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag not supported", 1600); _goMifareAdvanced(); return; }
 
-  static const uint8_t keys[][6] = {
-    {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}, {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},
-    {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7}, {0x00,0x00,0x00,0x00,0x00,0x00},
-    {0xB0,0xB1,0xB2,0xB3,0xB4,0xB5}, {0x4D,0x3A,0x99,0xC3,0x51,0xDD},
-    {0x1A,0x98,0x2C,0x7E,0x45,0x9A}, {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF},
-  };
+  // Use the same persisted/default key discovery used by Read Tag.
+  _discoverDefaultKeys(true);
   const uint16_t blocks = dims.second;
   _state = STATE_RAW_RESULT; _rawResultMifare = true; _resetRows();
-  _pushRow("Type", _inferType(_sak, _atqa));
-  _pushRow("UID", _hexUid(_uid, _uidLen));
-  _pushRow("Blocks", String(blocks));
-  uint8_t sectorKey[40][6] = {}; bool sectorKeyB[40] = {}; bool have[40] = {};
+  _pushRow("Type", _inferType(_sak, _atqa)); _pushRow("UID", _hexUid(_uid, _uidLen)); _pushRow("Blocks", String(blocks));
   ProgressView::init();
   for (uint16_t block=0; block<blocks; ++block) {
-    uint8_t sector = block < 128 ? block/4 : 32 + (block-128)/16;
-    if (!have[sector]) {
-      for (uint8_t kt=0; kt<2 && !have[sector]; ++kt) for (auto &key: keys) {
-        uint8_t uid[7]={}, ul=0; if (!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &ul, 250)) continue;
-        if (ul!=_uidLen || memcmp(uid,_uid,ul)!=0) continue;
-        if (_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,kt,const_cast<uint8_t*>(key))) {
-          memcpy(sectorKey[sector],key,6); sectorKeyB[sector]=kt; have[sector]=true; break;
-        }
-      }
-    }
+    const uint8_t sector = block < 128 ? block/4 : 32 + (block-128)/16;
+    auto& keyA=_mfKeys[sector].first; auto& keyB=_mfKeys[sector].second;
+    const bool useKeyB=!keyA && (bool)keyB; auto& slot=useKeyB?keyB:keyA;
     char msg[36]; snprintf(msg,sizeof(msg),"Reading blocks (%u/%u)...",(unsigned)(block+1),(unsigned)blocks);
     ProgressView::progress(msg,(int)((uint32_t)block*100u/blocks));
     uint8_t data[16]={}; bool ok=false;
-    if (have[sector]) {
-      uint8_t uid[7]={}, ul=0;
+    if (slot) {
+      const auto key=slot.value(); uint8_t uid[7]={},ul=0;
       if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,uid,&ul,250) && ul==_uidLen && memcmp(uid,_uid,ul)==0 &&
-          _nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,sectorKeyB[sector],sectorKey[sector]))
+          _nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,useKeyB?1:0,const_cast<uint8_t*>(key.data())))
         ok=_nfc->mifareclassic_ReadDataBlock(block,data);
     }
     if (ok) {
-      String first, second;
-      char hex[3];
-      for (uint8_t i = 0; i < 8; ++i) {
-        snprintf(hex, sizeof(hex), "%02X", data[i]);
-        first += hex;
-      }
-      for (uint8_t i = 8; i < 16; ++i) {
-        snprintf(hex, sizeof(hex), "%02X", data[i]);
-        second += hex;
-      }
-      _pushRow("B" + String(block) + " 0-7", first);
-      _pushRow("B" + String(block) + " 8-F", second);
-    } else {
-      _pushRow("B" + String(block), "Unreadable (key)");
-    }
+      String first,second; char hex[3];
+      for(uint8_t i=0;i<8;++i){snprintf(hex,sizeof(hex),"%02X",data[i]);first+=hex;}
+      for(uint8_t i=8;i<16;++i){snprintf(hex,sizeof(hex),"%02X",data[i]);second+=hex;}
+      _pushRow("B"+String(block)+" 0-7",first); _pushRow("B"+String(block)+" 8-F",second);
+    } else _pushRow("B"+String(block),"Unreadable (key)");
   }
-  ProgressView::finish();
-  _scrollView.resetScroll();
-  _scrollView.setRows(_rows,_rowCount);
-  render();
+  ProgressView::finish(); _scrollView.resetScroll(); _scrollView.setRows(_rows,_rowCount); render();
 }
 
 void PN532I2cScreen::_doMifareEditMemory() {
   renderOperationTitle("Edit Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
-  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag not MIFARE Classic"); _goMifareAdvanced(); return; }
+  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag not supported"); _goMifareAdvanced(); return; }
   int block=InputNumberAction::popup((String("Block (1..")+String(dims.second-1)+")").c_str(),1,dims.second-1,1);
   if (InputNumberAction::wasCancelled()) { _goMifareAdvanced(); return; }
   String hex=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX);
@@ -3086,12 +3076,14 @@ void PN532I2cScreen::_doUltralightReadPages() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightAdvanced();
     return;
   }
 
-  if (!_pn532EnsureUltralightAuthForRange(_nfc, _wire, typeName, pages, 0, pages - 1, true)) {
+  bool authenticated = false;
+  if (!_pn532EnsureUltralightAuthForRange(
+          _nfc, _wire, typeName, pages, 0, pages - 1, true, &authenticated)) {
     _goUltralightAdvanced();
     return;
   }
@@ -3103,6 +3095,9 @@ void PN532I2cScreen::_doUltralightReadPages() {
   _pushRow("UID", _hexUid(_uid, _uidLen));
   _pushRow("Pages", String(pages));
 
+  // Authentication may have used an input overlay. Rebuild the operation
+  // chrome before progress, matching the MFC/working MFU lifecycle.
+  renderOperationTitle("Read Memory");
   ProgressView::init();
   for (uint16_t page = 0; page < pages; ++page) {
     char msg[36];
@@ -3130,7 +3125,7 @@ void PN532I2cScreen::_doUltralightWritePage() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightAdvanced();
     return;
   }
@@ -3148,20 +3143,20 @@ void PN532I2cScreen::_doUltralightWritePage() {
   String hex = InputTextAction::popup("Page data (8 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) { _goUltralightAdvanced(); return; }
   hex.replace(" ", ""); hex.replace(":", "");
-  if (hex.length() != 8) { ShowStatusAction::show("Need 8 hex chars"); _goUltralightAdvanced(); return; }
+  if (hex.length() != 8) { renderOperationTitle("Edit Memory"); ShowStatusAction::show("Need 8 hex chars", 1600); _goUltralightAdvanced(); return; }
 
   uint8_t data[4] = {};
   for (int i = 0; i < 4; ++i) {
     char b[3] = {hex[i * 2], hex[i * 2 + 1], 0};
     char* e = nullptr; unsigned long v = strtoul(b, &e, 16);
-    if (!e || *e) { ShowStatusAction::show("Bad hex"); _goUltralightAdvanced(); return; }
+    if (!e || *e) { renderOperationTitle("Edit Memory"); ShowStatusAction::show("Bad hex", 1200); _goUltralightAdvanced(); return; }
     data[i] = (uint8_t)v;
   }
   if (!_pn532EnsureUltralightAuthForRange(_nfc, _wire, typeName, pages, page, page, false)) {
     _goUltralightAdvanced();
     return;
   }
-  render();
+  renderOperationTitle("Edit Memory");
   const bool ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)page, data);
   ShowStatusAction::show(ok ? "Page written" : "Write failed", 1600);
   _goUltralightAdvanced();
@@ -3175,12 +3170,12 @@ void PN532I2cScreen::_doUltralightLockTag() {
   if (!_detectUltralightTag(pages, typeName) || !typeName ||
       strcmp(typeName, "Ultralight C") == 0 ||
       strcmp(typeName, "Ultralight / NTAG") == 0) {
-    ShowStatusAction::show("Lock not supported"); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Lock not supported", 1600); _goUltralightAdvanced(); return;
   }
 
   uint16_t lastUser = _ultralightDynamicLockPage(typeName);
   if (lastUser != 0xFFFF) --lastUser; else lastUser = 15;
-  if (lastUser < 4) { ShowStatusAction::show("No lockable memory"); _goUltralightAdvanced(); return; }
+  if (lastUser < 4) { ShowStatusAction::show("No lockable memory", 1600); _goUltralightAdvanced(); return; }
 
   static const InputSelectAction::Option warn[] = {{"Lock permanently", "lock"}};
   if (!InputSelectAction::popup("Make tag read-only?", warn, 1, nullptr)) {
@@ -3189,7 +3184,7 @@ void PN532I2cScreen::_doUltralightLockTag() {
 
   uint8_t sm[2] = {}, dm[3] = {};
   if (!_pn532BuildUltralightLockMasks(typeName, 4, lastUser, sm, dm)) {
-    ShowStatusAction::show("Lock not supported"); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Lock not supported", 1600); _goUltralightAdvanced(); return;
   }
   const uint16_t dyn = _ultralightDynamicLockPage(typeName);
   const bool needsDyn = dyn != 0xFFFF && (dm[0] || dm[1] || dm[2]);
@@ -3199,6 +3194,7 @@ void PN532I2cScreen::_doUltralightLockTag() {
     _goUltralightAdvanced(); return;
   }
 
+  renderOperationTitle("Lock Tag");
   bool ok = true;
   if (sm[0] || sm[1]) {
     uint8_t p2[4] = {0, 0, sm[0], sm[1]};
@@ -3221,7 +3217,7 @@ void PN532I2cScreen::_doUltralightSetPassword() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || _ultralightConfig0(typeName) == 0xFFFF) {
-    ShowStatusAction::show("Password not supported"); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Password not supported", 1600); _goUltralightAdvanced(); return;
   }
   const uint16_t cfg = _ultralightConfig0(typeName);
 
@@ -3240,7 +3236,7 @@ void PN532I2cScreen::_doUltralightSetPassword() {
   uint8_t c0[4] = {}, c1[4] = {};
   if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg, pages, c0) ||
       !_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg + 1, pages, c1)) {
-    ShowStatusAction::show("Read config failed"); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Read config failed", 1600); _goUltralightAdvanced(); return;
   }
 
   uint8_t newPwd[4] = {};
@@ -3261,32 +3257,40 @@ void PN532I2cScreen::_doUltralightSetPassword() {
   const bool configLocked = (c1[0] & 0x40u) != 0;
   if (configLocked &&
       (c0[3] != 4 || (c1[0] & 0x87u) != (desiredAccess & 0x87u))) {
-    ShowStatusAction::show("Configuration locked"); _goUltralightAdvanced(); return;
+    renderOperationTitle("Set Password"); ShowStatusAction::show("Configuration locked", 2000); _goUltralightAdvanced(); return;
   }
 
-  bool ok = true;
   if (!configLocked) {
     c1[0] = desiredAccess;
     c0[3] = 4;
-    // ACCESS first; AUTH0 is written only after the new password is stored so
-    // an initially open tag is never protected by an unknown/default PWD.
-    ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 1), c1);
+    if (!_pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 1), c1)) {
+      renderOperationTitle("Set Password"); ShowStatusAction::show("ACCESS write failed", 1600);
+      _goUltralightAdvanced(); return;
+    }
   }
-  if (ok) ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 2), newPwd);
 
-  // PWD takes effect immediately. Verify the exact bytes we just wrote before
-  // enabling AUTH0 (or relying on the new credential on an already protected
-  // tag). PACK is intentionally left unchanged; it is not part of the
-  // user-facing password and NFC Tools does not require changing it.
-  if (ok && !_pn532UltralightPwdAuth(_nfc, _wire, newPwd)) {
-    ShowStatusAction::show("Password verification failed");
+  if (!_pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 2), newPwd)) {
+    renderOperationTitle("Set Password"); ShowStatusAction::show("PWD write failed", 1600);
     _goUltralightAdvanced(); return;
   }
 
-  if (ok && !configLocked)
-    ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)cfg, c0);
+  // Enable protection before verifying the new credential. The previous flow
+  // authenticated immediately after changing PWD and then attempted AUTH0;
+  // some PN532/NTAG sessions reject that following write. With AUTH0 written
+  // first, PWD_AUTH verifies the final protected state instead.
+  if (!configLocked &&
+      !_pn532Type2WritePage(_nfc, _wire, (uint8_t)cfg, c0)) {
+    renderOperationTitle("Set Password"); ShowStatusAction::show("AUTH0 write failed", 1600);
+    _goUltralightAdvanced(); return;
+  }
 
-  ShowStatusAction::show(ok ? "Password set\nRetap tag to activate" : "Password setup failed", 2000);
+  if (!_pn532UltralightPwdAuth(_nfc, _wire, newPwd)) {
+    renderOperationTitle("Set Password"); ShowStatusAction::show("Password authentication failed", 1600);
+    _goUltralightAdvanced(); return;
+  }
+
+  renderOperationTitle("Set Password");
+  ShowStatusAction::show("Password set", 1600);
   _goUltralightAdvanced();
 }
 
@@ -3295,7 +3299,7 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || _ultralightConfig0(typeName) == 0xFFFF) {
-    ShowStatusAction::show("Password not supported"); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Password not supported", 1600); _goUltralightAdvanced(); return;
   }
   const uint16_t cfg = _ultralightConfig0(typeName);
 
@@ -3303,6 +3307,10 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   const bool readable = _pn532ReadUltralightProtection(
       _nfc, _wire, typeName, pages, auth0, access);
   const bool protectedNow = !readable || (auth0 != 0xFF && auth0 < pages);
+  if (readable && !protectedNow) {
+    ShowStatusAction::show("Password not set", 1600);
+    _goUltralightAdvanced(); return;
+  }
   if (protectedNow && !_pn532EnsureUltralightAuthForRange(
           _nfc, _wire, typeName, pages, cfg, cfg + 3, false)) {
     _goUltralightAdvanced(); return;
@@ -3311,10 +3319,10 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   uint8_t c0[4] = {}, c1[4] = {};
   if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg, pages, c0) ||
       !_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg + 1, pages, c1)) {
-    ShowStatusAction::show("Read config failed"); _goUltralightAdvanced(); return;
+    renderOperationTitle("Remove Password"); ShowStatusAction::show("Read config failed", 1600); _goUltralightAdvanced(); return;
   }
   if (c1[0] & 0x40) {
-    ShowStatusAction::show("Configuration locked"); _goUltralightAdvanced(); return;
+    renderOperationTitle("Remove Password"); ShowStatusAction::show("Configuration locked", 2000); _goUltralightAdvanced(); return;
   }
 
   // Restore the password-protection fields to their NXP delivery state.
@@ -3329,6 +3337,7 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   if (ok) ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 2), defaultPwd);
   if (ok) ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 3), defaultPack);
 
+  renderOperationTitle("Remove Password");
   ShowStatusAction::show(ok ? "Password removed" : "Remove failed", 1600);
   _goUltralightAdvanced();
 }
@@ -3344,7 +3353,7 @@ void PN532I2cScreen::_doReadNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -3389,6 +3398,7 @@ void PN532I2cScreen::_doReadNdef() {
   const size_t totalPages = (userBytes + 3u) / 4u;
   size_t userLen = 0;
   bool readOk = true;
+  renderOperationTitle("Read NDEF");
   ProgressView::init();
   for (size_t i = 0; i < totalPages; ++i) {
     const uint16_t page16 = 4u + (uint16_t)i;
@@ -3745,7 +3755,7 @@ void PN532I2cScreen::_doReadClassicNdef() {
 
   auto dims = _mfDims(_sak);
   if (dims.first == 0) {
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     _goMifareNdef();
     return;
   }
@@ -4014,7 +4024,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
 
   if (!_scanCardOrShow(5000)) return false;
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     return false;
   }
 
@@ -4157,7 +4167,7 @@ void PN532I2cScreen::_doEraseClassicNdef() {
     return;
   }
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     _goMifareNdef();
     return;
   }
@@ -4240,13 +4250,13 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
   }
 
   if (!ok) {
-    ShowStatusAction::show("No tag detected", 1200);
+    ShowStatusAction::show("Tag not detected", 1200);
     return false;
   }
 
   uint16_t authPages = 0; const char* authType = nullptr;
   if (!_detectUltralightTag(authPages, authType)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag not supported", 1600);
     return false;
   }
   if (!_pn532EnsureUltralightAuth(_nfc, _wire, authType, authPages, false)) {
@@ -4310,6 +4320,9 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
   pos += ndefLen;
   payload[pos] = 0xFE;
 
+  // Authentication/input flows may have cleared the chrome. Rebuild it before
+  // ProgressView, which intentionally paints only the body area.
+  renderOperationTitle("Write NDEF");
   ProgressView::init();
   bool success = true;
 
@@ -4762,7 +4775,7 @@ void PN532I2cScreen::_doEraseNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -4789,6 +4802,7 @@ void PN532I2cScreen::_doEraseNdef() {
   uint8_t emptyNdef[4] = {0x03, 0x00, 0xFE, 0x00};
   const bool success = _pn532Type2WritePage(_nfc, _wire, 4, emptyNdef);
 
+  renderOperationTitle("Erase NDEF");
   ShowStatusAction::show(success ? "NDEF erased" : "NDEF erase failed", 1600);
   _goUltralightNdef();
 }
@@ -4801,7 +4815,7 @@ void PN532I2cScreen::_doFormatNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -4832,6 +4846,7 @@ void PN532I2cScreen::_doFormatNdef() {
 
   const uint8_t emptyNdef[4] = {0x03, 0x00, 0xFE, 0x00};
   const bool ok = _pn532Type2WritePage(_nfc, _wire, 4, emptyNdef);
+  renderOperationTitle("Format NDEF");
   ShowStatusAction::show(ok ? "NDEF formatted" : "Format failed", 1600);
   _goUltralightNdef();
 }
@@ -5050,7 +5065,7 @@ void PN532I2cScreen::_doDetectMagic() {
   }
 
   if (!ok) {
-    _magicLog.addLine("No tag detected", TFT_DARKGREY);
+    _magicLog.addLine("Tag not detected", TFT_DARKGREY);
     _magicDetectDone = true;
     render();
     return;
@@ -5058,7 +5073,7 @@ void PN532I2cScreen::_doDetectMagic() {
 
   const uint8_t sak = pn532_packetbuffer[11];
   if (sak != 0x09 && sak != 0x08 && sak != 0x18) {
-    _magicLog.addLine("Not MIFARE Classic", TFT_DARKGREY);
+    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
     _magicDetectDone = true;
     render();
     return;
@@ -5105,7 +5120,7 @@ void PN532I2cScreen::_doEditUid() {
     delay(50);
   }
   if (!found) {
-    ShowStatusAction::show("No tag detected", 1200);
+    ShowStatusAction::show("Tag not detected", 1200);
     _goMifareAdvanced();
     return;
   }
@@ -5300,7 +5315,7 @@ void PN532I2cScreen::_doGen3LockUid() {
     if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No tag detected", 1200); _goMifareAdvanced(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected", 1200); _goMifareAdvanced(); return; }
 
   if (_detectMagicType() != MagicCardType::GEN3) {
     ShowStatusAction::show("Tag is not Gen3");
@@ -5588,7 +5603,7 @@ void PN532I2cScreen::_doEraseTag() {
   renderOperationTitle("Erase Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifareTag(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
   _discoverDefaultKeys(true);
   if (!_hasReadableKeyForEverySector()) {
     ShowStatusAction::show("Erase failed: missing key"); _goMifareTag(); return;

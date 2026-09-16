@@ -170,6 +170,9 @@ void ChameleonMfuToolsScreen::_eraseTag() {
     return;
   }
 
+  // Authentication may have opened an input overlay. Restore this screen
+  // before starting progress so header/sidebar remain visible.
+  render();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   ProgressView::init();
   ProgressView::progress("Erasing pages (0/126)...", 0);
@@ -183,7 +186,6 @@ void ChameleonMfuToolsScreen::_eraseTag() {
 
   render();
   ShowStatusAction::show(ok ? "Tag erased" : "Erase failed", 1600);
-  render();
 }
 
 

@@ -9,6 +9,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/StatusBar.h"
 #include "ui/views/ProgressView.h"
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
@@ -21,10 +22,30 @@ static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh)
 }
 
 namespace {
+static bool waitForMfuTag(ChameleonClient& c, ChameleonClient::MfuTagInfo& info,
+                          bool& tagPresent, uint32_t timeoutMs = 5000) {
+  tagPresent = false;
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+      return false;
+    uint8_t uid[7]={}, uidLen=0, atqa[2]={}, sak=0;
+    if (c.scan14A(uid,&uidLen,atqa,&sak)) {
+      tagPresent = true;
+      if (sak != 0x00) return false;
+      return c.mfuDetect(&info);
+    }
+    delay(50);
+  }
+  return false;
+}
+
 
 void operationTitle(const char* t) {
   Header h;
   h.render(t);
+  StatusBar::refresh();
 }
 
 // Write-progress callback handed to ChameleonClient::mfuWriteNtag215User().
@@ -118,9 +139,10 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   ChameleonClient::MfuTagInfo info = {};
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
-  if (!c.mfuDetect(&info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -128,7 +150,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   img = (uint8_t*)malloc(len);
   if (!img) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Out of memory");
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
 
@@ -140,6 +162,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   }
 
   uint16_t got = 0;
+  operationTitle("Read NDEF");
   ProgressView::init();
 
   char m[36];
@@ -158,7 +181,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   if (!ok) {
     free(img);
     img = nullptr;
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Read failed", 1200);
     return false;
   }
 
@@ -246,9 +269,10 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
 
   ChameleonClient::MfuTagInfo info = {};
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
-  if (!c.mfuDetect(&info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -262,7 +286,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   const bool ccOk = usePwd ? c.mfuReadPageSession(3, cc) : c.mfuReadPage(3, cc);
   if (!ccOk || cc[0] != 0xE1 || cc[2] == 0) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Not NDEF formatted");
+    ShowStatusAction::show("Not NDEF formatted", 1600);
     return false;
   }
 
@@ -275,7 +299,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   }
   if (!physicalCapacity) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Invalid NDEF capacity");
+    ShowStatusAction::show("Invalid NDEF capacity", 1600);
     return false;
   }
   if (capacity > physicalCapacity) capacity = physicalCapacity;
@@ -284,14 +308,14 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   const size_t paddedLen = (tlvLen + 3u) & ~((size_t)3u);
   if (paddedLen > capacity) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("NDEF does not fit");
+    ShowStatusAction::show("NDEF does not fit", 1600);
     return false;
   }
 
   uint8_t* payload = (uint8_t*)malloc(paddedLen);
   if (!payload) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Out of memory");
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
   memset(payload, 0, paddedLen);
@@ -309,6 +333,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
 
   const size_t totalPages = paddedLen / 4u;
   bool ok = true;
+  operationTitle(opTitle);
   ProgressView::init();
   for (size_t i = 0; i < totalPages; ++i) {
     char msg[36];
@@ -324,6 +349,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   free(payload);
   if (restoreMode) c.setMode(previousMode);
 
+  operationTitle(opTitle);
   if (strcmp(opTitle, "Erase NDEF") == 0)
     ShowStatusAction::show(ok ? "NDEF erased" : "NDEF erase failed", 1600);
   else
@@ -347,9 +373,10 @@ void ChameleonMfuNdefScreen::format() {
 
   ChameleonClient::MfuTagInfo info = {};
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
-  if (!c.mfuDetect(&info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("No Type 2 tag");
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     _running = false;
     goMenu();
     return;
@@ -367,7 +394,7 @@ void ChameleonMfuNdefScreen::format() {
   const bool ccRead = usePwd ? c.mfuReadPageSession(3, cc) : c.mfuReadPage(3, cc);
   if (!ccRead || !type2DefaultCc(info.type, desired)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Format unsupported");
+    ShowStatusAction::show("Format unsupported", 1600);
     _running = false;
     goMenu();
     return;
@@ -377,7 +404,7 @@ void ChameleonMfuNdefScreen::format() {
   if (!type2CcIsValid(cc)) {
     if (!type2CcCanProgramSafely(cc, desired)) {
       if (restoreMode) c.setMode(previousMode);
-      ShowStatusAction::show("CC cannot be safely formatted");
+      ShowStatusAction::show("CC cannot be safely formatted", 2000);
       _running = false;
       goMenu();
       return;
@@ -390,6 +417,7 @@ void ChameleonMfuNdefScreen::format() {
                       : c.mfuWritePage(4, emptyNdef);
 
   if (restoreMode) c.setMode(previousMode);
+  operationTitle("Format NDEF");
   ShowStatusAction::show(ok ? "NDEF formatted" : "Format failed", 1600);
   _running = false;
   goMenu();
@@ -413,8 +441,14 @@ void ChameleonMfuNdefScreen::writeBuilt(uint8_t kind) {
              : kind == 2 ? NdefBuilder::buildPhone(a, n, l, sizeof(n))
                          : NdefBuilder::buildEmail(a, n, l, sizeof(n));
 
-  if (ok) writeRecord(n, l, "Write NDEF");
-  else    ShowStatusAction::show("Cannot build NDEF");
+  if (ok) {
+    writeRecord(n, l, "Write NDEF");
+  } else {
+    // InputTextAction may leave its overlay as the current background.
+    goWrite();
+    ShowStatusAction::show("Cannot build NDEF", 1600);
+    return;
+  }
 
   goWrite();
 }
@@ -430,7 +464,7 @@ void ChameleonMfuNdefScreen::files() {
   setItems(_browser.items(), n);
   render();
 
-  if (!n) ShowStatusAction::show("No .ndef files");
+  if (!n) ShowStatusAction::show("No .ndef files", 1600);
 }
 
 void ChameleonMfuNdefScreen::fileSelected(uint8_t index) {
@@ -445,7 +479,7 @@ void ChameleonMfuNdefScreen::fileSelected(uint8_t index) {
 
   String raw = Uni.Storage->readFile(e.path.c_str());
   if (!raw.length()) {
-    ShowStatusAction::show("Empty file");
+    ShowStatusAction::show("Empty file", 1600);
     return;
   }
 
@@ -489,8 +523,12 @@ void ChameleonMfuNdefScreen::onItemSelected(uint8_t index) {
       size_t  l = 0;
       if (NdefBuilder::buildVcard(name, "", "", phone, email, "", n, l, sizeof(n)))
         writeRecord(n, l, "Write NDEF");
-      else
-        ShowStatusAction::show("Cannot build vCard");
+      else {
+        // Restore the write menu before reporting a builder error after input.
+        goWrite();
+        ShowStatusAction::show("Cannot build vCard", 1600);
+        return;
+      }
 
       goWrite();
       return;

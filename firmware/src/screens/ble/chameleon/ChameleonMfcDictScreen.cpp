@@ -249,7 +249,7 @@ void ChameleonMfcDictScreen::_runAttack(const char* sourceLabel) {
 
   uint8_t atqa[2] = {}, sak = 0;
   if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {
-    _runLog.addLine("No tag detected", TFT_RED);
+    _runLog.addLine("Tag not detected", TFT_RED);
     _runLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _runStatusBarCb, this);
     _state   = STATE_SELECT;
     _running = false;

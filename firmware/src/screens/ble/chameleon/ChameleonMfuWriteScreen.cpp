@@ -268,6 +268,9 @@ void ChameleonMfuWriteScreen::_write() {
     render();
     return;
   }
+  // prepare() may prompt for a password and leave an input overlay behind.
+  // Rebuild the Write to Tag screen before progress.
+  render();
   ProgressView::init();
   ProgressView::progress("Writing pages (0/126)...", 0);
   bool ok = c.mfuWriteNtag215User(
@@ -277,10 +280,9 @@ void ChameleonMfuWriteScreen::_write() {
   _busy = false;
   _restoreContext();
 
-  // ProgressView leaves its last frame in the body area. Clear it before the
-  // modal status is shown; otherwise dismissing the status reveals remnants
-  // of the progress UI behind the Write to Tag screen.
-  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  // ProgressView leaves its last frame in the body area. Rebuild the screen
+  // before the modal status so success is never drawn over a blank body.
+  render();
 
   if (ok) {
     ShowStatusAction::show("Tag written", 1600);

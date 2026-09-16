@@ -16,10 +16,7 @@ const char* ChameleonHFScreen::_inferType(uint8_t sak, const uint8_t atqa[2]) {
     if (atqa[0] == 0x03) return "MIFARE DESFire";
     return "ISO14443-4";
   }
-  if (sak == 0x00) {
-    if (atqa[1] == 0x44) return "Ultralight / NTAG";
-    return "ISO14443A T2";
-  }
+  if (sak == 0x00) return "Ultralight / NTAG";
   return "ISO14443A";
 }
 
@@ -42,6 +39,10 @@ void ChameleonHFScreen::_draw() {
 
 void ChameleonHFScreen::_doScan() {
   _scanning = true;
+
+  // BaseScreen calls onInit() before its first render(). Draw the complete
+  // screen here so the very first scan has the same header/sidebar as retries.
+  render();
 
   // Draw scanning state directly before blocking BLE call (MFRC pattern)
   auto& lcd = Uni.Lcd;
@@ -71,8 +72,8 @@ void ChameleonHFScreen::_doScan() {
         memcpy(_atqa, info.atqa, sizeof(_atqa));
         _sak = info.sak;
       } else {
-        // SAK 00 alone cannot distinguish concrete Type-2 variants.
-        _tagType = 0;
+        // Preserve the generic family name when the concrete variant cannot be determined.
+        _tagType = ChameleonClient::MFU_UNKNOWN;
       }
     }
   }
@@ -152,8 +153,10 @@ void ChameleonHFScreen::_doScan() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("No tag detected", 1200);
-    render();
+    ShowStatusAction::show("Tag not detected", 1200);
+    // Scan Tag is an action launched from the HF menu. Match PN532 action
+    // semantics: after a failed scan/status timeout, return to that menu.
+    Screen.goBack();
     return;
   }
 

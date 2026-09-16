@@ -212,7 +212,7 @@ void ChameleonMfcWriteScreen::_buildSourcePreview() {
   String source = "Read Tag";
   if (_source == SOURCE_FILE) source = "File"; else if (_source == SOURCE_SLOT) source = String("Slot ") + (_slot + 1);
   _addRow("Source", source);
-  _addRow("Type", "MIFARE Classic 1K");
+  _addRow("Type", "MF Classic 1K");
   _addRow("UID", _sourceUidKnown ? _uidString(_sourceUid, _sourceUidLen) : String("Unknown"));
   _addRow("UID Action", _sourceUidKnown ? (_replaceUid ? "Replace" : "Preserve") : "Preserved");
   _addRow("Blocks", "64");

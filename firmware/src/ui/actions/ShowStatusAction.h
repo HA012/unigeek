@@ -5,6 +5,7 @@
 #pragma once
 
 #include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "utils/uart/UartFileManager.h"
 
 class ShowStatusAction
@@ -127,5 +128,11 @@ private:
 
     // Restore the caller's datum — the overlay must not leak its MC_DATUM.
     lcd.setTextDatum(prevDatum);
+
+    // A transient overlay used to wipe its rectangle to black, leaving a
+    // "hole" until the caller happened to redraw. Restore the active screen
+    // immediately after timed/acknowledged statuses. Persistent (duration 0)
+    // statuses deliberately remain on screen.
+    if (_duration != 0 && Screen.current()) Screen.current()->render();
   }
 };

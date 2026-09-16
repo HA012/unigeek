@@ -221,7 +221,8 @@ public:
   bool mfuReadDump(const MfuTagInfo& info, uint8_t* out, uint16_t outSize,
                    uint16_t* bytesRead = nullptr,
                    MfuProgressCallback progress = nullptr,
-                   const uint8_t* password = nullptr);
+                   const uint8_t* password = nullptr,
+                   bool alreadyAuthenticated = false);
   // Raw Type-2 WRITE of exactly one 4-byte page.
   bool mfuReadPage(uint8_t page, uint8_t data[4]);
   bool mfuReadPageSession(uint8_t page, uint8_t data[4]);

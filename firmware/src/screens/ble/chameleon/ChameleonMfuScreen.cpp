@@ -19,6 +19,25 @@ void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
                     : 0;
   ProgressView::progress(msg, pct);
 }
+
+static bool waitForMfuTag(ChameleonClient& c, ChameleonClient::MfuTagInfo& info,
+                          bool& tagPresent, uint32_t timeoutMs = 5000) {
+  tagPresent = false;
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+      return false;
+    uint8_t uid[7]={}, uidLen=0, atqa[2]={}, sak=0;
+    if (c.scan14A(uid,&uidLen,atqa,&sak)) {
+      tagPresent = true;
+      if (sak != 0x00) return false;
+      return c.mfuDetect(&info);
+    }
+    delay(50);
+  }
+  return false;
+}
 } // namespace
 
 void ChameleonMfuScreen::_freeDump() {
@@ -31,6 +50,9 @@ void ChameleonMfuScreen::_freeDump() {
 
 void ChameleonMfuScreen::_drawIdle() {
   _needsDraw = false;
+  // onInit() runs before BaseScreen's first automatic render. Draw the
+  // owning screen first so the initial prompt never flashes over black.
+  render();
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
 
@@ -196,14 +218,15 @@ void ChameleonMfuScreen::_read() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
 
-  if (!c.mfuDetect(&_info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, _info, tagPresent)) {
     c.setMode(0);
     _busy = false;
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("Tag not supported", 1600);
-    render();
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    Screen.goBack();
     return;
   }
 
@@ -229,6 +252,9 @@ void ChameleonMfuScreen::_read() {
     return;
   }
 
+  // Password/input actions may repaint outside the body. Restore the owning
+  // screen chrome before ProgressView starts.
+  render();
   ProgressView::init();
   char progressMsg[32];
   snprintf(progressMsg, sizeof(progressMsg), "Reading pages (0/%u)...",
