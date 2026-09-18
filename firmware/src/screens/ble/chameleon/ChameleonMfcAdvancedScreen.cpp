@@ -36,7 +36,7 @@ static bool scanClassicOrShow(ChameleonClient& c, uint8_t uid[7], uint8_t& uidLe
       return false;
     if (c.scan14A(uid, &uidLen, atqa, &sak)) {
       if (sak == 0x08 || sak == 0x18) return true;
-      ShowStatusAction::show("Tag not supported", 1200);
+      ShowStatusAction::show("Tag unsupported", 1200);
       return false;
     }
     delay(50);
@@ -118,7 +118,7 @@ void ChameleonMfcAdvancedScreen::_editMemory(){
   const int max=sak==0x18?255:63; int block=InputNumberAction::popup((String("Block (1..")+String(max)+")").c_str(),1,max,1); if(InputNumberAction::wasCancelled()){restore();render();return;}
   String h=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX); if(InputTextAction::wasCancelled()){restore();render();return;} h.replace(" ","");h.replace(":","");
   if(h.length()!=32){restore();render();ShowStatusAction::show("Need 32 hex chars", 1600);return;} uint8_t d[16]={}; for(int i=0;i<16;++i){char x[3]={h[i*2],h[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(x,&e,16);if(!e||*e){restore();render();ShowStatusAction::show("Bad hex", 1200);return;}d[i]=(uint8_t)v;}
-  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Write failed: missing key",1600);
+  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Failed: missing key",1600);
 }
 
 
@@ -143,7 +143,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   const MagicCardType magic = c.detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
     restore(); render();
-    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 2000);
+    ShowStatusAction::show("Tag not Gen1A/Gen3", 2000);
     return;
   }
 
@@ -152,13 +152,13 @@ void ChameleonMfcAdvancedScreen::_editUid(){
   currentUidLen = 0;
   if (!c.scan14A(currentUid, &currentUidLen, atqa, &sak) ||
       (currentUidLen != 4 && currentUidLen != 7)) {
-    restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
+    restore(); render(); ShowStatusAction::show("Failed", 1600); return;
   }
 
   uint8_t block0[16] = {};
   if (magic == MagicCardType::GEN1A) {
     if (currentUidLen != 4) {
-      restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
+      restore(); render(); ShowStatusAction::show("Failed", 1600); return;
     }
 
     // Open the Gen1A backdoor, then read block 0 so only UID+BCC are replaced.
@@ -194,7 +194,7 @@ void ChameleonMfcAdvancedScreen::_editUid(){
                          reselectUidLen == currentUidLen &&
                          memcmp(reselectUid, currentUid, currentUidLen) == 0;
     if (!ok || !sameTag) {
-      restore(); render(); ShowStatusAction::show("Edit UID failed", 1600); return;
+      restore(); render(); ShowStatusAction::show("Failed", 1600); return;
     }
   }
 
@@ -269,13 +269,13 @@ void ChameleonMfcAdvancedScreen::_editUid(){
       memcmp(verifyUid, currentUid, currentUidLen) != 0 ||
       c.detectMagicType() != magic) {
     restore(); render();
-    ShowStatusAction::show("Edit UID failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     return;
   }
 
   const bool ok = c.writeMagicUid(magic, newUid, newUidLen, block0);
   restore(); render();
-  ShowStatusAction::show(ok ? "UID edited" : "Edit UID failed", 1600);
+  ShowStatusAction::show(ok ? "UID edited" : "Failed", 1600);
 }
 
 void ChameleonMfcAdvancedScreen::_lockUidGen3(){
@@ -305,5 +305,5 @@ void ChameleonMfcAdvancedScreen::_lockUidGen3(){
                               sizeof(cmd) * 8u, cmd, sizeof(cmd),
                               resp, &respLen, sizeof(resp), &st) &&
                   (st == 0 || st == 0x68);
-  restore(); ShowStatusAction::show(ok ? "Gen3 UID locked" : "Lock failed", 1600);
+  restore(); ShowStatusAction::show(ok ? "Gen3 UID locked" : "Failed", 1600);
 }

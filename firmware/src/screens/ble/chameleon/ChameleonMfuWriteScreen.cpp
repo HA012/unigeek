@@ -293,7 +293,7 @@ void ChameleonMfuWriteScreen::_write() {
 
   _buildSourcePreview();
   render();
-  ShowStatusAction::show("Tag write failed", 1600);
+  ShowStatusAction::show("Failed", 1600);
   render();
 }
 

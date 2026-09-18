@@ -144,7 +144,7 @@ void ChameleonSlotEditScreen::_editType(bool lf) {
   _rebuildLabels();
   render();
   if (!ok) {
-    ShowStatusAction::show("Set type failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
   }
 }
@@ -174,7 +174,7 @@ void ChameleonSlotEditScreen::_editNick(bool lf) {
   _rebuildLabels();
   render();
   if (!ok) {
-    ShowStatusAction::show("Set nick failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
   }
 }
@@ -196,7 +196,7 @@ void ChameleonSlotEditScreen::_loadDefault() {
   }
   bool ok = ChameleonClient::get().setSlotDataDefault(_slot, t);
   render();
-  ShowStatusAction::show(ok ? "Data reset" : "Reset failed", 1200);
+  ShowStatusAction::show(ok ? "Data reset" : "Failed", 1200);
   render();
 }
 
@@ -216,14 +216,14 @@ void ChameleonSlotEditScreen::_deleteSlot(bool) {
   }
   _rebuildLabels();
   render();
-  ShowStatusAction::show(ok ? "Deleted" : "Delete failed", 1200);
+  ShowStatusAction::show(ok ? "Deleted" : "Failed", 1200);
   render();
 }
 
 void ChameleonSlotEditScreen::_saveNicks() {
   bool ok = ChameleonClient::get().saveSlotNicks();
   render();
-  ShowStatusAction::show(ok ? "Nicks saved" : "Save failed", 1200);
+  ShowStatusAction::show(ok ? "Nicks saved" : "Failed", 1200);
   render();
 }
 
@@ -637,7 +637,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (strcmp(selected, "lf") == 0) {
     render();
     if (!_saveLfSlotToFile()) {
-      ShowStatusAction::show("Save failed", 1600);
+      ShowStatusAction::show("Failed", 1600);
       render();
     }
     return;
@@ -645,7 +645,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   const uint16_t dumpSize = _dumpSizeForType(_hfType);
   if (dumpSize == 0) {
     render();
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     render();
     return;
   }
@@ -665,7 +665,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
   if (!c.setActiveSlot(_slot)) {
     render();
-    ShowStatusAction::show("Select slot failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -713,8 +713,6 @@ void ChameleonSlotEditScreen::_downloadDump() {
       doneBlocks += count;
     }
 
-    if (ok)
-      ProgressView::progress("Download complete", 100);
   } else {
     const uint16_t totalPages = dumpSize / 4u;
     uint16_t donePages = 0;
@@ -741,9 +739,6 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
       donePages += count;
     }
-
-    if (ok)
-      ProgressView::progress("Download complete", 100);
   }
 
   ProgressView::finish();
@@ -753,7 +748,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (!ok) {
     free(dump);
     render();
-    ShowStatusAction::show("Download failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -816,7 +811,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   if (!f) {
     free(dump);
     render();
-    ShowStatusAction::show("Save failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -827,7 +822,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
   render();
   if (written != dumpSize) {
-    ShowStatusAction::show("Save failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -876,9 +871,7 @@ void ChameleonSlotEditScreen::_writeContent() {
   _rebuildLabels();
   render();
 
-  // Keep existing result wording for now; failure-message terminology will be
-  // harmonized globally across PN532, Chameleon HF and LF in a separate pass.
-  ShowStatusAction::show(ok ? "Loaded to slot" : "Load to slot failed", 1600);
+  ShowStatusAction::show(ok ? "Loaded to slot" : "Failed", 1600);
   render();
 
   if (ok) {
@@ -906,7 +899,7 @@ void ChameleonSlotEditScreen::_writeTag() {
       return;
     }
     render();
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     render();
     return;
   }
@@ -924,7 +917,7 @@ void ChameleonSlotEditScreen::_writeTag() {
     lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
 
     auto& c = ChameleonClient::get();
-    if (!c.setActiveSlot(_slot)) { render(); ShowStatusAction::show("Slot select failed", 1600); render(); return; }
+    if (!c.setActiveSlot(_slot)) { render(); ShowStatusAction::show("Failed", 1600); render(); return; }
     bool ok = false;
     if (_lfType == 100) { uint8_t d[5]={}; ok=c.getEM410XSlot(d) && c.writeEM410XToT5577(d,nullptr,nullptr,0); }
     else if (_lfType == 200) { uint8_t d[13]={},n=0; ok=c.getHIDProxSlot(d,&n) && n && c.writeHIDProxToT5577(d,n,nullptr,nullptr,0); }
@@ -932,10 +925,10 @@ void ChameleonSlotEditScreen::_writeTag() {
     else if (_lfType == 170) { uint8_t d[4]={},n=0; ok=c.getVikingSlot(d,&n) && n==4 && c.writeVikingToT5577(d,nullptr,nullptr,0); }
     else if (_lfType == 150) { uint8_t d[8]={},n=0; ok=c.getPACSlot(d,&n) && n==8 && c.writePACToT5577(d,nullptr,nullptr,0); }
     else if (_lfType == 180) { uint8_t d[5]={},n=0; ok=c.getJablotronSlot(d,&n) && n==5 && c.writeJablotronToT5577(d,nullptr,nullptr,0); }
-    render(); ShowStatusAction::show(ok ? "Tag written" : "Tag write failed", 1600); render(); return;
+    render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render(); return;
   }
   render();
-  ShowStatusAction::show("Tag not supported", 1600);
+  ShowStatusAction::show("Tag unsupported", 1600);
   render();
 }
 

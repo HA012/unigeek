@@ -225,7 +225,7 @@ void ChameleonMfuScreen::_read() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
     Screen.goBack();
     return;
   }
@@ -273,7 +273,7 @@ void ChameleonMfuScreen::_read() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("Read failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
     return;
   }
@@ -326,7 +326,7 @@ void ChameleonMfuScreen::_save() {
     Screen.goBack();
     return;
   } else {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
   }
   render();
 }

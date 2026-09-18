@@ -1887,7 +1887,7 @@ void PN532I2cScreen::_doTypeBReadNdef() {
   uint8_t rx[64] = {}; size_t n = 0;
   static const uint8_t readNlen[] = {0x00,0xB0,0x00,0x00,0x02};
   if (!_typeBExchange(readNlen, sizeof(readNlen), rx, sizeof(rx), n) || n < 4 || rx[n-2] != 0x90 || rx[n-1] != 0x00) {
-    ShowStatusAction::show("NDEF read failed"); _goTypeBNdef(); return;
+    ShowStatusAction::show("Failed"); _goTypeBNdef(); return;
   }
   const size_t want = ((size_t)rx[0] << 8) | rx[1];
   if (want > MAX_NDEF_BYTES || want > cap) { ShowStatusAction::show("NDEF too large"); _goTypeBNdef(); return; }
@@ -1897,7 +1897,7 @@ void PN532I2cScreen::_doTypeBReadNdef() {
     const uint16_t pos = (uint16_t)(off + 2);
     uint8_t cmd[] = {0x00,0xB0,(uint8_t)(pos>>8),(uint8_t)pos,(uint8_t)chunk};
     if (!_typeBExchange(cmd, sizeof(cmd), rx, sizeof(rx), n) || n != chunk + 2 || rx[n-2] != 0x90 || rx[n-1] != 0x00) {
-      ShowStatusAction::show("NDEF read failed"); _goTypeBNdef(); return;
+      ShowStatusAction::show("Failed"); _goTypeBNdef(); return;
     }
     memcpy(_ndefBuf + off, rx, chunk);
     off += chunk;
@@ -1942,7 +1942,7 @@ bool PN532I2cScreen::_writeTypeBNdefRecord(const uint8_t* ndef, size_t ndefLen) 
   const uint8_t lenCmd[] = {0x00,0xD6,0x00,0x00,0x02,(uint8_t)(ndefLen>>8),(uint8_t)ndefLen};
   const bool ok = _typeBExchange(lenCmd, sizeof(lenCmd), rx, sizeof(rx), n) && n >= 2 && rx[n-2] == 0x90 && rx[n-1] == 0x00;
   if (ok) { _ndefCapacity = cap; ShowStatusAction::show("NDEF written"); }
-  else ShowStatusAction::show("Write failed");
+  else ShowStatusAction::show("Failed");
   return ok;
 }
 
@@ -2054,7 +2054,7 @@ void PN532I2cScreen::_doScan14A() {
   }
   const bool supported = (_sak == 0x09 || _sak == 0x08 || _sak == 0x18 ||
                           _sak == 0x00 || (_sak & 0x20) != 0);
-  if (!supported) _pushRow("Status", "Tag not supported");
+  if (!supported) _pushRow("Status", "Tag unsupported");
   snprintf(buf, sizeof(buf), "%02X:%02X", (_atqa >> 8) & 0xFF, _atqa & 0xFF);
   _pushRow("ATQA", buf);
   snprintf(buf, sizeof(buf), "%02X", _sak);
@@ -2210,7 +2210,7 @@ bool PN532I2cScreen::_hasReadableKeyForEverySector() const {
 void PN532I2cScreen::_doReadTag() {
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
-  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
+  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
   if (!_hasReadableKeyForEverySector()) {
@@ -2232,7 +2232,7 @@ void PN532I2cScreen::_doReadTag() {
 void PN532I2cScreen::_doDumpMemory() {
   if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
@@ -2452,7 +2452,7 @@ void PN532I2cScreen::_doShowKeys() {
   // No authentication or attack is needed to inspect the saved results.
   if (!_scanCardOrShow(5000)) { _goMifareKeys(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareKeys(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareKeys(); return; }
   _mfKeys.fill({});
   _loadSavedKeys();
 
@@ -2542,7 +2542,7 @@ void PN532I2cScreen::_doDictionaryPicker() {
   }
   if (_mfDims(_sak).first == 0) {
     _resumeReadAfterDict = false;
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goMifareAttacks();
     return;
   }
@@ -2600,7 +2600,7 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
 
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifare(); return; }
 
   size_t totalSectors = dims.first;
   int recovered = 0;
@@ -2866,7 +2866,7 @@ void PN532I2cScreen::_saveUltralightDump(const char* typeName) {
   fs::File f = Uni.Storage->open((String(_dumpPath) + "/" + filename).c_str(), "w");
   const bool ok = f && f.write(_dumpImg, _dumpLen) == _dumpLen;
   if (f) f.close();
-  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Save failed", 1600);
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
   render();
 }
 
@@ -2899,7 +2899,7 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
     }
   }
   ProgressView::finish();
-  ShowStatusAction::show(ok ? "Tag written" : "Tag write failed", 1600);
+  ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600);
   return ok;
 }
 
@@ -2937,7 +2937,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     _goUltralightTag();
     return;
   }
@@ -2946,7 +2946,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
     return;
   }
   if (!_readUltralightDump(pages)) {
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Failed");
     _goUltralightTag();
     return;
   }
@@ -2973,7 +2973,7 @@ void PN532I2cScreen::_doUltralightWriteTag() {
   uint8_t dump[540];
   const bool loaded = f.read(dump, sizeof(dump)) == sizeof(dump);
   f.close();
-  if (!loaded) { ShowStatusAction::show("Read file failed"); render(); return; }
+  if (!loaded) { ShowStatusAction::show("Failed to read dump"); render(); return; }
   _writeUltralightNtag215Dump(dump, sizeof(dump));
   _goUltralightTag();
 }
@@ -3016,7 +3016,7 @@ void PN532I2cScreen::_doUltralightEraseTag() {
   }
   ProgressView::finish();
   _hasDump = false; _dumpLen = 0;
-  ShowStatusAction::show(ok ? "Tag erased" : "Erase failed", 1600);
+  ShowStatusAction::show(ok ? "Tag erased" : "Failed", 1600);
   _goUltralightTag();
 }
 
@@ -3024,7 +3024,7 @@ void PN532I2cScreen::_doMifareReadMemory() {
   renderOperationTitle("Read Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
   auto dims = _mfDims(_sak);
-  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag not supported", 1600); _goMifareAdvanced(); return; }
+  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag unsupported", 1600); _goMifareAdvanced(); return; }
 
   // Use the same persisted/default key discovery used by Read Tag.
   _discoverDefaultKeys(true);
@@ -3058,7 +3058,7 @@ void PN532I2cScreen::_doMifareReadMemory() {
 void PN532I2cScreen::_doMifareEditMemory() {
   renderOperationTitle("Edit Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
-  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag not supported"); _goMifareAdvanced(); return; }
+  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag unsupported"); _goMifareAdvanced(); return; }
   int block=InputNumberAction::popup((String("Block (1..")+String(dims.second-1)+")").c_str(),1,dims.second-1,1);
   if (InputNumberAction::wasCancelled()) { _goMifareAdvanced(); return; }
   String hex=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX);
@@ -3072,7 +3072,7 @@ void PN532I2cScreen::_doMifareEditMemory() {
     {0x1A,0x98,0x2C,0x7E,0x45,0x9A}, {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF},
   };
   bool ok=false; for(uint8_t kt=0;kt<2 && !ok;++kt) for(auto &key:keys){ uint8_t uid[7]={},ul=0; if(!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,uid,&ul,250)||ul!=_uidLen||memcmp(uid,_uid,ul)!=0) continue; if(_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,kt,const_cast<uint8_t*>(key))) ok=_nfc->mifareclassic_WriteDataBlock(block,data); if(ok) break; }
-  ShowStatusAction::show(ok?"Block written":"Write failed: missing key",1600); _goMifareAdvanced();
+  ShowStatusAction::show(ok?"Block written":"Failed: missing key",1600); _goMifareAdvanced();
 }
 
 void PN532I2cScreen::_doUltralightReadPages() {
@@ -3080,7 +3080,7 @@ void PN532I2cScreen::_doUltralightReadPages() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     _goUltralightAdvanced();
     return;
   }
@@ -3114,7 +3114,7 @@ void PN532I2cScreen::_doUltralightReadPages() {
         _pushRow("P" + String(page), "Unreadable (key)");
         continue;
       }
-      _pushRow("P" + String(page), "Read failed");
+      _pushRow("P" + String(page), "Failed");
       break;
     }
     _pushRow("P" + String(page), _hexBlock(data, 4));
@@ -3129,7 +3129,7 @@ void PN532I2cScreen::_doUltralightWritePage() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     _goUltralightAdvanced();
     return;
   }
@@ -3162,7 +3162,7 @@ void PN532I2cScreen::_doUltralightWritePage() {
   }
   renderOperationTitle("Edit Memory");
   const bool ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)page, data);
-  ShowStatusAction::show(ok ? "Page written" : "Write failed", 1600);
+  ShowStatusAction::show(ok ? "Page written" : "Failed", 1600);
   _goUltralightAdvanced();
 }
 
@@ -3212,7 +3212,7 @@ void PN532I2cScreen::_doUltralightLockTag() {
       ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)dyn, cur);
     }
   }
-  ShowStatusAction::show(ok ? "Tag locked" : "Lock failed", 1600);
+  ShowStatusAction::show(ok ? "Tag locked" : "Failed", 1600);
   _goUltralightAdvanced();
 }
 
@@ -3240,7 +3240,7 @@ void PN532I2cScreen::_doUltralightSetPassword() {
   uint8_t c0[4] = {}, c1[4] = {};
   if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg, pages, c0) ||
       !_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg + 1, pages, c1)) {
-    ShowStatusAction::show("Read config failed", 1600); _goUltralightAdvanced(); return;
+    ShowStatusAction::show("Failed", 1600); _goUltralightAdvanced(); return;
   }
 
   uint8_t newPwd[4] = {};
@@ -3268,13 +3268,13 @@ void PN532I2cScreen::_doUltralightSetPassword() {
     c1[0] = desiredAccess;
     c0[3] = 4;
     if (!_pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 1), c1)) {
-      renderOperationTitle("Set Password"); ShowStatusAction::show("ACCESS write failed", 1600);
+      renderOperationTitle("Set Password"); ShowStatusAction::show("Failed", 1600);
       _goUltralightAdvanced(); return;
     }
   }
 
   if (!_pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 2), newPwd)) {
-    renderOperationTitle("Set Password"); ShowStatusAction::show("PWD write failed", 1600);
+    renderOperationTitle("Set Password"); ShowStatusAction::show("Failed", 1600);
     _goUltralightAdvanced(); return;
   }
 
@@ -3284,12 +3284,12 @@ void PN532I2cScreen::_doUltralightSetPassword() {
   // first, PWD_AUTH verifies the final protected state instead.
   if (!configLocked &&
       !_pn532Type2WritePage(_nfc, _wire, (uint8_t)cfg, c0)) {
-    renderOperationTitle("Set Password"); ShowStatusAction::show("AUTH0 write failed", 1600);
+    renderOperationTitle("Set Password"); ShowStatusAction::show("Failed", 1600);
     _goUltralightAdvanced(); return;
   }
 
   if (!_pn532UltralightPwdAuth(_nfc, _wire, newPwd)) {
-    renderOperationTitle("Set Password"); ShowStatusAction::show("Password authentication failed", 1600);
+    renderOperationTitle("Set Password"); ShowStatusAction::show("Authentication failed", 1600);
     _goUltralightAdvanced(); return;
   }
 
@@ -3323,7 +3323,7 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   uint8_t c0[4] = {}, c1[4] = {};
   if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg, pages, c0) ||
       !_pn532Type2ReadPageTailSafe(_nfc, _wire, cfg + 1, pages, c1)) {
-    renderOperationTitle("Remove Password"); ShowStatusAction::show("Read config failed", 1600); _goUltralightAdvanced(); return;
+    renderOperationTitle("Remove Password"); ShowStatusAction::show("Failed", 1600); _goUltralightAdvanced(); return;
   }
   if (c1[0] & 0x40) {
     renderOperationTitle("Remove Password"); ShowStatusAction::show("Configuration locked", 2000); _goUltralightAdvanced(); return;
@@ -3342,7 +3342,7 @@ void PN532I2cScreen::_doUltralightRemovePassword() {
   if (ok) ok = _pn532Type2WritePage(_nfc, _wire, (uint8_t)(cfg + 3), defaultPack);
 
   renderOperationTitle("Remove Password");
-  ShowStatusAction::show(ok ? "Password removed" : "Remove failed", 1600);
+  ShowStatusAction::show(ok ? "Password removed" : "Failed", 1600);
   _goUltralightAdvanced();
 }
 
@@ -3357,7 +3357,7 @@ void PN532I2cScreen::_doReadNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goUltralightNdef();
     return;
   }
@@ -3427,7 +3427,7 @@ void PN532I2cScreen::_doReadNdef() {
 
   if (!readOk) {
     delete[] user;
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Failed");
     _goUltralightNdef();
     return;
   }
@@ -3759,7 +3759,7 @@ void PN532I2cScreen::_doReadClassicNdef() {
 
   auto dims = _mfDims(_sak);
   if (dims.first == 0) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goMifareNdef();
     return;
   }
@@ -4008,7 +4008,7 @@ bool PN532I2cScreen::_formatClassic1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
-  ShowStatusAction::show(ok ? "NDEF formatted" : "NDEF format failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
 
   if (ok) {
     // Trailer writes change authentication state. Force a fresh select before
@@ -4028,7 +4028,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
 
   if (!_scanCardOrShow(5000)) return false;
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     return false;
   }
 
@@ -4049,7 +4049,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
     // validated Write NDEF implementation.
     if (!_scanCardOrShow(5000) ||
         !_classicNdefSectors(sectors, sizeof(sectors), sectorCount)) {
-      ShowStatusAction::show("Format verification failed");
+      ShowStatusAction::show("Failed to verify format");
       return false;
     }
   }
@@ -4158,7 +4158,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
   ProgressView::finish();
   delete[] payload;
 
-  ShowStatusAction::show(success ? "NDEF written" : "NDEF write failed", 1600);
+  ShowStatusAction::show(success ? "NDEF written" : "Failed", 1600);
   return success;
 }
 
@@ -4171,7 +4171,7 @@ void PN532I2cScreen::_doEraseClassicNdef() {
     return;
   }
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goMifareNdef();
     return;
   }
@@ -4199,7 +4199,7 @@ void PN532I2cScreen::_doEraseClassicNdef() {
                                 : 128 + (sectors[0] - 32) * 16);
   uint8_t block[16] = {};
   if (!_nfc->mifareclassic_ReadDataBlock(blockNo, block)) {
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Failed");
     _goMifareNdef();
     return;
   }
@@ -4213,7 +4213,7 @@ void PN532I2cScreen::_doEraseClassicNdef() {
   bool success = _nfc->mifareclassic_WriteDataBlock(blockNo, block);
   _hasNdef = false;
   _ndefLen = 0;
-  ShowStatusAction::show(success ? "NDEF erased" : "NDEF erase failed", 1600);
+  ShowStatusAction::show(success ? "NDEF erased" : "Failed", 1600);
   _goMifareNdef();
 }
 
@@ -4260,7 +4260,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
 
   uint16_t authPages = 0; const char* authType = nullptr;
   if (!_detectUltralightTag(authPages, authType)) {
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     return false;
   }
   if (!_pn532EnsureUltralightAuth(_nfc, _wire, authType, authPages, false)) {
@@ -4349,7 +4349,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
   ProgressView::finish();
   delete[] payload;
 
-  ShowStatusAction::show(success ? "NDEF written" : "NDEF write failed", 1600);
+  ShowStatusAction::show(success ? "NDEF written" : "Failed", 1600);
   return success;
 }
 
@@ -4638,7 +4638,7 @@ void PN532I2cScreen::_doSaveNdef() {
 
   render();
   fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) { ShowStatusAction::show("Save failed"); render(); return; }
+  if (!f) { ShowStatusAction::show("Failed"); render(); return; }
 
   const size_t written = f.write(_ndefBuf, _ndefLen);
   f.close();
@@ -4654,7 +4654,7 @@ void PN532I2cScreen::_doSaveNdef() {
   }
 
   // Failure keeps the preview/result available for another attempt.
-  ShowStatusAction::show("Save failed");
+  ShowStatusAction::show("Failed");
   _state = STATE_NDEF_RESULT;
   render();
 }
@@ -4742,7 +4742,7 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
 
   fs::File f = Uni.Storage->open(e.path.c_str(), "r");
   if (!f) {
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Failed");
     _doWriteNdefFromFile();
     return;
   }
@@ -4760,7 +4760,7 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
   f.close();
 
   if (got != len) {
-    ShowStatusAction::show("Read failed");
+    ShowStatusAction::show("Failed");
     _doWriteNdefFromFile();
     return;
   }
@@ -4779,7 +4779,7 @@ void PN532I2cScreen::_doEraseNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goUltralightNdef();
     return;
   }
@@ -4807,7 +4807,7 @@ void PN532I2cScreen::_doEraseNdef() {
   const bool success = _pn532Type2WritePage(_nfc, _wire, 4, emptyNdef);
 
   renderOperationTitle("Erase NDEF");
-  ShowStatusAction::show(success ? "NDEF erased" : "NDEF erase failed", 1600);
+  ShowStatusAction::show(success ? "NDEF erased" : "Failed", 1600);
   _goUltralightNdef();
 }
 
@@ -4819,7 +4819,7 @@ void PN532I2cScreen::_doFormatNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported");
+    ShowStatusAction::show("Tag unsupported");
     _goUltralightNdef();
     return;
   }
@@ -4842,7 +4842,7 @@ void PN532I2cScreen::_doFormatNdef() {
       return;
     }
     if (!_pn532Type2WritePage(_nfc, _wire, 3, desired)) {
-      ShowStatusAction::show("CC write failed");
+      ShowStatusAction::show("Failed to write CC");
       _goUltralightNdef();
       return;
     }
@@ -4851,7 +4851,7 @@ void PN532I2cScreen::_doFormatNdef() {
   const uint8_t emptyNdef[4] = {0x03, 0x00, 0xFE, 0x00};
   const bool ok = _pn532Type2WritePage(_nfc, _wire, 4, emptyNdef);
   renderOperationTitle("Format NDEF");
-  ShowStatusAction::show(ok ? "NDEF formatted" : "Format failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   _goUltralightNdef();
 }
 
@@ -5077,7 +5077,7 @@ void PN532I2cScreen::_doDetectMagic() {
 
   const uint8_t sak = pn532_packetbuffer[11];
   if (sak != 0x09 && sak != 0x08 && sak != 0x18) {
-    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
+    _magicLog.addLine("Tag unsupported", TFT_DARKGREY);
     _magicDetectDone = true;
     render();
     return;
@@ -5131,7 +5131,7 @@ void PN532I2cScreen::_doEditUid() {
 
   const MagicCardType magic = _detectMagicType();
   if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
-    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 2000);
+    ShowStatusAction::show("Tag not Gen1A/Gen3", 2000);
     _goMifareAdvanced();
     return;
   }
@@ -5139,7 +5139,7 @@ void PN532I2cScreen::_doEditUid() {
   // _detectMagicType() performs fresh activations. Read the currently presented
   // UID again so the editor/preview always reflects the tag we are about to edit.
   if (!_resetAndReselect()) {
-    ShowStatusAction::show("Edit UID failed");
+    ShowStatusAction::show("Failed");
     _goMifareAdvanced();
     return;
   }
@@ -5147,7 +5147,7 @@ void PN532I2cScreen::_doEditUid() {
   if (!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
                                  currentUid, &currentUidLen, 300) ||
       (currentUidLen != 4 && currentUidLen != 7)) {
-    ShowStatusAction::show("Edit UID failed");
+    ShowStatusAction::show("Failed");
     _goMifareAdvanced();
     return;
   }
@@ -5155,7 +5155,7 @@ void PN532I2cScreen::_doEditUid() {
   uint8_t block0[16] = {};
   if (magic == MagicCardType::GEN1A) {
     if (currentUidLen != 4 || !_resetAndReselect()) {
-      ShowStatusAction::show("Edit UID failed");
+      ShowStatusAction::show("Failed");
       _goMifareAdvanced();
       return;
     }
@@ -5203,7 +5203,7 @@ void PN532I2cScreen::_doEditUid() {
     _nfcWriteReg(_nfc, _wire, 0x6303, 0x80);
     _resetAndReselect();
     if (!block0Ok) {
-      ShowStatusAction::show("Edit UID failed");
+      ShowStatusAction::show("Failed");
       _goMifareAdvanced();
       return;
     }
@@ -5285,7 +5285,7 @@ void PN532I2cScreen::_doEditUid() {
   // especially for Gen1A: block0 belongs to the tag captured above and must
   // never be reused if the user swapped cards while the editor/preview was open.
   if (!_nfc->SAMConfig()) {
-    ShowStatusAction::show("Edit UID failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     _goMifareAdvanced();
     return;
   }
@@ -5296,14 +5296,14 @@ void PN532I2cScreen::_doEditUid() {
       verifyUidLen != currentUidLen ||
       memcmp(verifyUid, currentUid, currentUidLen) != 0 ||
       _detectMagicType() != magic) {
-    ShowStatusAction::show("Edit UID failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     _goMifareAdvanced();
     return;
   }
 
   const bool ok = _writeMagicUid(magic, newUid, newUidLen,
                                  magic == MagicCardType::GEN1A ? block0 : nullptr);
-  ShowStatusAction::show(ok ? "UID edited" : "Edit UID failed", 1600);
+  ShowStatusAction::show(ok ? "UID edited" : "Failed", 1600);
   _goMifareAdvanced();
 }
 
@@ -5345,7 +5345,7 @@ void PN532I2cScreen::_doGen3LockUid() {
   static const uint8_t cmd[] = {0x90, 0xFD, 0x11, 0x11, 0x00};
   uint8_t resp[8]; uint8_t rlen = sizeof(resp);
   bool locked = _nfcDataExch(_nfc, _wire, cmd, sizeof(cmd), resp, rlen);
-  ShowStatusAction::show(locked ? "Gen3 UID locked" : "Lock failed", 1600);
+  ShowStatusAction::show(locked ? "Gen3 UID locked" : "Failed", 1600);
   _goMifareAdvanced();
 }
 
@@ -5394,7 +5394,7 @@ void PN532I2cScreen::_doWriteDumpFileSelected(uint8_t fileIndex) {
   }
   if (!Uni.Storage) { ShowStatusAction::show("Storage unavailable"); _goMifareTag(); return; }
   fs::File f = Uni.Storage->open(e.path.c_str(), "r");
-  if (!f) { ShowStatusAction::show("Open failed"); _goMifareTag(); return; }
+  if (!f) { ShowStatusAction::show("Failed to open file"); _goMifareTag(); return; }
   size_t len = f.size();
   if (len != 320 && len != 1024 && len != 4096) {
     f.close(); ShowStatusAction::show("Unsupported dump size"); _goMifareTag(); return;
@@ -5402,7 +5402,7 @@ void PN532I2cScreen::_doWriteDumpFileSelected(uint8_t fileIndex) {
   uint8_t* dump = (uint8_t*)malloc(len);
   if (!dump) { f.close(); ShowStatusAction::show("Out of memory"); _goMifareTag(); return; }
   size_t got = f.read(dump, len); f.close();
-  if (got != len) { free(dump); ShowStatusAction::show("Read failed"); _goMifareTag(); return; }
+  if (got != len) { free(dump); ShowStatusAction::show("Failed"); _goMifareTag(); return; }
 
   // A raw MIFARE Classic dump carries the original 4-byte UID in block 0.
   // Trust it only when the manufacturer-block BCC is valid; otherwise keep
@@ -5570,7 +5570,7 @@ bool PN532I2cScreen::_doWriteDumpToTag(const uint8_t* dump, size_t len,
       if (!ok) {
         ProgressView::finish();
         Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-        char err[32]; snprintf(err, sizeof(err), "Write failed: block %u", (unsigned)block);
+        char err[32]; snprintf(err, sizeof(err), "Failed to write block %u", (unsigned)block);
         ShowStatusAction::show(err);
         render();
         return false;
@@ -5586,7 +5586,7 @@ bool PN532I2cScreen::_doWriteDumpToTag(const uint8_t* dump, size_t len,
     Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
     ShowStatusAction::show("Writing source UID...", 0);
     if (!_writeMagicUid(magic, sourceUidCopy, sourceUidLen, dump)) {
-      ShowStatusAction::show("UID write failed");
+      ShowStatusAction::show("Failed to write UID");
       render();
       return false;
     }
@@ -5607,10 +5607,10 @@ void PN532I2cScreen::_doEraseTag() {
   renderOperationTitle("Erase Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareTag(); return; }
   _discoverDefaultKeys(true);
   if (!_hasReadableKeyForEverySector()) {
-    ShowStatusAction::show("Erase failed: missing key"); _goMifareTag(); return;
+    ShowStatusAction::show("Failed: missing key"); _goMifareTag(); return;
   }
 
   uint8_t zero[16] = {};
@@ -5654,7 +5654,7 @@ void PN532I2cScreen::_doEraseTag() {
       if (!ok) {
         ProgressView::finish();
         Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-        char err[32]; snprintf(err, sizeof(err), "Erase failed: block %u", (unsigned)block);
+        char err[32]; snprintf(err, sizeof(err), "Failed to erase block %u", (unsigned)block);
         ShowStatusAction::show(err);
         _goMifareTag();
         return;
@@ -5699,7 +5699,7 @@ void PN532I2cScreen::_doEraseTag() {
 
     if (!verifyZeroBlock(1) || !verifyZeroBlock(2)) {
       Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-      ShowStatusAction::show("Erase failed: MAD remains");
+      ShowStatusAction::show("Failed: MAD remains");
       _goMifareTag();
       return;
     }
@@ -5744,7 +5744,7 @@ void PN532I2cScreen::_doSaveDump() {
   String path = String(_dumpPath) + "/" + filename;
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) { ShowStatusAction::show("Save failed"); render(); return; }
+  if (!f) { ShowStatusAction::show("Failed"); render(); return; }
   if (_dumpLen == 0 || _dumpLen > sizeof(_dumpImg)) {
     f.close();
     ShowStatusAction::show("Invalid dump size");
@@ -5758,7 +5758,7 @@ void PN532I2cScreen::_doSaveDump() {
     String msg = String("Saved: ") + filename;
     ShowStatusAction::show(msg.c_str(), 1600);
   } else {
-    ShowStatusAction::show("Save failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
   }
   render();
 }

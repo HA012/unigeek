@@ -190,7 +190,7 @@ bool ChameleonMfcNdefScreen::_scanClassic() {
   }
   if (!c.mf1Support()) {
     c.setMode(0);
-    ShowStatusAction::show("Tag not supported", 1200);
+    ShowStatusAction::show("Tag unsupported", 1200);
     return false;
   }
   _sak = sak;
@@ -525,7 +525,7 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
-  ShowStatusAction::show(ok ? "NDEF formatted" : "NDEF format failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   return ok;
 }
 
@@ -606,7 +606,7 @@ bool ChameleonMfcNdefScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLe
   ProgressView::finish();
   free(payload);
   c.setMode(0); _running = false;
-  ShowStatusAction::show(ok ? "NDEF written" : "NDEF write failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF written" : "Failed", 1600);
   return ok;
 }
 
@@ -629,7 +629,7 @@ void ChameleonMfcNdefScreen::_doErase() {
   }
   c.setMode(0); _running = false;
   _hasNdef = false; _ndefLen = 0;
-  ShowStatusAction::show(ok ? "NDEF erased" : "NDEF erase failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF erased" : "Failed", 1600);
   _goMenu();
 }
 
@@ -731,7 +731,7 @@ void ChameleonMfcNdefScreen::_showActions() {
 
 void ChameleonMfcNdefScreen::_saveCurrent() {
   if (!_hasNdef || !_ndefLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Save failed", 1600); render(); return;
+    ShowStatusAction::show("Failed", 1600); render(); return;
   }
   Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc"); Uni.Storage->makeDir(NDEF_DIR);
   String base = _uidString(); base.replace(":", ""); if (!base.length()) base = "unknown"; base += "_mifare";
@@ -748,7 +748,7 @@ void ChameleonMfcNdefScreen::_saveCurrent() {
   fs::File f = Uni.Storage->open(path.c_str(), "w"); bool ok = false;
   if (f) { ok = f.write(_ndef, _ndefLen) == _ndefLen; f.close(); }
   render();
-  ShowStatusAction::show(ok ? "NDEF saved" : "Save failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF saved" : "Failed", 1600);
   if (ok) { _goMenu(); return; }
   render();
 }
@@ -816,6 +816,6 @@ void ChameleonMfcNdefScreen::_selectFile(uint8_t index) {
   }
   const size_t len = f.size(); uint8_t b[MAX_NDEF_BYTES] = {};
   const bool ok = f.read(b, len) == (int)len; f.close();
-  if (!ok) { ShowStatusAction::show("Read failed", 1600); _loadFilePicker(); return; }
+  if (!ok) { ShowStatusAction::show("Failed to read NDEF", 1600); _loadFilePicker(); return; }
   _showWritePreview(b, len, true);
 }

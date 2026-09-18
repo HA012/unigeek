@@ -157,7 +157,7 @@ void ChameleonMfcDictScreen::onItemSelected(uint8_t index) {
       return;
     }
     if (!_loadFileKeys(e.path.c_str())) {
-      ShowStatusAction::show("Load keys failed", 1200);
+      ShowStatusAction::show("Failed to load keys", 1200);
       render();
       return;
     }

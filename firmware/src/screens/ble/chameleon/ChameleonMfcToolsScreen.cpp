@@ -119,7 +119,7 @@ void ChameleonMfcToolsScreen::_writeFromSlot() {
   }
   if (!(hfType == 1001)) {
     render();
-    ShowStatusAction::show("Tag not supported", 1600);
+    ShowStatusAction::show("Tag unsupported", 1600);
     render();
     return;
   }
@@ -197,7 +197,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   if (!keysOk) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Erase failed: missing key", 1600);
+    ShowStatusAction::show("Failed: missing key", 1600);
     render();
     return;
   }
@@ -231,7 +231,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
 
   if (restoreMode) c.setMode(previousMode);
   render();
-  ShowStatusAction::show(complete ? "Tag erased" : "Erase failed", 1600);
+  ShowStatusAction::show(complete ? "Tag erased" : "Failed", 1600);
   render();
 }
 

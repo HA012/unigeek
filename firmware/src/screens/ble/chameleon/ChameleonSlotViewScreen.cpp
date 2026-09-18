@@ -17,14 +17,14 @@ void ChameleonSlotViewScreen::_addRow(const char* label, const String& value) {
 void ChameleonSlotViewScreen::_runHF() {
   auto& c = ChameleonClient::get();
   if (!c.setActiveSlot(_slot)) {
-    _addRow("Error", "Slot select failed");
+    _addRow("Error", "Failed");
     return;
   }
   delay(50);  // let firmware finish the slot switch before the next request
 
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) {
-    _addRow("Error", "Type read failed");
+    _addRow("Error", "Failed");
     return;
   }
   const uint16_t t = types[_slot].hfType;
@@ -118,11 +118,11 @@ void ChameleonSlotViewScreen::_runHF() {
 
 void ChameleonSlotViewScreen::_runLF() {
   auto& c = ChameleonClient::get();
-  if (!c.setActiveSlot(_slot)) { _addRow("Error", "Slot select failed"); return; }
+  if (!c.setActiveSlot(_slot)) { _addRow("Error", "Failed"); return; }
   delay(50);
 
   ChameleonClient::SlotTypes types[8] = {};
-  if (!c.getSlotTypes(types)) { _addRow("Error", "Type read failed"); return; }
+  if (!c.getSlotTypes(types)) { _addRow("Error", "Failed"); return; }
   const uint16_t t = types[_slot].lfType;
   _addRow("Type", ChameleonClient::tagTypeName(t));
   if (t == 0) { _addRow("Data", "(empty)"); return; }

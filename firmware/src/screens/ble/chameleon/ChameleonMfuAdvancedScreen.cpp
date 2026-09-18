@@ -93,7 +93,7 @@ DetectResult _detect(ChameleonClient& c, ChameleonClient::MfuTagInfo& info) {
 static bool handleDetectFailure(DetectResult r) {
   if (r == DetectResult::OK) return false;
   if (r == DetectResult::NO_TAG) ShowStatusAction::show("Tag not detected", 1200);
-  else if (r == DetectResult::UNSUPPORTED) ShowStatusAction::show("Tag not supported", 1200);
+  else if (r == DetectResult::UNSUPPORTED) ShowStatusAction::show("Tag unsupported", 1200);
   return true;
 }
 
@@ -156,7 +156,7 @@ void ChameleonMfuAdvancedScreen::_writePage() {
   ChameleonClient::MfuTagInfo info = {};
   const DetectResult detected = _detect(c, info);
   if (handleDetectFailure(detected)) { if (restoreMode) c.setMode(previousMode); render(); return; }
-  if (info.pages <= 4) { if (restoreMode) c.setMode(previousMode); render(); ShowStatusAction::show("Tag not supported", 1200); return; }
+  if (info.pages <= 4) { if (restoreMode) c.setMode(previousMode); render(); ShowStatusAction::show("Tag unsupported", 1200); return; }
   const int page = InputNumberAction::popup((String("Page (4..") + String(info.pages - 1) + ")").c_str(), 4, info.pages - 1, 4);
   if (InputNumberAction::wasCancelled() || !_confirmSensitiveWrite(info.type, (uint16_t)page)) { if (restoreMode) c.setMode(previousMode); render(); return; }
   uint8_t data[4] = {}; if (!_readHex4("Page data (8 hex)", data)) { if (restoreMode) c.setMode(previousMode); render(); return; }
@@ -164,7 +164,7 @@ void ChameleonMfuAdvancedScreen::_writePage() {
   if (!ChameleonMfuAuthUtils::ensureForRange(c, info, page, page, false, pwd, usePwd)) { if (restoreMode) c.setMode(previousMode); render(); return; }
   const bool ok = usePwd ? c.mfuWritePageSession((uint8_t)page, data)
                          : c.mfuWritePage((uint8_t)page, data);
-  if (restoreMode) c.setMode(previousMode); renderOperationChrome("Edit Memory"); ShowStatusAction::show(ok ? "Page written" : "Write failed", 1600);
+  if (restoreMode) c.setMode(previousMode); renderOperationChrome("Edit Memory"); ShowStatusAction::show(ok ? "Page written" : "Failed", 1600);
 }
 
 void ChameleonMfuAdvancedScreen::_lockTag() {
@@ -214,7 +214,7 @@ void ChameleonMfuAdvancedScreen::_lockTag() {
                   : c.mfuWritePage((uint8_t)dyn, cur);
     }
   }
-  if (restoreMode) c.setMode(previousMode); renderOperationChrome("Lock Tag"); ShowStatusAction::show(ok ? "Tag locked" : "Lock failed", 1600);
+  if (restoreMode) c.setMode(previousMode); renderOperationChrome("Lock Tag"); ShowStatusAction::show(ok ? "Tag locked" : "Failed", 1600);
 }
 
 void ChameleonMfuAdvancedScreen::_setPassword() {
@@ -234,7 +234,7 @@ void ChameleonMfuAdvancedScreen::_setPassword() {
   uint8_t c0[4]={}, c1[4]={};
   const bool r0=usePwd?c.mfuReadPageSession((uint8_t)cfg,c0):c.mfuReadPage((uint8_t)cfg,c0);
   const bool r1=usePwd?c.mfuReadPageSession((uint8_t)(cfg+1),c1):c.mfuReadPage((uint8_t)(cfg+1),c1);
-  if(!r0||!r1){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Read config failed", 1600);render();return;}
+  if(!r0||!r1){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Failed", 1600);render();return;}
 
   uint8_t newPwd[4]={};
   if (!ChameleonMfuAuthUtils::promptPassword(newPwd, "New Password")) { if (restoreMode)c.setMode(previousMode); render(); return; }
@@ -255,23 +255,23 @@ void ChameleonMfuAdvancedScreen::_setPassword() {
     c1[0]=desiredAccess; c0[3]=4;
     const bool ok=usePwd?c.mfuWritePageSession((uint8_t)(cfg+1),c1)
                         :c.mfuWritePage((uint8_t)(cfg+1),c1);
-    if(!ok){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("ACCESS write failed",1600);return;}
+    if(!ok){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Failed",1600);return;}
   }
 
   if(!(usePwd?c.mfuWritePageSession((uint8_t)(cfg+2),newPwd)
              :c.mfuWritePage((uint8_t)(cfg+2),newPwd))){
-    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("PWD write failed",1600);return;
+    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Failed",1600);return;
   }
 
   // Match PN532: commit AUTH0 before verifying the new credential, then
   // authenticate against the final protected state.
   if(!configLocked &&
      !c.mfuWritePageSession((uint8_t)cfg,c0)){
-    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("AUTH0 write failed",1600);return;
+    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Failed",1600);return;
   }
 
   if(!c.mfuPwdAuth(newPwd,nullptr)){
-    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Password authentication failed",1600);return;
+    if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Authentication failed",1600);return;
   }
 
   if(restoreMode)c.setMode(previousMode);
@@ -294,7 +294,7 @@ void ChameleonMfuAdvancedScreen::_removePassword() {
   uint8_t c0[4]={},c1[4]={};
   const bool r0=usePwd?c.mfuReadPageSession((uint8_t)cfg,c0):c.mfuReadPage((uint8_t)cfg,c0);
   const bool r1=usePwd?c.mfuReadPageSession((uint8_t)(cfg+1),c1):c.mfuReadPage((uint8_t)(cfg+1),c1);
-  if(!r0||!r1){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Read config failed", 1600);render();return;}
+  if(!r0||!r1){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Failed", 1600);render();return;}
   if(c1[0]&0x40){if(restoreMode)c.setMode(previousMode);render();ShowStatusAction::show("Configuration locked", 2000);render();return;}
 
   c1[0]&=(uint8_t)~0x87u; c0[3]=0xFF;
@@ -304,7 +304,7 @@ void ChameleonMfuAdvancedScreen::_removePassword() {
   if(ok) ok=usePwd?c.mfuWritePageSession((uint8_t)cfg,c0):c.mfuWritePage((uint8_t)cfg,c0);
   if(ok) ok=usePwd?c.mfuWritePageSession((uint8_t)(cfg+2),defaultPwd):c.mfuWritePage((uint8_t)(cfg+2),defaultPwd);
   if(ok) ok=usePwd?c.mfuWritePageSession((uint8_t)(cfg+3),defaultPack):c.mfuWritePage((uint8_t)(cfg+3),defaultPack);
-  if(restoreMode)c.setMode(previousMode); renderOperationChrome("Remove Password"); ShowStatusAction::show(ok?"Password removed":"Remove failed", 1600);
+  if(restoreMode)c.setMode(previousMode); renderOperationChrome("Remove Password"); ShowStatusAction::show(ok?"Password removed":"Failed", 1600);
 }
 
 void ChameleonMfuAdvancedScreen::onItemSelected(uint8_t index) {

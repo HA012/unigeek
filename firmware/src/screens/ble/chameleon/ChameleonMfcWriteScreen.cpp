@@ -420,7 +420,7 @@ void ChameleonMfcWriteScreen::_write() {
     _freeDump(); Screen.goBack(); return;
   }
   _buildSourcePreview(); render();
-  ShowStatusAction::show(uidWriteFailed ? "UID write failed" : "Tag write failed", 1600); render();
+  ShowStatusAction::show(uidWriteFailed ? "Failed to write UID" : "Failed", 1600); render();
 }
 
 void ChameleonMfcWriteScreen::onInit() {

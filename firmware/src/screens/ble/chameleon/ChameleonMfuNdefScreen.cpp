@@ -142,7 +142,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -181,7 +181,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   if (!ok) {
     free(img);
     img = nullptr;
-    ShowStatusAction::show("Read failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     return false;
   }
 
@@ -272,7 +272,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -351,9 +351,9 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
 
   operationTitle(opTitle);
   if (strcmp(opTitle, "Erase NDEF") == 0)
-    ShowStatusAction::show(ok ? "NDEF erased" : "NDEF erase failed", 1600);
+    ShowStatusAction::show(ok ? "NDEF erased" : "Failed", 1600);
   else
-    ShowStatusAction::show(ok ? "NDEF written" : "NDEF write failed", 1600);
+    ShowStatusAction::show(ok ? "NDEF written" : "Failed", 1600);
   return ok;
 }
 
@@ -376,7 +376,7 @@ void ChameleonMfuNdefScreen::format() {
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
     _running = false;
     goMenu();
     return;
@@ -418,7 +418,7 @@ void ChameleonMfuNdefScreen::format() {
 
   if (restoreMode) c.setMode(previousMode);
   operationTitle("Format NDEF");
-  ShowStatusAction::show(ok ? "NDEF formatted" : "Format failed", 1600);
+  ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   _running = false;
   goMenu();
 }

@@ -82,12 +82,12 @@ void ChameleonVikingScreen::_doLoadSlot() {
     if (n == 10) Achievement.unlock("chameleon_clone_10");
   }
   _state = STATE_RESULT; _needsDraw = true; render();
-  ShowStatusAction::show(ok ? "Loaded to slot" : "Load to slot failed", 1200); render();
+  ShowStatusAction::show(ok ? "Loaded to slot" : "Failed", 1200); render();
 }
 
 void ChameleonVikingScreen::_saveToFile() {
   if (!Uni.Storage || !Uni.Storage->isAvailable() || !_uidLen) {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
     return;
   }
@@ -126,7 +126,7 @@ void ChameleonVikingScreen::_saveToFile() {
     String msg = String("Saved: ") + filename;
     ShowStatusAction::show(msg.c_str(), 1600);
   } else {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
   }
   render();
 }
@@ -145,7 +145,7 @@ void ChameleonVikingScreen::_doT5577() {
   if (restoreMode) c.setMode(previousMode);
   if (ok) { int n = Achievement.inc("chameleon_t5577_write"); if (n == 1) Achievement.unlock("chameleon_t5577_write"); }
   _state = STATE_RESULT; _needsDraw = true; render();
-  ShowStatusAction::show(ok ? "Tag written" : "Tag write failed", 1600); render();
+  ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
 }
 
 void ChameleonVikingScreen::_showActions() {

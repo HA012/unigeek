@@ -69,7 +69,7 @@ void ChameleonMfkey32Screen::_dumpToSd() {
   snprintf(path, sizeof(path), "/unigeek/nfc/mfkey32/log_%lu.txt",
            (unsigned long)millis());
   fs::File f = Uni.Storage->open(path, "w");
-  if (!f) { ShowStatusAction::show("Open failed", 1200); render(); return; }
+  if (!f) { ShowStatusAction::show("Failed", 1200); render(); return; }
 
   // Each record is 18 bytes: block, flags, uid(4), nt(4), nr(4), ar(4)
   uint32_t cap = count > 200 ? 200 : count;

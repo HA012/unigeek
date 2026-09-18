@@ -314,9 +314,7 @@ public:
   bool getJablotronSlot(uint8_t id[5], uint8_t* idLen);
 
   static uint16_t inferHFTagType(uint8_t sak, const uint8_t atqa[2]);
-  bool cloneHF(uint8_t slot, uint16_t tagType,
-               const uint8_t* uid, uint8_t uidLen,
-               const uint8_t atqa[2], uint8_t sak);
+
 
   static const char* tagTypeName(uint16_t type);
 

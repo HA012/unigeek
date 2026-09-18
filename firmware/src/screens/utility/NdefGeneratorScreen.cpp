@@ -410,7 +410,7 @@ bool NdefGeneratorScreen::_saveNdef(const uint8_t* ndef, size_t ndefLen,
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed");
     return false;
   }
 
@@ -418,7 +418,7 @@ bool NdefGeneratorScreen::_saveNdef(const uint8_t* ndef, size_t ndefLen,
   f.close();
 
   if (written != ndefLen) {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed");
     return false;
   }
 

@@ -254,7 +254,7 @@ void NfcDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
 
   fs::File f = Uni.Storage->open(e.path.c_str(), "r");
   if (!f) {
-    ShowStatusAction::show("Read failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _openNdefFiles();
     return;
   }
@@ -271,7 +271,7 @@ void NfcDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
   const size_t got = f.read(ndef, len);
   f.close();
   if (got != len) {
-    ShowStatusAction::show("Read failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _openNdefFiles();
     return;
   }
@@ -525,14 +525,14 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
   const size_t written = f.write(image, imageLen);
   f.close();
   if (written != imageLen) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
@@ -604,7 +604,7 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
     free(image);
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
@@ -613,7 +613,7 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
   free(image);
 
   if (written != imageLen) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
@@ -686,10 +686,10 @@ bool NfcDumpGeneratorScreen::_saveNtag21x(
   }
 
   fs::File f=Uni.Storage->open(path.c_str(),"w");
-  if (!f) { free(image); ShowStatusAction::show("Save failed",1500); return false; }
+  if (!f) { free(image); ShowStatusAction::show("Failed",1500); return false; }
   const size_t written=f.write(image,imageLen);
   f.close(); free(image);
-  if (written!=imageLen) { ShowStatusAction::show("Save failed",1500); return false; }
+  if (written!=imageLen) { ShowStatusAction::show("Failed",1500); return false; }
 
   const int slash=path.lastIndexOf('/');
   const String saved=(slash>=0)?path.substring(slash+1):path;

@@ -160,7 +160,7 @@ void ChameleonMfcScreen::_callAuth() {
     c.setMode(0);
     _running = false;
     render();
-    ShowStatusAction::show("Tag not supported", 1200);
+    ShowStatusAction::show("Tag unsupported", 1200);
     Screen.goBack();
     return;
   }
@@ -771,7 +771,7 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
   if (ok) ok = c.setSlotEnable(slot, 2, true);
   restoreContext();
   render();
-  ShowStatusAction::show(ok ? "Loaded to slot" : "Load to slot failed", 1600);
+  ShowStatusAction::show(ok ? "Loaded to slot" : "Failed", 1600);
   render();
 }
 
@@ -803,7 +803,7 @@ void ChameleonMfcScreen::_showDumpActions() {
 
 void ChameleonMfcScreen::_saveDump() {
   if (!_dump || !_dumpLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
     return;
   }
@@ -849,7 +849,7 @@ void ChameleonMfcScreen::_saveDump() {
     render();
     return;
   } else {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
   }
   render();
 }
@@ -1601,7 +1601,7 @@ void ChameleonMfcScreen::onItemSelected(uint8_t index) {
         return;
       }
       if (!_loadDictFile(e.path.c_str())) {
-        ShowStatusAction::show("Load keys failed", 1200);
+        ShowStatusAction::show("Failed to load keys", 1200);
         render();
         return;
       }

@@ -164,38 +164,6 @@ void ChameleonHFScreen::_doScan() {
   render();
 }
 
-void ChameleonHFScreen::_doClone() {
-  auto& lcd = Uni.Lcd;
-  int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Cloning to slot...", bx + bw / 2, by + bh / 2 - 8);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString("Please wait", bx + bw / 2, by + bh / 2 + 8);
-
-  auto& c = ChameleonClient::get();
-  c.getActiveSlot(&_activeSlot);
-  uint16_t tagType = _tagType ? _tagType : ChameleonClient::inferHFTagType(_sak, _atqa);
-  bool ok = c.cloneHF(_activeSlot, tagType, _uid, _uidLen, _atqa, _sak);
-
-  _state = STATE_RESULT;
-  _needsDraw = true;
-  render();
-
-  if (ok) {
-    int n = Achievement.inc("chameleon_clone");
-    if (n == 1)  Achievement.unlock("chameleon_clone");
-    if (n == 3)  Achievement.unlock("chameleon_clone_3");
-    if (n == 10) Achievement.unlock("chameleon_clone_10");
-    ShowStatusAction::show("Clone OK", 1200);
-  } else {
-    ShowStatusAction::show("Clone failed", 1200);
-  }
-  render();
-}
-
 void ChameleonHFScreen::onInit() {
   _state     = STATE_IDLE;
   _needsDraw = true;

@@ -464,7 +464,7 @@ void ChameleonSlotContentScreen::_run() {
                             _dump + (size_t)done * 4u, &st, &rlen)) {
         ProgressView::finish();
         char diag[36];
-        snprintf(diag, sizeof(diag), "Page %u failed", (unsigned)done);
+        snprintf(diag, sizeof(diag), "Failed to read page %u", (unsigned)done);
         _addRow("Error", diag);
         _freeDump();
         return;
@@ -501,7 +501,7 @@ void ChameleonSlotContentScreen::_run() {
     if (!c.mf1GetBlockData((uint8_t)b, 1, block, &st, &rlen)) {
       ProgressView::finish();
       char diag[36];
-      snprintf(diag, sizeof(diag), "Block %u failed", (unsigned)b);
+      snprintf(diag, sizeof(diag), "Failed to read block %u", (unsigned)b);
       _addRow("Error", diag);
       _freeDump();
       return;

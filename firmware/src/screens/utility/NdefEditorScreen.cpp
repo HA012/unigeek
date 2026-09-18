@@ -243,7 +243,7 @@ void NdefEditorScreen::_selectFile(uint8_t index) {
 
   fs::File f = Uni.Storage->open(e.path.c_str(), "r");
   if (!f) {
-    ShowStatusAction::show("Read failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _openFiles();
     return;
   }
@@ -259,7 +259,7 @@ void NdefEditorScreen::_selectFile(uint8_t index) {
   const size_t got = f.read(_ndef, len);
   f.close();
   if (got != len) {
-    ShowStatusAction::show("Read failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _openFiles();
     return;
   }
@@ -655,14 +655,14 @@ bool NdefEditorScreen::_saveEdited(const uint8_t* ndef, size_t len) {
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
   const size_t written = f.write(ndef, len);
   f.close();
   if (written != len) {
-    ShowStatusAction::show("Save failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
