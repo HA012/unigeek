@@ -354,45 +354,58 @@ void ChameleonSlotContentScreen::_run() {
     }
     delay(50);
 
+    auto hexData = [](const uint8_t* d, uint8_t n) {
+      String v; char h[3];
+      for (uint8_t i = 0; i < n; ++i) { snprintf(h, sizeof(h), "%02X", d[i]); v += h; }
+      return v;
+    };
+
     if (lfType == 100) {
-      uint8_t uid[5] = {};
-      if (c.getEM410XSlot(uid)) {
+      uint8_t d[5] = {};
+      if (c.getEM410XSlot(d)) {
         char hex[20];
-        snprintf(hex, sizeof(hex), "%02X:%02X:%02X:%02X:%02X",
-                 uid[0], uid[1], uid[2], uid[3], uid[4]);
-        _addRow("UID", hex);
-      } else {
-        _addRow("UID", "(unavailable)");
-      }
+        snprintf(hex, sizeof(hex), "%02X:%02X:%02X:%02X:%02X", d[0],d[1],d[2],d[3],d[4]);
+        uint64_t dec = 0; for (uint8_t b : d) dec = (dec << 8) | b;
+        _addRow("UID (Hex)", hex);
+        char decText[24]; snprintf(decText, sizeof(decText), "%llu", (unsigned long long)dec);
+        _addRow("UID (Dec)", decText);
+      } else _addRow("UID", "(unavailable)");
     } else if (lfType == 200) {
-      uint8_t payload[13] = {};
-      uint8_t payloadLen = 0;
-      if (c.getHIDProxSlot(payload, &payloadLen) && payloadLen) {
-        String value;
-        for (uint8_t i = 0; i < payloadLen; ++i) {
-          char b[3]; snprintf(b, sizeof(b), "%02X", payload[i]);
-          value += b;
-        }
-        _addRow("Payload", value);
-      } else {
-        _addRow("Payload", "(unavailable)");
-      }
+      uint8_t d[13] = {}, n = 0;
+      if (c.getHIDProxSlot(d, &n) && n) _addRow("Data", hexData(d, n));
+      else _addRow("Data", "(unavailable)");
+    } else if (lfType == 201) {
+      uint8_t d[16] = {}, n = 0;
+      if (c.getIoProxSlot(d, &n) && n >= 4) {
+        _addRow("Facility", String(d[1]));
+        _addRow("Card Number", String(((uint16_t)d[2] << 8) | d[3]));
+      } else _addRow("Data", "(unavailable)");
+    } else if (lfType == 170) {
+      uint8_t d[4] = {}, n = 0;
+      if (c.getVikingSlot(d, &n) && n) _addRow("Data", hexData(d, n));
+      else _addRow("Data", "(unavailable)");
+    } else if (lfType == 150) {
+      uint8_t d[8] = {}, n = 0;
+      if (c.getPACSlot(d, &n) && n) {
+        String value; bool printable = true;
+        for (uint8_t i = 0; i < n; ++i) if (d[i] < 32 || d[i] > 126) { printable = false; break; }
+        if (printable) for (uint8_t i = 0; i < n; ++i) value += (char)d[i];
+        if (!value.length()) value = hexData(d, n);
+        _addRow("Data", value);
+      } else _addRow("Data", "(unavailable)");
+    } else if (lfType == 180) {
+      uint8_t d[5] = {}, n = 0;
+      if (c.getJablotronSlot(d, &n) && n) _addRow("Data", hexData(d, n));
+      else _addRow("Data", "(unavailable)");
     } else if (lfType == 0) {
-      _addRow("UID", "(empty)");
+      _addRow("Data", "(empty)");
     } else {
-      uint8_t uid[4] = {};
-      uint8_t uidLen = 0;
-      if (c.getVikingSlot(uid, &uidLen) && uidLen) {
-        String value;
-        for (uint8_t i = 0; i < uidLen; ++i) {
-          char b[4]; snprintf(b, sizeof(b), "%02X%s",
-                              uid[i], i + 1 < uidLen ? ":" : "");
-          value += b;
-        }
-        _addRow("UID", value);
-      } else {
-        _addRow("UID", "(unavailable)");
-      }
+      _addRow("Data", "Not supported yet");
+    }
+
+    if (lfType != 0) {
+      _addRow("Format", ChameleonClient::tagTypeName(lfType));
+      _addRow("Frequency", "125 kHz");
     }
     _scrollView.setRows(_rows, _rowCount);
     return;

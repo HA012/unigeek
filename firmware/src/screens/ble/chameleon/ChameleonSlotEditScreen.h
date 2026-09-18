@@ -45,7 +45,8 @@ private:
   void _viewData();
   void _writeTag();
   bool _writeHfFromBin(const char* path);
-  bool _writeLfFromHex(const char* hex);
+  bool _writeLfFromBin(const char* path);
+  bool _saveLfSlotToFile();
   void _deleteSlot(bool lf);
   void _saveNicks();
 };

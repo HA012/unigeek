@@ -26,7 +26,7 @@ void ChameleonT5577CleanerScreen::onInit() {
   _done = false;
   _log.clear();
   _log.addLine("T5577 Cleaner", TFT_CYAN);
-  _log.addLine("Place T5577 card", TFT_DARKGREY);
+  _log.addLine("Place T5577 tag on reader...", TFT_DARKGREY);
   _log.addLine("[Press] Start", TFT_DARKGREY);
   _needsDraw = true;
 }

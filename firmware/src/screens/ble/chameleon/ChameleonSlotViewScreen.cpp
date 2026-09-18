@@ -118,67 +118,40 @@ void ChameleonSlotViewScreen::_runHF() {
 
 void ChameleonSlotViewScreen::_runLF() {
   auto& c = ChameleonClient::get();
-  if (!c.setActiveSlot(_slot)) {
-    _addRow("Error", "Slot select failed");
-    return;
-  }
+  if (!c.setActiveSlot(_slot)) { _addRow("Error", "Slot select failed"); return; }
   delay(50);
 
   ChameleonClient::SlotTypes types[8] = {};
-  if (!c.getSlotTypes(types)) {
-    _addRow("Error", "Type read failed");
-    return;
-  }
-  uint16_t t = types[_slot].lfType;
-
+  if (!c.getSlotTypes(types)) { _addRow("Error", "Type read failed"); return; }
+  const uint16_t t = types[_slot].lfType;
   _addRow("Type", ChameleonClient::tagTypeName(t));
+  if (t == 0) { _addRow("Data", "(empty)"); return; }
 
-  char hex[40] = {};
-  if (t == 100) {
-    uint8_t uid[5] = {};
-    if (c.getEM410XSlot(uid)) {
-      snprintf(hex, sizeof(hex), "%02X:%02X:%02X:%02X:%02X",
-               uid[0], uid[1], uid[2], uid[3], uid[4]);
-      _addRow("UID", hex);
-      uint64_t dec = 0;
-      for (int i = 0; i < 5; i++) dec = (dec << 8) | uid[i];
-      char ds[24];
-      snprintf(ds, sizeof(ds), "%llu", (unsigned long long)dec);
-      _addRow("Dec", ds);
-    } else {
-      _addRow("UID", "(unavailable)");
-    }
-  } else if (t == 200) {
-    uint8_t pl[13] = {}; uint8_t plen = 0;
-    if (c.getHIDProxSlot(pl, &plen)) {
-      String v;
-      for (uint8_t i = 0; i < plen; i++) {
-        char h[4]; snprintf(h, sizeof(h), "%02X", pl[i]); v += h;
-      }
-      _addRow("Payload", v);
-    } else {
-      _addRow("Payload", "(unavailable)");
-    }
-  } else if (t == 0) {
-    _addRow("UID", "(empty)");
-  } else {
-    // Viking / unknown — try Viking
-    uint8_t uid[4] = {}; uint8_t ulen = 0;
-    if (c.getVikingSlot(uid, &ulen) && ulen > 0) {
-      String v;
-      for (uint8_t i = 0; i < ulen; i++) {
-        char h[4]; snprintf(h, sizeof(h), "%02X", uid[i]); v += h;
-      }
-      _addRow("UID", v);
-    }
+  uint8_t data[16] = {}, len = 0;
+  bool ok = false;
+  if (t == 100) { len = 5; ok = c.getEM410XSlot(data); }
+  else if (t == 200) ok = c.getHIDProxSlot(data, &len);
+  else if (t == 201) ok = c.getIoProxSlot(data, &len);
+  else if (t == 170) ok = c.getVikingSlot(data, &len);
+  else if (t == 150) ok = c.getPACSlot(data, &len);
+  else if (t == 180) ok = c.getJablotronSlot(data, &len);
+  else { _addRow("Data", "Unsupported"); return; }
+
+  if (!ok || !len) { _addRow("Data", "(unavailable)"); return; }
+  String hex;
+  char h[4];
+  for (uint8_t i = 0; i < len; ++i) {
+    snprintf(h, sizeof(h), "%02X", data[i]);
+    hex += h;
   }
+  _addRow("Data", hex);
 }
 
 void ChameleonSlotViewScreen::onInit() {
   auto& c = ChameleonClient::get();
   _restoreSlot = c.getActiveSlot(&_previousSlot) && _previousSlot != _slot;
 
-  snprintf(_title, sizeof(_title), "Slot %d %s", _slot + 1, _lf ? "LF" : "HF");
+  snprintf(_title, sizeof(_title), "Raw Data");
   _rowCount = 0;
   _loading  = true;
   _ready    = false;

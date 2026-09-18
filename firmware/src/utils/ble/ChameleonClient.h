@@ -61,6 +61,12 @@ public:
   static constexpr uint16_t CMD_WRITE_HID_T5     = 3003;
   static constexpr uint16_t CMD_SCAN_VIKING      = 3004;
   static constexpr uint16_t CMD_WRITE_VIKING_T5  = 3005;
+  static constexpr uint16_t CMD_SCAN_IOPROX      = 3010;
+  static constexpr uint16_t CMD_WRITE_IOPROX_T5  = 3011;
+  static constexpr uint16_t CMD_SCAN_PAC          = 3014;
+  static constexpr uint16_t CMD_WRITE_PAC_T5      = 3015;
+  static constexpr uint16_t CMD_SCAN_JABLOTRON    = 3019;
+  static constexpr uint16_t CMD_WRITE_JABLOTRON_T5= 3020;
   static constexpr uint16_t CMD_MF1_LOAD_BLOCK   = 4000;
   static constexpr uint16_t CMD_MF1_SET_ANTI_COLL   = 4001;
   static constexpr uint16_t CMD_MF1_DET_ENABLE   = 4004;
@@ -78,6 +84,12 @@ public:
   static constexpr uint16_t CMD_GET_HID_PROX_ID  = 5003;
   static constexpr uint16_t CMD_SET_VIKING_ID    = 5004;
   static constexpr uint16_t CMD_GET_VIKING_ID    = 5005;
+  static constexpr uint16_t CMD_SET_PAC_ID       = 5006;
+  static constexpr uint16_t CMD_GET_PAC_ID       = 5007;
+  static constexpr uint16_t CMD_SET_IOPROX_ID    = 5008;
+  static constexpr uint16_t CMD_GET_IOPROX_ID    = 5009;
+  static constexpr uint16_t CMD_SET_JABLOTRON_ID = 5010;
+  static constexpr uint16_t CMD_GET_JABLOTRON_ID = 5011;
 
   struct SlotTypes { uint16_t hfType; uint16_t lfType; };
 
@@ -272,6 +284,9 @@ public:
   bool scanEM410X(uint8_t uid[5]);
   bool scanHIDProx(uint8_t payload[13], uint8_t* payloadLen);
   bool scanViking(uint8_t uid[4], uint8_t* uidLen);
+  bool scanIoProx(uint8_t payload[16], uint8_t* payloadLen);
+  bool scanPAC(uint8_t id[8], uint8_t* idLen);
+  bool scanJablotron(uint8_t id[5], uint8_t* idLen);
   bool writeEM410XToT5577(const uint8_t uid[5], const uint8_t newKey[4],
                           const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool writeHIDProxToT5577(const uint8_t* payload, uint8_t payloadLen,
@@ -279,12 +294,24 @@ public:
                            const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool writeVikingToT5577(const uint8_t uid[4], const uint8_t newKey[4],
                           const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writeIoProxToT5577(const uint8_t payload[16], const uint8_t newKey[4],
+                          const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writePACToT5577(const uint8_t id[8], const uint8_t newKey[4],
+                       const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writeJablotronToT5577(const uint8_t id[5], const uint8_t newKey[4],
+                             const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool setEM410XSlot(const uint8_t uid[5]);
   bool getEM410XSlot(uint8_t uid[5]);
   bool setHIDProxSlot(const uint8_t* payload, uint8_t payloadLen);
   bool getHIDProxSlot(uint8_t payload[13], uint8_t* payloadLen);
   bool setVikingSlot(const uint8_t uid[4], uint8_t uidLen);
   bool getVikingSlot(uint8_t uid[4], uint8_t* uidLen);
+  bool setIoProxSlot(const uint8_t payload[16]);
+  bool getIoProxSlot(uint8_t payload[16], uint8_t* payloadLen);
+  bool setPACSlot(const uint8_t id[8]);
+  bool getPACSlot(uint8_t id[8], uint8_t* idLen);
+  bool setJablotronSlot(const uint8_t id[5]);
+  bool getJablotronSlot(uint8_t id[5], uint8_t* idLen);
 
   static uint16_t inferHFTagType(uint8_t sak, const uint8_t atqa[2]);
   bool cloneHF(uint8_t slot, uint16_t tagType,

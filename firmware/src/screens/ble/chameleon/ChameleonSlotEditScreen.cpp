@@ -57,19 +57,19 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
   snprintf(_labels[7], sizeof(_labels[7]), "Save Nicks");
   _subs[7][0] = 0;
 
-  snprintf(_labels[8], sizeof(_labels[8]), "Read Content");
+  snprintf(_labels[8], sizeof(_labels[8]), "Tag Details");
   _subs[8][0] = 0;
-  snprintf(_labels[9], sizeof(_labels[9]), "Read Memory");
+  snprintf(_labels[9], sizeof(_labels[9]), "Raw Data");
   _subs[9][0] = 0;
-  snprintf(_labels[10], sizeof(_labels[10]), "Load Dump to Slot");
+  snprintf(_labels[10], sizeof(_labels[10]), "Load File to Slot");
   _subs[10][0] = 0;
-  snprintf(_labels[11], sizeof(_labels[11]), "Download Dump from Slot");
+  snprintf(_labels[11], sizeof(_labels[11]), "Save Slot to File");
   _subs[11][0] = 0;
   snprintf(_labels[12], sizeof(_labels[12]), "Write to Tag");
   _subs[12][0] = 0;
-  snprintf(_labels[13], sizeof(_labels[13]), "Reset Slot Data");
+  snprintf(_labels[13], sizeof(_labels[13]), "Reset Slot");
   _subs[13][0] = 0;
-  snprintf(_labels[14], sizeof(_labels[14]), "Delete Dump from Slot");
+  snprintf(_labels[14], sizeof(_labels[14]), "Delete Slot Data");
   _subs[14][0] = 0;
 
   for (int i = 0; i < kCount; i++) {
@@ -118,16 +118,20 @@ void ChameleonSlotEditScreen::_editType(bool lf) {
     {"Empty",           "0"},
   };
   static const InputSelectAction::Option lfOpts[] = {
-    {"EM4100",   "100"},
-    {"HID Prox", "200"},
-    {"Empty",    "0"},
+    {"EM410X",      "100"},
+    {"HID Prox",    "200"},
+    {"ioProx",      "201"},
+    {"Viking",      "170"},
+    {"PAC/Stanley", "150"},
+    {"Jablotron",   "180"},
+    {"Empty",       "0"},
   };
   uint16_t cur = lf ? _lfType : _hfType;
   char def[8];
   snprintf(def, sizeof(def), "%u", cur);
 
   const char* r = lf
-    ? InputSelectAction::popup("LF type", lfOpts, 3, def)
+    ? InputSelectAction::popup("LF type", lfOpts, 7, def)
     : InputSelectAction::popup("HF type", hfOpts, 11, def);
 
   if (!r) { render(); return; }
@@ -177,10 +181,10 @@ void ChameleonSlotEditScreen::_editNick(bool lf) {
 
 void ChameleonSlotEditScreen::_loadDefault() {
   static const InputSelectAction::Option opts[] = {
-    {"HF Data", "hf"},
-    {"LF Data", "lf"},
+    {"HF", "hf"},
+    {"LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Reset Slot Data", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Reset Slot", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint16_t t = lf ? _lfType : _hfType;
@@ -198,10 +202,10 @@ void ChameleonSlotEditScreen::_loadDefault() {
 
 void ChameleonSlotEditScreen::_deleteSlot(bool) {
   static const InputSelectAction::Option opts[] = {
-    {"Delete HF", "hf"},
-    {"Delete LF", "lf"},
+    {"HF", "hf"},
+    {"LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Delete Dump from Slot", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Delete Slot Data", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   uint8_t freq = lf ? 1 : 2;
@@ -484,58 +488,68 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   restoreContext();
   return true;
 }
-static bool _parseHex(const String& in, uint8_t* out, uint8_t expectedLen) {
-  String s = in;
-  s.replace(":", ""); s.replace(" ", ""); s.trim();
-  if (s.length() != (uint32_t)expectedLen * 2) return false;
-  for (uint8_t i = 0; i < expectedLen; i++) {
-    char hex[3] = { s[i * 2], s[i * 2 + 1], 0 };
-    char* end = nullptr;
-    unsigned long v = strtoul(hex, &end, 16);
-    if (*end != 0) return false;
-    out[i] = (uint8_t)v;
-  }
-  return true;
+static bool _lfTypeFromFile(const String& path, uint16_t* type, uint8_t* size) {
+  if (!type || !size) return false;
+  const int slash = path.lastIndexOf('/');
+  const String name = slash >= 0 ? path.substring(slash + 1) : path;
+  if (name.startsWith("EM410X_"))      { *type = 100; *size = 5;  return true; }
+  if (name.startsWith("HID-Prox_"))    { *type = 200; *size = 13; return true; }
+  if (name.startsWith("ioProx_"))      { *type = 201; *size = 16; return true; }
+  if (name.startsWith("Viking_"))      { *type = 170; *size = 4;  return true; }
+  if (name.startsWith("PAC-Stanley_")) { *type = 150; *size = 8;  return true; }
+  if (name.startsWith("Jablotron_"))   { *type = 180; *size = 5;  return true; }
+  return false;
 }
 
-bool ChameleonSlotEditScreen::_writeLfFromHex(const char* hex) {
-  uint8_t uid[5];
-  if (!_parseHex(hex, uid, 5)) return false;
+bool ChameleonSlotEditScreen::_writeLfFromBin(const char* path) {
+  if (!path || !Uni.Storage) return false;
+
+  uint16_t tagType = 0;
+  uint8_t expected = 0;
+  if (!_lfTypeFromFile(path, &tagType, &expected)) return false;
+
+  fs::File f = Uni.Storage->open(path, "r");
+  if (!f || f.size() != expected) { if (f) f.close(); return false; }
+  uint8_t data[16] = {};
+  const int n = f.read(data, expected);
+  f.close();
+  if (n != expected) return false;
 
   auto& c = ChameleonClient::get();
-
-  uint8_t previousSlot = 0;
-  uint8_t previousMode = 0;
-  const bool restoreSlot =
-      c.getActiveSlot(&previousSlot) && previousSlot != _slot;
+  uint8_t previousSlot = 0, previousMode = 0;
+  const bool restoreSlot = c.getActiveSlot(&previousSlot) && previousSlot != _slot;
   const bool restoreMode = c.getMode(&previousMode);
-
   auto restoreContext = [&]() {
     if (restoreSlot) c.setActiveSlot(previousSlot);
     if (restoreMode) c.setMode(previousMode);
   };
 
-  if (!c.setSlotTagType(_slot, 100) ||
-      !c.setActiveSlot(_slot) ||
-      !c.setEM410XSlot(uid) ||
-      !c.setSlotEnable(_slot, 1, true) ||
-      !c.setMode(0)) {
-    restoreContext();
-    return false;
+  bool ok = c.setSlotTagType(_slot, tagType) && c.setActiveSlot(_slot);
+  if (ok) {
+    if (tagType == 100) ok = c.setEM410XSlot(data);
+    else if (tagType == 200) ok = c.setHIDProxSlot(data, expected);
+    else if (tagType == 201) ok = c.setIoProxSlot(data);
+    else if (tagType == 170) ok = c.setVikingSlot(data, expected);
+    else if (tagType == 150) ok = c.setPACSlot(data);
+    else if (tagType == 180) ok = c.setJablotronSlot(data);
+    else ok = false;
   }
+  if (ok) ok = c.setSlotEnable(_slot, 1, true) && c.setMode(0);
 
-  _lfType    = 100;
-  _lfEnabled = true;
+  if (ok) {
+    _lfType = tagType;
+    _lfEnabled = true;
+  }
   restoreContext();
-  return true;
+  return ok;
 }
 
 void ChameleonSlotEditScreen::_viewContent() {
   static const InputSelectAction::Option opts[] = {
-    {"HF Content", "hf"},
-    {"LF Content", "lf"},
+    {"HF", "hf"},
+    {"LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Read Content", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Tag Details", opts, 2, nullptr);
   if (!r) { render(); return; }
   const bool lf = strcmp(r, "lf") == 0;
   Screen.push(new ChameleonSlotContentScreen(_slot, lf));
@@ -543,17 +557,91 @@ void ChameleonSlotEditScreen::_viewContent() {
 
 void ChameleonSlotEditScreen::_viewData() {
   static const InputSelectAction::Option opts[] = {
-    {"HF Memory", "hf"},
-    {"LF Memory", "lf"},
+    {"HF", "hf"},
+    {"LF", "lf"},
   };
-  const char* r = InputSelectAction::popup("Read Memory", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Raw Data", opts, 2, nullptr);
   if (!r) { render(); return; }
   bool lf = (strcmp(r, "lf") == 0);
   Screen.push(new ChameleonSlotViewScreen(_slot, lf));
 }
 
 
+static String _hexBytes(const uint8_t* data, uint8_t len) {
+  String out;
+  char h[3];
+  for (uint8_t i = 0; i < len; ++i) {
+    snprintf(h, sizeof(h), "%02X", data[i]);
+    out += h;
+  }
+  return out;
+}
+
+bool ChameleonSlotEditScreen::_saveLfSlotToFile() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) return false;
+
+  auto& c = ChameleonClient::get();
+  uint8_t previousSlot = 0;
+  const bool restoreSlot = c.getActiveSlot(&previousSlot) && previousSlot != _slot;
+  if (!c.setActiveSlot(_slot)) return false;
+
+  uint8_t data[16] = {};
+  uint8_t len = 0;
+  bool ok = false;
+  String typeName;
+  if (_lfType == 100) { len = 5; ok = c.getEM410XSlot(data); typeName = "EM410X"; }
+  else if (_lfType == 200) { ok = c.getHIDProxSlot(data, &len) && len == 13; typeName = "HID-Prox"; }
+  else if (_lfType == 201) { ok = c.getIoProxSlot(data, &len) && len == 16; typeName = "ioProx"; }
+  else if (_lfType == 170) { ok = c.getVikingSlot(data, &len) && len == 4; typeName = "Viking"; }
+  else if (_lfType == 150) { ok = c.getPACSlot(data, &len) && len == 8; typeName = "PAC-Stanley"; }
+  else if (_lfType == 180) { ok = c.getJablotronSlot(data, &len) && len == 5; typeName = "Jablotron"; }
+
+  if (restoreSlot) c.setActiveSlot(previousSlot);
+  if (!ok || !len) return false;
+
+  const String suggested = typeName + "_" + _hexBytes(data, len);
+  String name = InputTextAction::popup("File name", suggested);
+  if (InputTextAction::wasCancelled()) return true; // cancellation is not a write failure
+
+  Uni.Storage->makeDir("/unigeek/rfid");
+  const String base = _sanitizeDownloadName(name);
+  String path = String("/unigeek/rfid/") + base + ".bin";
+  if (Uni.Storage->exists(path.c_str())) {
+    for (int n = 2; n < 1000; ++n) {
+      String candidate = String("/unigeek/rfid/") + base + "_(" + n + ").bin";
+      if (!Uni.Storage->exists(candidate.c_str())) { path = candidate; break; }
+    }
+  }
+
+  fs::File f = Uni.Storage->open(path.c_str(), "w");
+  if (!f) return false;
+  const size_t written = f.write(data, len);
+  f.close();
+  if (written != len) return false;
+
+  const int slash = path.lastIndexOf('/');
+  const String saved = slash >= 0 ? path.substring(slash + 1) : path;
+  render();
+  ShowStatusAction::show(("Saved: " + saved).c_str(), 1600);
+  render();
+  return true;
+}
+
 void ChameleonSlotEditScreen::_downloadDump() {
+  static const InputSelectAction::Option opts[] = {
+    {"HF", "hf"},
+    {"LF", "lf"},
+  };
+  const char* selected = InputSelectAction::popup("Save Slot to File", opts, 2, nullptr);
+  if (!selected) { render(); return; }
+  if (strcmp(selected, "lf") == 0) {
+    render();
+    if (!_saveLfSlotToFile()) {
+      ShowStatusAction::show("Save failed", 1600);
+      render();
+    }
+    return;
+  }
   const uint16_t dumpSize = _dumpSizeForType(_hfType);
   if (dumpSize == 0) {
     render();
@@ -752,81 +840,99 @@ void ChameleonSlotEditScreen::_downloadDump() {
 
 void ChameleonSlotEditScreen::_writeContent() {
   static const InputSelectAction::Option freqOpts[] = {
-    {"HF from .bin",  "hf"},
-    {"LF EM410X UID", "lf"},
+    {"HF", "hf"},
+    {"LF", "lf"},
   };
-  const char* f = InputSelectAction::popup("Load source", freqOpts, 2, nullptr);
+  const char* f = InputSelectAction::popup("Load File to Slot", freqOpts, 2, nullptr);
   if (!f) { render(); return; }
 
-  if (strcmp(f, "hf") == 0) {
-    // Pick a .bin file from the dumps dir via BrowseFileView (sorted + filtered).
-    static constexpr uint8_t kMax = 10;
-    uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
-    if (n == 0) {
-      render();
-      ShowStatusAction::show("No .bin in nfc/dumps", 1600);
-      render();
-      return;
-    }
-    uint8_t count = (n < kMax) ? n : kMax;
-    InputSelectAction::Option opts[kMax];
-    String vals[kMax];
-    for (uint8_t i = 0; i < count; i++) {
-      vals[i] = String(i);
-      opts[i] = { _browser.entry(i).name.c_str(), vals[i].c_str() };
-    }
-    const char* r = InputSelectAction::popup("HF dump", opts, count, nullptr);
-    if (!r) { render(); return; }
-    uint8_t idx = (uint8_t)atoi(r);
-    if (idx >= count) { render(); return; }
-    String path = _browser.entry(idx).path;
-
-    // The file picker is an overlay and leaves its cleared region behind.
-    // Restore the Slot Edit screen before the blocking BLE load begins.
+  const bool lf = strcmp(f, "lf") == 0;
+  const char* dir = lf ? "/unigeek/rfid" : "/unigeek/nfc/dumps";
+  static constexpr uint8_t kMax = 10;
+  uint8_t n = _browser.load(this, dir,
+      BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
+  if (n == 0) {
     render();
-
-    bool ok = _writeHfFromBin(path.c_str());
-
-    _rebuildLabels();
+    ShowStatusAction::show(lf ? "No .bin in rfid" : "No .bin in nfc/dumps", 1600);
     render();
+    return;
+  }
 
-    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1600);
-    render();
+  const uint8_t count = (n < kMax) ? n : kMax;
+  InputSelectAction::Option opts[kMax];
+  String vals[kMax];
+  for (uint8_t i = 0; i < count; ++i) {
+    vals[i] = String(i);
+    opts[i] = {_browser.entry(i).name.c_str(), vals[i].c_str()};
+  }
+  const char* r = InputSelectAction::popup(lf ? "LF Data" : "HF Dump", opts, count, nullptr);
+  if (!r) { render(); return; }
+  const uint8_t idx = (uint8_t)atoi(r);
+  if (idx >= count) { render(); return; }
+  const String path = _browser.entry(idx).path;
 
-    if (ok) {
-      int n = Achievement.inc("chameleon_slot_loaded");
-      if (n == 1) Achievement.unlock("chameleon_slot_loaded");
-    }
-  } else {
-    String hex = InputTextAction::popup("EM410X UID (10 hex)", "", InputTextAction::INPUT_HEX);
-    if (InputTextAction::wasCancelled() || hex.length() == 0) { render(); return; }
+  render();
+  bool ok = lf ? _writeLfFromBin(path.c_str()) : _writeHfFromBin(path.c_str());
+  _rebuildLabels();
+  render();
 
-    // Restore the Slot Edit screen before the blocking BLE write begins.
-    render();
+  // Keep existing result wording for now; failure-message terminology will be
+  // harmonized globally across PN532, Chameleon HF and LF in a separate pass.
+  ShowStatusAction::show(ok ? "Loaded to slot" : "Load to slot failed", 1600);
+  render();
 
-    bool ok = _writeLfFromHex(hex.c_str());
-
-    _rebuildLabels();
-    render();
-
-    ShowStatusAction::show(ok ? "Dump loaded" : "Dump load failed", 1600);
-    render();
-
-    if (ok) {
-      int n = Achievement.inc("chameleon_slot_loaded");
-      if (n == 1) Achievement.unlock("chameleon_slot_loaded");
-    }
+  if (ok) {
+    int a = Achievement.inc("chameleon_slot_loaded");
+    if (a == 1) Achievement.unlock("chameleon_slot_loaded");
   }
 }
 
 void ChameleonSlotEditScreen::_writeTag() {
-  if (_hfType == ChameleonClient::MFU_NTAG215) {
-    Screen.push(new ChameleonMfuWriteScreen(_slot));
+  static const InputSelectAction::Option opts[] = {
+    {"HF", "hf"},
+    {"LF", "lf"},
+  };
+  const char* r = InputSelectAction::popup("Write to Tag", opts, 2, nullptr);
+  if (!r) { render(); return; }
+  const bool lf = strcmp(r, "lf") == 0;
+
+  if (!lf) {
+    if (_hfType == ChameleonClient::MFU_NTAG215) {
+      Screen.push(new ChameleonMfuWriteScreen(_slot));
+      return;
+    }
+    if (_hfType == 1001) {
+      Screen.push(new ChameleonMfcWriteScreen(_slot));
+      return;
+    }
+    render();
+    ShowStatusAction::show("Tag not supported", 1600);
+    render();
     return;
   }
-  if (_hfType == 1001) {
-    Screen.push(new ChameleonMfcWriteScreen(_slot));
-    return;
+
+  // LF slots can be written to a physical T5577 tag.
+  if (_lfType == 100 || _lfType == 150 || _lfType == 170 || _lfType == 180 || _lfType == 200 || _lfType == 201) {
+    // Match the LF Tools write flow: show progress while the blocking T5577
+    // write operation is running. Result wording is intentionally unchanged
+    // until the global success/failure-message audit.
+    auto& lcd = Uni.Lcd;
+    int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+    lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+    lcd.setTextDatum(MC_DATUM);
+    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+    lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
+
+    auto& c = ChameleonClient::get();
+    if (!c.setActiveSlot(_slot)) { render(); ShowStatusAction::show("Slot select failed", 1600); render(); return; }
+    bool ok = false;
+    if (_lfType == 100) { uint8_t d[5]={}; ok=c.getEM410XSlot(d) && c.writeEM410XToT5577(d,nullptr,nullptr,0); }
+    else if (_lfType == 200) { uint8_t d[13]={},n=0; ok=c.getHIDProxSlot(d,&n) && n && c.writeHIDProxToT5577(d,n,nullptr,nullptr,0); }
+    else if (_lfType == 201) { uint8_t d[16]={},n=0; ok=c.getIoProxSlot(d,&n) && n==16 && c.writeIoProxToT5577(d,nullptr,nullptr,0); }
+    else if (_lfType == 170) { uint8_t d[4]={},n=0; ok=c.getVikingSlot(d,&n) && n==4 && c.writeVikingToT5577(d,nullptr,nullptr,0); }
+    else if (_lfType == 150) { uint8_t d[8]={},n=0; ok=c.getPACSlot(d,&n) && n==8 && c.writePACToT5577(d,nullptr,nullptr,0); }
+    else if (_lfType == 180) { uint8_t d[5]={},n=0; ok=c.getJablotronSlot(d,&n) && n==5 && c.writeJablotronToT5577(d,nullptr,nullptr,0); }
+    render(); ShowStatusAction::show(ok ? "Tag written" : "Tag write failed", 1600); render(); return;
   }
   render();
   ShowStatusAction::show("Tag not supported", 1600);

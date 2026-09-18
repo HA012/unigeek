@@ -771,7 +771,7 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
   if (ok) ok = c.setSlotEnable(slot, 2, true);
   restoreContext();
   render();
-  ShowStatusAction::show(ok ? "Dump loaded to slot" : "Load to slot failed", 1600);
+  ShowStatusAction::show(ok ? "Loaded to slot" : "Load to slot failed", 1600);
   render();
 }
 

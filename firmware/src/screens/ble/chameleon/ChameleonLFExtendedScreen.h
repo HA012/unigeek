@@ -2,26 +2,27 @@
 #include "ui/templates/BaseScreen.h"
 #include "ui/views/ScrollListView.h"
 
-class ChameleonHIDProxScreen : public BaseScreen {
+class ChameleonLFExtendedScreen : public BaseScreen {
 public:
+  enum Protocol { IOPROX, PAC_STANLEY, JABLOTRON };
   enum Operation { READ_TAG, LOAD_TO_SLOT, WRITE_T5577 };
-  explicit ChameleonHIDProxScreen(Operation operation = READ_TAG) : _operation(operation) {}
-  const char* title() override { return _state == STATE_RESULT ? "Tag Details" : "HID Prox"; }
+  ChameleonLFExtendedScreen(Protocol protocol, Operation operation = READ_TAG)
+      : _protocol(protocol), _operation(operation) {}
+  const char* title() override;
   bool inhibitPowerOff() override { return _scanning; }
-
   void onInit() override;
   void onUpdate() override;
   void onRender() override;
 
 private:
   enum State { STATE_IDLE, STATE_RESULT };
+  Protocol _protocol;
+  Operation _operation;
   State _state = STATE_IDLE;
   bool _scanning = false;
   bool _needsDraw = true;
-  Operation _operation = READ_TAG;
-
-  uint8_t _payload[13] = {};
-  uint8_t _payloadLen = 0;
+  uint8_t _data[16] = {};
+  uint8_t _dataLen = 0;
 
   static constexpr int kMaxRows = 8;
   ScrollListView _scrollView;
@@ -30,10 +31,11 @@ private:
   String _rowValues[kMaxRows];
   uint8_t _rowCount = 0;
 
+  const char* _protocolName() const;
   void _buildResult();
   void _doScan();
   void _doLoadSlot();
-  void _doT5577();
+  void _doWriteTag();
   void _saveToFile();
   void _showActions();
 };

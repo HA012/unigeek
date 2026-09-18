@@ -3,7 +3,7 @@
 
 class ChameleonLFProtocolMenuScreen : public ListScreen {
 public:
-  enum Protocol { EM410X, HID_PROX, VIKING };
+  enum Protocol { EM410X, HID_PROX, IOPROX, VIKING, PAC_STANLEY, JABLOTRON };
   explicit ChameleonLFProtocolMenuScreen(Protocol protocol) : _protocol(protocol) {}
   const char* title() override;
   void onInit() override;

@@ -593,21 +593,25 @@ bool ChameleonClient::scanEM410X(uint8_t uid[5]) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_EM410X, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len < 5) return false;
+  if ((st != 0 && st != 0x40) || len < 5) return false;
   memcpy(uid, buf, 5);
   return true;
 }
 
 bool ChameleonClient::setEM410XSlot(const uint8_t uid[5]) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st) && st == 0;
+  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
 
 const char* ChameleonClient::tagTypeName(uint16_t type) {
   switch (type) {
-    case 100:  return "EM4100";
+    case 100:  return "EM410X";
     case 101:  return "EM410Xx2";
-    case 200:  return "HIDProx";
+    case 150:  return "PAC/Stanley";
+    case 170:  return "Viking";
+    case 180:  return "Jablotron";
+    case 200:  return "HID Prox";
+    case 201:  return "ioProx";
     case 1000: return "MF-Mini";
     case 1001: return "MF-1K";
     case 1002: return "MF-2K";
@@ -1477,7 +1481,7 @@ bool ChameleonClient::scanHIDProx(uint8_t payload[13], uint8_t* payloadLen) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_HID_PROX, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len == 0) return false;
+  if ((st != 0 && st != 0x40) || len == 0) return false;
   uint16_t cp = len > 13 ? 13 : len;
   memcpy(payload, buf, cp);
   *payloadLen = (uint8_t)cp;
@@ -1488,7 +1492,7 @@ bool ChameleonClient::scanViking(uint8_t uid[4], uint8_t* uidLen) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_VIKING, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len == 0) return false;
+  if ((st != 0 && st != 0x40) || len == 0) return false;
   uint16_t cp = len > 4 ? 4 : len;
   memcpy(uid, buf, cp);
   *uidLen = (uint8_t)cp;
@@ -1496,6 +1500,36 @@ bool ChameleonClient::scanViking(uint8_t uid[4], uint8_t* uidLen) {
 }
 
 static uint8_t _t5577Default[4] = { 0x51, 0x24, 0x36, 0x48 };
+
+bool ChameleonClient::scanIoProx(uint8_t payload[16], uint8_t* payloadLen) {
+  uint8_t buf[24] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_IOPROX, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 16) return false;
+  memcpy(payload, buf, 16);
+  *payloadLen = 16;
+  return true;
+}
+
+bool ChameleonClient::scanPAC(uint8_t id[8], uint8_t* idLen) {
+  uint8_t buf[16] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_PAC, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 8) return false;
+  memcpy(id, buf, 8);
+  *idLen = 8;
+  return true;
+}
+
+bool ChameleonClient::scanJablotron(uint8_t id[5], uint8_t* idLen) {
+  uint8_t buf[16] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_JABLOTRON, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 5) return false;
+  memcpy(id, buf, 5);
+  *idLen = 5;
+  return true;
+}
 
 bool ChameleonClient::writeEM410XToT5577(const uint8_t uid[5], const uint8_t newKey[4],
                                           const uint8_t* oldKeys, uint8_t oldKeyCount) {
@@ -1509,7 +1543,7 @@ bool ChameleonClient::writeEM410XToT5577(const uint8_t uid[5], const uint8_t new
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_EM410X_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::writeHIDProxToT5577(const uint8_t* payload, uint8_t payloadLen,
@@ -1526,7 +1560,7 @@ bool ChameleonClient::writeHIDProxToT5577(const uint8_t* payload, uint8_t payloa
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_HID_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::writeVikingToT5577(const uint8_t uid[4], const uint8_t newKey[4],
@@ -1541,18 +1575,53 @@ bool ChameleonClient::writeVikingToT5577(const uint8_t uid[4], const uint8_t new
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_VIKING_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::setHIDProxSlot(const uint8_t* payload, uint8_t payloadLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st) && st == 0;
+  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
 
 bool ChameleonClient::setVikingSlot(const uint8_t uid[4], uint8_t uidLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st) && st == 0;
+  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
+
+bool ChameleonClient::writeIoProxToT5577(const uint8_t payload[16], const uint8_t newKey[4],
+                                           const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[16 + 4 + 32];
+  memcpy(p, payload, 16);
+  memcpy(p + 16, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 20;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_IOPROX_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::writePACToT5577(const uint8_t id[8], const uint8_t newKey[4],
+                                       const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[8 + 4 + 32];
+  memcpy(p, id, 8); memcpy(p + 8, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 12;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_PAC_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::writeJablotronToT5577(const uint8_t id[5], const uint8_t newKey[4],
+                                             const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[5 + 4 + 32];
+  memcpy(p, id, 5); memcpy(p + 5, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 9;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_JABLOTRON_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::setIoProxSlot(const uint8_t payload[16]) { uint16_t st=0; return sendCommand(CMD_SET_IOPROX_ID,payload,16,nullptr,nullptr,&st) && (st==0 || st==0x68); }
+bool ChameleonClient::setPACSlot(const uint8_t id[8]) { uint16_t st=0; return sendCommand(CMD_SET_PAC_ID,id,8,nullptr,nullptr,&st) && (st==0 || st==0x68); }
+bool ChameleonClient::setJablotronSlot(const uint8_t id[5]) { uint16_t st=0; return sendCommand(CMD_SET_JABLOTRON_ID,id,5,nullptr,nullptr,&st) && (st==0 || st==0x68); }
 
 // Upstream GUI ignores the status byte on LF getters and just reads data length.
 // Mirror that — some firmware revisions return status != 0 but still deliver the
@@ -1586,4 +1655,20 @@ bool ChameleonClient::getVikingSlot(uint8_t uid[4], uint8_t* uidLen) {
   memcpy(uid, buf, cp);
   *uidLen = (uint8_t)cp;
   return true;
+}
+
+bool ChameleonClient::getIoProxSlot(uint8_t payload[16], uint8_t* payloadLen) {
+  uint8_t buf[24] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_IOPROX_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 16) return false;
+  memcpy(payload,buf,16); *payloadLen=16; return true;
+}
+bool ChameleonClient::getPACSlot(uint8_t id[8], uint8_t* idLen) {
+  uint8_t buf[16] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_PAC_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 8) return false;
+  memcpy(id,buf,8); *idLen=8; return true;
+}
+bool ChameleonClient::getJablotronSlot(uint8_t id[5], uint8_t* idLen) {
+  uint8_t buf[16] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_JABLOTRON_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 5) return false;
+  memcpy(id,buf,5); *idLen=5; return true;
 }

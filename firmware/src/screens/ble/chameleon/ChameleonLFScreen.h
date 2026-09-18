@@ -4,9 +4,9 @@
 
 class ChameleonLFScreen : public BaseScreen {
 public:
-  enum Operation { READ_TAG, CLONE_TO_SLOT, WRITE_T5577 };
+  enum Operation { READ_TAG, LOAD_TO_SLOT, WRITE_T5577 };
   explicit ChameleonLFScreen(Operation operation = READ_TAG) : _operation(operation) {}
-  const char* title() override { return "EM410X"; }
+  const char* title() override { return _state == STATE_RESULT ? "Tag Details" : "EM410X"; }
   bool inhibitPowerOff() override { return _scanning; }
 
   void onInit()   override;
@@ -14,12 +14,11 @@ public:
   void onRender() override;
 
 private:
-  enum State { STATE_IDLE, STATE_RESULT, STATE_CLONED, STATE_ERROR };
+  enum State { STATE_IDLE, STATE_RESULT };
 
   State _state     = STATE_IDLE;
   bool  _scanning  = false;
   bool  _needsDraw = true;
-  bool  _holdFired = false;
   Operation _operation = READ_TAG;
 
   uint8_t _uid[5] = {};
@@ -31,9 +30,9 @@ private:
   String              _rowValues[kMaxRows];
   uint8_t             _rowCount = 0;
 
-  void _draw();
   void _doScan();
-  void _doClone();
+  void _doLoadSlot();
   void _doT5577();
+  void _saveToFile();
   void _showActions();
 };
