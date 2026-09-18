@@ -61,6 +61,8 @@ void ChameleonVikingScreen::_doScan() {
   if (ok) {
     int n = Achievement.inc("chameleon_viking_scan");
     if (n == 1) Achievement.unlock("chameleon_viking_scan");
+    if (_operation == CLONE_TO_SLOT) { _doCloneSlot(); return; }
+    if (_operation == WRITE_T5577) { _doT5577(); return; }
   }
   _needsDraw = true;
   render();
@@ -132,12 +134,14 @@ void ChameleonVikingScreen::onUpdate() {
         _doScan();
       } else if (_state == STATE_RESULT) {
         static const InputSelectAction::Option opts[] = {
-          {"Clone to slot",  "slot"},
+          {"Load to slot",  "slot"},
           {"Write to T5577", "t5577"},
+          {"Scan again", "scan"},
         };
-        const char* r = InputSelectAction::popup("Viking Action", opts, 2, nullptr);
+        const char* r = InputSelectAction::popup("Viking Action", opts, 3, nullptr);
         if (r && strcmp(r, "slot") == 0)  _doCloneSlot();
         else if (r && strcmp(r, "t5577") == 0) _doT5577();
+        else if (r && strcmp(r, "scan") == 0) _doScan();
         else render();
       } else if (_state == STATE_CLONED) {
         Screen.goBack();

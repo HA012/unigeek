@@ -6,6 +6,7 @@
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -84,11 +85,11 @@ void ChameleonLFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Press]"; _rowValues[_rowCount] = "Scan again";
+    _rowLabels[_rowCount] = "[Press]"; _rowValues[_rowCount] = "Actions";
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Hold]"; _rowValues[_rowCount] = "Copy to slot";
+    _rowLabels[_rowCount] = "[Hold]"; _rowValues[_rowCount] = "Actions";
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
@@ -98,6 +99,8 @@ void ChameleonLFScreen::_doScan() {
     if (n == 1)  Achievement.unlock("chameleon_lf_read");
     if (n == 5)  Achievement.unlock("chameleon_lf_read_5");
     if (n == 10) Achievement.unlock("chameleon_lf_read_10");
+    if (_operation == CLONE_TO_SLOT) { _doClone(); return; }
+    if (_operation == WRITE_T5577) { _doT5577(); return; }
   } else {
     _state = STATE_IDLE;
     _needsDraw = true;
@@ -139,6 +142,31 @@ void ChameleonLFScreen::_doClone() {
   render();
 }
 
+void ChameleonLFScreen::_doT5577() {
+  auto& lcd = Uni.Lcd;
+  int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Writing T5577...", bx + bw / 2, by + bh / 2);
+  auto& c = ChameleonClient::get();
+  bool ok = c.writeEM410XToT5577(_uid, nullptr, nullptr, 0);
+  if (ok) { int n = Achievement.inc("chameleon_t5577_write"); if (n == 1) Achievement.unlock("chameleon_t5577_write"); }
+  _state = STATE_RESULT; _needsDraw = true; render();
+  ShowStatusAction::show(ok ? "T5577 write OK" : "T5577 write failed", 1200); render();
+}
+
+void ChameleonLFScreen::_showActions() {
+  static const InputSelectAction::Option opts[] = {
+    {"Load to slot", "slot"}, {"Write to T5577", "t5577"}, {"Scan again", "scan"},
+  };
+  const char* r = InputSelectAction::popup("EM410X Actions", opts, 3, nullptr);
+  if (r && strcmp(r, "slot") == 0) _doClone();
+  else if (r && strcmp(r, "t5577") == 0) _doT5577();
+  else if (r && strcmp(r, "scan") == 0) _doScan();
+  else render();
+}
+
 void ChameleonLFScreen::onInit() {
   _state     = STATE_IDLE;
   _needsDraw = true;
@@ -150,7 +178,7 @@ void ChameleonLFScreen::onUpdate() {
   if (!_holdFired && Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 700) {
     _holdFired = true;
     Uni.Nav->suppressCurrentPress();
-    if (_state == STATE_RESULT) _doClone();
+    if (_state == STATE_RESULT) _showActions();
     return;
   }
 
@@ -161,7 +189,7 @@ void ChameleonLFScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS) {
-      _doScan();
+      if (_state == STATE_RESULT) _showActions(); else _doScan();
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);

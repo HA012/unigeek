@@ -4,6 +4,8 @@
 
 class ChameleonLFScreen : public BaseScreen {
 public:
+  enum Operation { READ_TAG, CLONE_TO_SLOT, WRITE_T5577 };
+  explicit ChameleonLFScreen(Operation operation = READ_TAG) : _operation(operation) {}
   const char* title() override { return "EM410X"; }
   bool inhibitPowerOff() override { return _scanning; }
 
@@ -18,6 +20,7 @@ private:
   bool  _scanning  = false;
   bool  _needsDraw = true;
   bool  _holdFired = false;
+  Operation _operation = READ_TAG;
 
   uint8_t _uid[5] = {};
 
@@ -31,4 +34,6 @@ private:
   void _draw();
   void _doScan();
   void _doClone();
+  void _doT5577();
+  void _showActions();
 };

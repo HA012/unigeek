@@ -4,7 +4,7 @@
 
 class ChameleonT5577CleanerScreen : public BaseScreen {
 public:
-  const char* title() override { return "T5577 Cleaner"; }
+  const char* title() override { return "Password Cleaner"; }
   bool inhibitPowerOff() override { return _running; }
 
   void onInit()   override;

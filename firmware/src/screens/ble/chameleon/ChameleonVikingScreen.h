@@ -3,6 +3,8 @@
 
 class ChameleonVikingScreen : public BaseScreen {
 public:
+  enum Operation { READ_TAG, CLONE_TO_SLOT, WRITE_T5577 };
+  explicit ChameleonVikingScreen(Operation operation = READ_TAG) : _operation(operation) {}
   const char* title() override { return "Viking"; }
   bool inhibitPowerOff() override { return _scanning; }
 
@@ -15,6 +17,7 @@ private:
   State   _state     = STATE_IDLE;
   bool    _scanning  = false;
   bool    _needsDraw = true;
+  Operation _operation = READ_TAG;
 
   uint8_t _uid[4]  = {};
   uint8_t _uidLen  = 0;

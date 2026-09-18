@@ -600,7 +600,7 @@ bool ChameleonClient::scanEM410X(uint8_t uid[5]) {
 
 bool ChameleonClient::setEM410XSlot(const uint8_t uid[5]) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st) && st == 0;
 }
 
 const char* ChameleonClient::tagTypeName(uint16_t type) {
@@ -1546,12 +1546,12 @@ bool ChameleonClient::writeVikingToT5577(const uint8_t uid[4], const uint8_t new
 
 bool ChameleonClient::setHIDProxSlot(const uint8_t* payload, uint8_t payloadLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st) && st == 0;
 }
 
 bool ChameleonClient::setVikingSlot(const uint8_t uid[4], uint8_t uidLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st) && st == 0;
 }
 
 // Upstream GUI ignores the status byte on LF getters and just reads data length.
