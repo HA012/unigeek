@@ -36,7 +36,7 @@ static bool scanClassicOrShow(ChameleonClient& c, uint8_t uid[7], uint8_t& uidLe
       return false;
     if (c.scan14A(uid, &uidLen, atqa, &sak)) {
       if (sak == 0x08 || sak == 0x18) return true;
-      ShowStatusAction::show("Tag unsupported", 1200);
+      ShowStatusAction::show("Tag not supported", 1200);
       return false;
     }
     delay(50);

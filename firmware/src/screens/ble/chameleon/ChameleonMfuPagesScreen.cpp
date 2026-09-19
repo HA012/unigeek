@@ -66,7 +66,7 @@ void ChameleonMfuPagesScreen::_read() {
     if (restoreMode) c.setMode(previousMode);
     _busy = false;
     render();
-    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     Screen.goBack();
     return;
   }

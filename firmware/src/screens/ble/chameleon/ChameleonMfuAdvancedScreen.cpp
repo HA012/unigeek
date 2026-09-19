@@ -93,7 +93,7 @@ DetectResult _detect(ChameleonClient& c, ChameleonClient::MfuTagInfo& info) {
 static bool handleDetectFailure(DetectResult r) {
   if (r == DetectResult::OK) return false;
   if (r == DetectResult::NO_TAG) ShowStatusAction::show("Tag not detected", 1200);
-  else if (r == DetectResult::UNSUPPORTED) ShowStatusAction::show("Tag unsupported", 1200);
+  else if (r == DetectResult::UNSUPPORTED) ShowStatusAction::show("Tag not supported", 1200);
   return true;
 }
 
@@ -156,7 +156,7 @@ void ChameleonMfuAdvancedScreen::_writePage() {
   ChameleonClient::MfuTagInfo info = {};
   const DetectResult detected = _detect(c, info);
   if (handleDetectFailure(detected)) { if (restoreMode) c.setMode(previousMode); render(); return; }
-  if (info.pages <= 4) { if (restoreMode) c.setMode(previousMode); render(); ShowStatusAction::show("Tag unsupported", 1200); return; }
+  if (info.pages <= 4) { if (restoreMode) c.setMode(previousMode); render(); ShowStatusAction::show("Tag not supported", 1200); return; }
   const int page = InputNumberAction::popup((String("Page (4..") + String(info.pages - 1) + ")").c_str(), 4, info.pages - 1, 4);
   if (InputNumberAction::wasCancelled() || !_confirmSensitiveWrite(info.type, (uint16_t)page)) { if (restoreMode) c.setMode(previousMode); render(); return; }
   uint8_t data[4] = {}; if (!_readHex4("Page data (8 hex)", data)) { if (restoreMode) c.setMode(previousMode); render(); return; }

@@ -190,7 +190,7 @@ bool ChameleonMfcNdefScreen::_scanClassic() {
   }
   if (!c.mf1Support()) {
     c.setMode(0);
-    ShowStatusAction::show("Tag unsupported", 1200);
+    ShowStatusAction::show("Tag not supported", 1200);
     return false;
   }
   _sak = sak;

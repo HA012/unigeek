@@ -119,7 +119,7 @@ void ChameleonMfcToolsScreen::_writeFromSlot() {
   }
   if (!(hfType == 1001)) {
     render();
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }

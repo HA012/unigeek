@@ -2054,7 +2054,7 @@ void PN532I2cScreen::_doScan14A() {
   }
   const bool supported = (_sak == 0x09 || _sak == 0x08 || _sak == 0x18 ||
                           _sak == 0x00 || (_sak & 0x20) != 0);
-  if (!supported) _pushRow("Status", "Tag unsupported");
+  if (!supported) _pushRow("Status", "Tag not supported");
   snprintf(buf, sizeof(buf), "%02X:%02X", (_atqa >> 8) & 0xFF, _atqa & 0xFF);
   _pushRow("ATQA", buf);
   snprintf(buf, sizeof(buf), "%02X", _sak);
@@ -2210,7 +2210,7 @@ bool PN532I2cScreen::_hasReadableKeyForEverySector() const {
 void PN532I2cScreen::_doReadTag() {
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
-  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareTag(); return; }
+  if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
   if (!_hasReadableKeyForEverySector()) {
@@ -2232,7 +2232,7 @@ void PN532I2cScreen::_doReadTag() {
 void PN532I2cScreen::_doDumpMemory() {
   if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
@@ -2452,7 +2452,7 @@ void PN532I2cScreen::_doShowKeys() {
   // No authentication or attack is needed to inspect the saved results.
   if (!_scanCardOrShow(5000)) { _goMifareKeys(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareKeys(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareKeys(); return; }
   _mfKeys.fill({});
   _loadSavedKeys();
 
@@ -2542,7 +2542,7 @@ void PN532I2cScreen::_doDictionaryPicker() {
   }
   if (_mfDims(_sak).first == 0) {
     _resumeReadAfterDict = false;
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goMifareAttacks();
     return;
   }
@@ -2600,7 +2600,7 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
 
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   size_t totalSectors = dims.first;
   int recovered = 0;
@@ -2937,7 +2937,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightTag();
     return;
   }
@@ -3024,7 +3024,7 @@ void PN532I2cScreen::_doMifareReadMemory() {
   renderOperationTitle("Read Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
   auto dims = _mfDims(_sak);
-  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag unsupported", 1600); _goMifareAdvanced(); return; }
+  if (!dims.first || !dims.second) { ShowStatusAction::show("Tag not supported", 1600); _goMifareAdvanced(); return; }
 
   // Use the same persisted/default key discovery used by Read Tag.
   _discoverDefaultKeys(true);
@@ -3058,7 +3058,7 @@ void PN532I2cScreen::_doMifareReadMemory() {
 void PN532I2cScreen::_doMifareEditMemory() {
   renderOperationTitle("Edit Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
-  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag unsupported"); _goMifareAdvanced(); return; }
+  auto dims=_mfDims(_sak); if (!dims.first) { ShowStatusAction::show("Tag not supported"); _goMifareAdvanced(); return; }
   int block=InputNumberAction::popup((String("Block (1..")+String(dims.second-1)+")").c_str(),1,dims.second-1,1);
   if (InputNumberAction::wasCancelled()) { _goMifareAdvanced(); return; }
   String hex=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX);
@@ -3080,7 +3080,7 @@ void PN532I2cScreen::_doUltralightReadPages() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightAdvanced();
     return;
   }
@@ -3129,7 +3129,7 @@ void PN532I2cScreen::_doUltralightWritePage() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     _goUltralightAdvanced();
     return;
   }
@@ -3357,7 +3357,7 @@ void PN532I2cScreen::_doReadNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -3759,7 +3759,7 @@ void PN532I2cScreen::_doReadClassicNdef() {
 
   auto dims = _mfDims(_sak);
   if (dims.first == 0) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goMifareNdef();
     return;
   }
@@ -4028,7 +4028,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
 
   if (!_scanCardOrShow(5000)) return false;
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     return false;
   }
 
@@ -4171,7 +4171,7 @@ void PN532I2cScreen::_doEraseClassicNdef() {
     return;
   }
   if (_mfDims(_sak).first == 0) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goMifareNdef();
     return;
   }
@@ -4260,7 +4260,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
 
   uint16_t authPages = 0; const char* authType = nullptr;
   if (!_detectUltralightTag(authPages, authType)) {
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     return false;
   }
   if (!_pn532EnsureUltralightAuth(_nfc, _wire, authType, authPages, false)) {
@@ -4779,7 +4779,7 @@ void PN532I2cScreen::_doEraseNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -4819,7 +4819,7 @@ void PN532I2cScreen::_doFormatNdef() {
   uint16_t pages = 0;
   const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _goUltralightNdef();
     return;
   }
@@ -5077,7 +5077,7 @@ void PN532I2cScreen::_doDetectMagic() {
 
   const uint8_t sak = pn532_packetbuffer[11];
   if (sak != 0x09 && sak != 0x08 && sak != 0x18) {
-    _magicLog.addLine("Tag unsupported", TFT_DARKGREY);
+    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
     _magicDetectDone = true;
     render();
     return;
@@ -5607,7 +5607,7 @@ void PN532I2cScreen::_doEraseTag() {
   renderOperationTitle("Erase Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag unsupported"); _goMifareTag(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
   _discoverDefaultKeys(true);
   if (!_hasReadableKeyForEverySector()) {
     ShowStatusAction::show("Failed: missing key"); _goMifareTag(); return;

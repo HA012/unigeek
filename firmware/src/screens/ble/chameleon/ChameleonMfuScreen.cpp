@@ -225,7 +225,7 @@ void ChameleonMfuScreen::_read() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     Screen.goBack();
     return;
   }

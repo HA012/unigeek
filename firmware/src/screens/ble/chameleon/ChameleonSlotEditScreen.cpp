@@ -646,7 +646,7 @@ void ChameleonSlotEditScreen::_downloadDump() {
   const uint16_t dumpSize = _dumpSizeForType(_hfType);
   if (dumpSize == 0) {
     render();
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }
@@ -900,7 +900,7 @@ void ChameleonSlotEditScreen::_writeTag() {
       return;
     }
     render();
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     render();
     return;
   }
@@ -912,7 +912,7 @@ void ChameleonSlotEditScreen::_writeTag() {
     return;
   }
   render();
-  ShowStatusAction::show("Tag unsupported", 1600);
+  ShowStatusAction::show("Tag not supported", 1600);
   render();
 }
 

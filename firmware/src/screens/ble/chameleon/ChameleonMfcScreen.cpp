@@ -160,7 +160,7 @@ void ChameleonMfcScreen::_callAuth() {
     c.setMode(0);
     _running = false;
     render();
-    ShowStatusAction::show("Tag unsupported", 1200);
+    ShowStatusAction::show("Tag not supported", 1200);
     Screen.goBack();
     return;
   }

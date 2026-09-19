@@ -142,7 +142,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -272,7 +272,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     return false;
   }
 
@@ -376,7 +376,7 @@ void ChameleonMfuNdefScreen::format() {
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show(tagPresent ? "Tag unsupported" : "Tag not detected", 1200);
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
     _running = false;
     goMenu();
     return;
