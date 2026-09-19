@@ -90,7 +90,7 @@ void ChameleonScanReaderScreen::onUpdate() {
   if (_state!=WAITING || !_armed) return;
   if (millis()-_probeStartedAt >= 15000) {
     _restore();
-    ShowStatusAction::show("No reader detected", 1200);
+    ShowStatusAction::show("Reader not detected", 1200);
     Screen.goBack();
     return;
   }

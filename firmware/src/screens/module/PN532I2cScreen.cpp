@@ -1174,7 +1174,7 @@ void PN532I2cScreen::_doScanReader() {
   _nfc->SAMConfig();
   if (cancelled) { _goMain(); return; }
   if (!detected) {
-    ShowStatusAction::show("No reader detected", 1200);
+    ShowStatusAction::show("Reader not detected", 1200);
     _goMain();
     return;
   }
