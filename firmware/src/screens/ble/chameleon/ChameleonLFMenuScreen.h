@@ -4,11 +4,9 @@
 class ChameleonLFMenuScreen : public ListScreen {
 public:
   const char* title() override { return "LF Tools"; }
-
-  void onInit()                      override;
+  void onInit() override;
   void onItemSelected(uint8_t index) override;
-  void onBack()                      override;
-
+  void onBack() override;
 private:
-  ListItem _items[8];
+  ListItem _items[3];
 };

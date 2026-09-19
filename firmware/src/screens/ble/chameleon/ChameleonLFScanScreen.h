@@ -4,7 +4,7 @@
 
 class ChameleonLFScanScreen : public BaseScreen {
 public:
-  const char* title() override { return "Scan Tag"; }
+  const char* title() override { return "Read Tag"; }
   bool inhibitPowerOff() override { return _scanning; }
 
   void onInit() override;
@@ -34,4 +34,8 @@ private:
   void _buildResult();
   void _addRow(const char* label, const String& value);
   String _hexData() const;
+  const char* _protocolName() const;
+  void _showActions();
+  void _loadToSlot();
+  void _saveToFile();
 };

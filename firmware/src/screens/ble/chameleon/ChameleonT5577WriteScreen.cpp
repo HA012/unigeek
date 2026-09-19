@@ -38,13 +38,27 @@ void ChameleonT5577WriteScreen::onBack() { Screen.goBack(); }
 bool ChameleonT5577WriteScreen::_writeData(uint16_t type, const uint8_t* data, uint8_t len) {
   if (!data) return false;
   auto& c = ChameleonClient::get();
-  if (type == 100 && len == 5) return c.writeEM410XToT5577(data, nullptr, nullptr, 0);
-  if (type == 200 && len == 13) return c.writeHIDProxToT5577(data, len, nullptr, nullptr, 0);
-  if (type == 201 && len == 16) return c.writeIoProxToT5577(data, nullptr, nullptr, 0);
-  if (type == 170 && len == 4) return c.writeVikingToT5577(data, nullptr, nullptr, 0);
-  if (type == 150 && len == 8) return c.writePACToT5577(data, nullptr, nullptr, 0);
-  if (type == 180 && len == 5) return c.writeJablotronToT5577(data, nullptr, nullptr, 0);
+  // Diagnostic: the Password Cleaner succeeded with password #0 on the test
+  // T5577. Use that same known current key so this path is directly comparable.
+  static const uint8_t currentKey[4] = {0x51, 0x24, 0x36, 0x48};
+  if (type == 100 && len == 5) return c.writeEM410XToT5577(data, nullptr, currentKey, 1);
+  if (type == 200 && len == 13) return c.writeHIDProxToT5577(data, len, nullptr, currentKey, 1);
+  if (type == 201 && len == 16) return c.writeIoProxToT5577(data, nullptr, currentKey, 1);
+  if (type == 170 && len == 4) return c.writeVikingToT5577(data, nullptr, currentKey, 1);
+  if (type == 150 && len == 8) return c.writePACToT5577(data, nullptr, currentKey, 1);
+  if (type == 180 && len == 5) return c.writeJablotronToT5577(data, nullptr, currentKey, 1);
   return false;
+}
+
+void ChameleonT5577WriteScreen::_showWritingPrompt() {
+  render();
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY();
+  const int bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
 }
 
 bool ChameleonT5577WriteScreen::_writeFile(const String& path) {
@@ -77,6 +91,7 @@ void ChameleonT5577WriteScreen::_fromFile() {
   const uint8_t idx = (uint8_t)atoi(r);
   if (idx >= count) { render(); return; }
 
+  _showWritingPrompt();
   const bool ok = _writeFile(_browser.entry(idx).path);
   render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
 }
@@ -123,6 +138,7 @@ void ChameleonT5577WriteScreen::_fromSlot() {
   const uint8_t picked = (uint8_t)atoi(r);
   if (picked >= count) { render(); return; }
   const uint8_t slot = slots[picked];
+  _showWritingPrompt();
   const bool ok = _writeSlot(slot, types[slot].lfType);
   render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
 }

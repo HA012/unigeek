@@ -594,7 +594,10 @@ bool ChameleonClient::scanEM410X(uint8_t uid[5]) {
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_EM410X, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
   if ((st != 0 && st != 0x40) || len < 5) return false;
-  memcpy(uid, buf, 5);
+
+  // Some CU firmware versions prepend metadata to the 5-byte EM410X ID.
+  // The credential itself is always the final 5 bytes of the response.
+  memcpy(uid, buf + len - 5, 5);
   return true;
 }
 

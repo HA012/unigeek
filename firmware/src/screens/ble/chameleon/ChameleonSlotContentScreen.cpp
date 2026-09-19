@@ -5,6 +5,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "ui/components/StatusBar.h"
 
 void ChameleonSlotContentScreen::_addRow(const char* label, const String& value) {
   if (_rowCount >= MAX_ROWS) return;
@@ -546,4 +547,5 @@ void ChameleonSlotContentScreen::onUpdate() {
 
 void ChameleonSlotContentScreen::onRender() {
   _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
+  StatusBar::refresh();
 }

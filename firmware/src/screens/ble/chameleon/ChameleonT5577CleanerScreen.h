@@ -1,21 +1,30 @@
 #pragma once
-#include "ui/templates/BaseScreen.h"
+#include "ui/templates/ListScreen.h"
+#include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
 
-class ChameleonT5577CleanerScreen : public BaseScreen {
+class ChameleonT5577CleanerScreen : public ListScreen {
 public:
-  const char* title() override { return "Password Cleaner"; }
+  const char* title() override { return "Password Recovery"; }
   bool inhibitPowerOff() override { return _running; }
-
-  void onInit()   override;
+  void onInit() override;
   void onUpdate() override;
   void onRender() override;
-
+  void onItemSelected(uint8_t index) override;
+  void onBack() override;
 private:
-  bool    _running   = false;
-  bool    _needsDraw = true;
-  bool    _done      = false;
+  enum State { STATE_SELECT, STATE_RUNNING, STATE_DONE };
+  State _state = STATE_SELECT;
+  bool _running = false;
+  BrowseFileView _browser;
+  ListItem _items[1 + BrowseFileView::kCap];
+  String _pickDir;
   LogView _log;
-
-  void _run();
+  static constexpr uint16_t MAX_KEYS = 256;
+  uint8_t _keys[MAX_KEYS][4] = {};
+  uint16_t _keyCount = 0;
+  void _loadPicker();
+  bool _loadBuiltIn();
+  bool _loadFile(const char* path);
+  void _run(const char* sourceLabel);
 };

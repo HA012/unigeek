@@ -15,6 +15,7 @@ private:
 
   void _fromFile();
   void _fromSlot();
+  void _showWritingPrompt();
   bool _writeFile(const String& path);
   bool _writeSlot(uint8_t slot, uint16_t type);
   bool _writeData(uint16_t type, const uint8_t* data, uint8_t len);

@@ -906,6 +906,9 @@ void ChameleonSlotEditScreen::_writeTag() {
 
   // LF slots can be written to a physical T5577 tag.
   if (_lfType == 100 || _lfType == 150 || _lfType == 170 || _lfType == 180 || _lfType == 200 || _lfType == 201) {
+    // Restore the full screen after Actions/menus before drawing the blocking write prompt.
+    render();
+
     // Match the LF Tools write flow: show progress while the blocking T5577
     // write operation is running. Result wording is intentionally unchanged
     // until the global success/failure-message audit.
