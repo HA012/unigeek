@@ -143,6 +143,7 @@ bool ChameleonT5577WriteScreen::_passwordFallback(uint16_t type, const uint8_t* 
     vals[i + 2] = String(i);
     opts[i + 2] = {_browser.entry(i).label.c_str(), vals[i + 2].c_str()};
   }
+  _clearPopupBackground();
   const char* choice = InputSelectAction::popup("Current Password", opts, 2 + files, nullptr);
   if (!choice) return false;
   if (!strcmp(choice, "manual")) {
@@ -192,6 +193,13 @@ void ChameleonT5577WriteScreen::_showWritingPrompt() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
   lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
+}
+
+void ChameleonT5577WriteScreen::_clearPopupBackground() {
+  // Password popups are overlays. Clear the previous preview/details body first
+  // so stale rows do not remain visible around the popup. Keep the screen
+  // chrome/title intact.
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
 }
 
 void ChameleonT5577WriteScreen::_showTryingPasswordsPrompt() {

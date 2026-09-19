@@ -147,7 +147,7 @@ void ChameleonSlotViewScreen::_runLF() {
     _addRow("Data", "(unavailable)");
     return;
   }
-  _addRow("Data", LFCodec::hex(data, len));
+  _addRow("Data", LFCodec::hex(data, len, true));
 }
 
 void ChameleonSlotViewScreen::onInit() {
