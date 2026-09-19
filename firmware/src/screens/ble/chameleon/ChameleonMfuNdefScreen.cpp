@@ -394,7 +394,7 @@ void ChameleonMfuNdefScreen::format() {
   const bool ccRead = usePwd ? c.mfuReadPageSession(3, cc) : c.mfuReadPage(3, cc);
   if (!ccRead || !type2DefaultCc(info.type, desired)) {
     if (restoreMode) c.setMode(previousMode);
-    ShowStatusAction::show("Format unsupported", 1600);
+    ShowStatusAction::show("Format not supported", 1600);
     _running = false;
     goMenu();
     return;

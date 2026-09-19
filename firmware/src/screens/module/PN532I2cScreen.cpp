@@ -4926,7 +4926,7 @@ void PN532I2cScreen::_doFormatNdef() {
 
   uint8_t cc[4] = {}, desired[4] = {};
   if (!_pn532Type2ReadPage(_nfc, _wire, 3, cc) || !_type2DefaultCc(typeName, desired)) {
-    ShowStatusAction::show("Format unsupported");
+    ShowStatusAction::show("Format not supported");
     _goUltralightNdef();
     return;
   }
@@ -5384,7 +5384,7 @@ void PN532I2cScreen::_doWriteDumpFileSelected(uint8_t fileIndex) {
   if (!f) { ShowStatusAction::show("Failed to open file"); _goMifareTag(); return; }
   size_t len = f.size();
   if (len != 320 && len != 1024 && len != 4096) {
-    f.close(); ShowStatusAction::show("Unsupported dump size"); _goMifareTag(); return;
+    f.close(); ShowStatusAction::show("Dump size not supported"); _goMifareTag(); return;
   }
   uint8_t* dump = (uint8_t*)malloc(len);
   if (!dump) { f.close(); ShowStatusAction::show("Out of memory"); _goMifareTag(); return; }

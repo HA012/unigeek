@@ -114,7 +114,7 @@ static St25Type4bScanResult st25ScanType4b(ST25R3916Backend& dev,
 
 static void st25ShowType4bScanError(St25Type4bScanResult result) {
   if (result == St25Type4bScanResult::WRONG_TECH) {
-    ShowStatusAction::show("Tag unsupported", 1200);
+    ShowStatusAction::show("Tag not supported", 1200);
   } else if (result == St25Type4bScanResult::NO_ISODEP) {
     ShowStatusAction::show("ISO-DEP not supported", 1600);
   } else {
@@ -1148,7 +1148,7 @@ void ST25R3916Screen::_readMfcTag() {
     return;
   }
   if (!isMifareClassic(tag.sak)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcTagMenu();
     return;
   }
@@ -1156,7 +1156,7 @@ void ST25R3916Screen::_readMfcTag() {
   size_t sectors = 0, blocks = 0;
   mfcDimensions(tag.sak, sectors, blocks);
   if (!sectors || !blocks) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcTagMenu();
     return;
   }
@@ -1558,7 +1558,7 @@ void ST25R3916Screen::_openMfcDumpFile(uint8_t index) {
   if (!f) { ShowStatusAction::show("Failed to open file"); _showMfcTagMenu(); return; }
   const size_t len = f.size();
   if (len != 320 && len != 1024 && len != 4096) {
-    f.close(); ShowStatusAction::show("Unsupported dump size", 1600); _showMfcTagMenu(); return;
+    f.close(); ShowStatusAction::show("Dump size not supported", 1600); _showMfcTagMenu(); return;
   }
   const size_t got = f.read(_mfcDump, len);
   f.close();
@@ -1636,7 +1636,7 @@ bool ST25R3916Screen::_writeMfcDumpToTag() {
     ShowStatusAction::show("Tag not detected"); _showMfcTagMenu(); return false;
   }
   if (!isMifareClassic(tag.sak)) {
-    ShowStatusAction::show("Tag unsupported"); _showMfcTagMenu(); return false;
+    ShowStatusAction::show("Tag not supported"); _showMfcTagMenu(); return false;
   }
   size_t sectors = 0, blocks = 0;
   mfcDimensions(tag.sak, sectors, blocks);
@@ -1811,7 +1811,7 @@ void ST25R3916Screen::_eraseMfcTag() {
     return;
   }
   if (!isMifareClassic(tag.sak)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcTagMenu();
     return;
   }
@@ -1819,7 +1819,7 @@ void ST25R3916Screen::_eraseMfcTag() {
   size_t sectors = 0, blocks = 0;
   mfcDimensions(tag.sak, sectors, blocks);
   if (!sectors || !blocks || sectors > 40) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcTagMenu();
     return;
   }
@@ -2246,7 +2246,7 @@ bool ST25R3916Screen::_writeMfcNdef(const uint8_t* ndef, size_t ndefLen) {
   if (!ready) { ShowStatusAction::show("ST25R3916 not found"); return false; }
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("Tag not detected"); return false; }
-  if (!isMifareClassic(tag.sak)) { ShowStatusAction::show("Tag unsupported"); return false; }
+  if (!isMifareClassic(tag.sak)) { ShowStatusAction::show("Tag not supported"); return false; }
   size_t totalSectors=0,totalBlocks=0; mfcDimensions(tag.sak,totalSectors,totalBlocks);
   auto reactivate=[&](){ dev.deactivate(); ST25R3916Backend::ScanResult cur; return dev.scan(ST25R3916Backend::TECH_A,cur,1200,true)&&sameTag(tag,cur); };
   static const uint8_t madKeys[][6]={{0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},{0xD3,0xF7,0xD3,0xF7,0xD3,0xF7}};
@@ -2290,7 +2290,7 @@ void ST25R3916Screen::_eraseMfcNdef() {
     ShowStatusAction::show("Tag not detected"); _showMfcNdefMenu(); return;
   }
   if (!isMifareClassic(tag.sak)) {
-    dev.deactivate(); ShowStatusAction::show("Tag unsupported"); _showMfcNdefMenu(); return;
+    dev.deactivate(); ShowStatusAction::show("Tag not supported"); _showMfcNdefMenu(); return;
   }
 
   size_t totalSectors = 0, totalBlocks = 0;
@@ -2682,10 +2682,10 @@ bool ST25R3916Screen::_writeMfuDumpToTag() {
   if (!ready) { ShowStatusAction::show("ST25R3916 not found"); _showMfuTagMenu(); return false; }
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("Tag not detected"); _showMfuTagMenu(); return false; }
-  if (tag.sak != 0x00) { dev.deactivate(); ShowStatusAction::show("Tag unsupported", 1600); _showMfuTagMenu(); return false; }
+  if (tag.sak != 0x00) { dev.deactivate(); ShowStatusAction::show("Tag not supported", 1600); _showMfuTagMenu(); return false; }
   String type; uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages) || type != "NTAG215" || pages != 135) {
-    dev.deactivate(); ShowStatusAction::show("Tag unsupported", 1600); _showMfuTagMenu(); return false;
+    dev.deactivate(); ShowStatusAction::show("Tag not supported", 1600); _showMfuTagMenu(); return false;
   }
   if (!st25EnsureMfuAuth(dev, type, pages, 4, 129, false)) { dev.deactivate(); _showMfuWritePreview(_mfuWritePreviewFromFile); return false; }
   render(); _renderTagPrompt();
@@ -2733,7 +2733,7 @@ void ST25R3916Screen::_eraseMfuTag() {
   }
   if (tag.sak != 0x00) {
     dev.deactivate();
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     _showMfuTagMenu();
     return;
   }
@@ -2742,7 +2742,7 @@ void ST25R3916Screen::_eraseMfuTag() {
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages) || type != "NTAG215" || pages != 135 || tag.nfcidLen != 7) {
     dev.deactivate();
-    ShowStatusAction::show("Tag unsupported", 1600);
+    ShowStatusAction::show("Tag not supported", 1600);
     _showMfuTagMenu();
     return;
   }
@@ -2954,7 +2954,7 @@ void ST25R3916Screen::_readMfcNdef() {
     return;
   }
   if (!isMifareClassic(tag.sak)) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcNdefMenu();
     return;
   }
@@ -2962,7 +2962,7 @@ void ST25R3916Screen::_readMfcNdef() {
   size_t totalSectors = 0, totalBlocks = 0;
   mfcDimensions(tag.sak, totalSectors, totalBlocks);
   if (!totalSectors) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcNdefMenu();
     return;
   }
@@ -3145,7 +3145,7 @@ void ST25R3916Screen::_readMfuNdef() {
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages)) {
-    dev.deactivate(); ShowStatusAction::show("Tag unsupported"); _showMfuNdefMenu(); return;
+    dev.deactivate(); ShowStatusAction::show("Tag not supported"); _showMfuNdefMenu(); return;
   }
   if (!st25EnsureMfuAuth(dev, type, pages, 3, pages - 1, true)) {
     dev.deactivate(); _showMfuNdefMenu(); return;
@@ -3207,7 +3207,7 @@ bool ST25R3916Screen::_writeMfuNdef(const uint8_t* ndef, size_t ndefLen) {
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("Tag not detected"); return false; }
   String type;
   uint16_t pages = 0;
-  if (!_detectMfuType(dev, type, pages)) { dev.deactivate(); ShowStatusAction::show("Tag unsupported"); return false; }
+  if (!_detectMfuType(dev, type, pages)) { dev.deactivate(); ShowStatusAction::show("Tag not supported"); return false; }
   if (!st25EnsureMfuAuth(dev, type, pages, 3, pages - 1, false)) { dev.deactivate(); return false; }
   _state = STATE_MFU_NDEF_WRITING;
   render();
@@ -3281,7 +3281,7 @@ void ST25R3916Screen::_eraseMfuNdef() {
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("Tag not detected"); _showMfuNdefMenu(); return; }
   String type;
   uint16_t pages = 0;
-  if (!_detectMfuType(dev, type, pages)) { dev.deactivate(); ShowStatusAction::show("Tag unsupported"); _showMfuNdefMenu(); return; }
+  if (!_detectMfuType(dev, type, pages)) { dev.deactivate(); ShowStatusAction::show("Tag not supported"); _showMfuNdefMenu(); return; }
   if (!st25EnsureMfuAuth(dev, type, pages, 3, pages - 1, false)) { dev.deactivate(); _showMfuNdefMenu(); return; }
   _state = STATE_MFU_NDEF_WRITING;
   render();
@@ -3389,7 +3389,7 @@ void ST25R3916Screen::_readMfuTag() {
     return;
   }
   if (tag.sak != 0x00) {
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfuTagMenu();
     return;
   }
@@ -3397,7 +3397,7 @@ void ST25R3916Screen::_readMfuTag() {
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages) || pages == 0 || pages * 4U > kMfuMaxDumpLen) {
-    ShowStatusAction::show("Tag unsupported", 1400);
+    ShowStatusAction::show("Tag not supported", 1400);
     _showMfuTagMenu();
     return;
   }
@@ -3530,7 +3530,7 @@ void ST25R3916Screen::_readMfuMemory() {
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true)) { ShowStatusAction::show("Tag not detected"); _showMfuAdvancedMenu(); return; }
   String type; uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages) || pages == 0 || (size_t)pages * 4U > kMfuMaxDumpLen) {
-    dev.deactivate(); ShowStatusAction::show("Tag unsupported"); _showMfuAdvancedMenu(); return;
+    dev.deactivate(); ShowStatusAction::show("Tag not supported"); _showMfuAdvancedMenu(); return;
   }
   if (!st25EnsureMfuAuth(dev, type, pages, 0, pages - 1, true)) { dev.deactivate(); _showMfuAdvancedMenu(); return; }
   render(); _renderTagPrompt();
@@ -3564,7 +3564,7 @@ void ST25R3916Screen::_readMfuMemory() {
 void ST25R3916Screen::_editMfuMemory() {
 #if defined(DEVICE_HAS_ST25R3916)
   _advancedOperationTitle = "Edit Memory";
-  _state=STATE_MFU_MEMORY; render(); _renderTagPrompt(); ST25R3916Backend dev; if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not found",STATE_MFU_ADVANCED_MENU,1600);return;} ST25R3916Backend::ScanResult tag; if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){_showStatusAndReturn("Tag not detected",STATE_MFU_ADVANCED_MENU,1600);return;} String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)||pages<=4){dev.deactivate();_showStatusAndReturn("Tag unsupported",STATE_MFU_ADVANCED_MENU,1600);return;}
+  _state=STATE_MFU_MEMORY; render(); _renderTagPrompt(); ST25R3916Backend dev; if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not found",STATE_MFU_ADVANCED_MENU,1600);return;} ST25R3916Backend::ScanResult tag; if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){_showStatusAndReturn("Tag not detected",STATE_MFU_ADVANCED_MENU,1600);return;} String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)||pages<=4){dev.deactivate();_showStatusAndReturn("Tag not supported",STATE_MFU_ADVANCED_MENU,1600);return;}
   int pg=InputNumberAction::popup((String("Page (4..")+String(pages-1)+")").c_str(),4,pages-1,4); if(InputNumberAction::wasCancelled()){dev.deactivate();_showMfuAdvancedMenu();return;} if(!st25ConfirmMfuSensitiveWrite(type,(uint16_t)pg)){dev.deactivate();_showMfuAdvancedMenu();return;} String hex=InputTextAction::popup("Page data (8 hex)","",InputTextAction::INPUT_HEX); if(InputTextAction::wasCancelled()){dev.deactivate();_showMfuAdvancedMenu();return;} hex.replace(" ","");hex.replace(":",""); if(hex.length()!=8){dev.deactivate();_state=STATE_MFU_MEMORY;render();_showStatusAndReturn("Need 8 hex chars",STATE_MFU_ADVANCED_MENU,1600);return;} uint8_t d[4]={};for(int i=0;i<4;++i){char b[3]={hex[i*2],hex[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(b,&e,16);if(!e||*e){dev.deactivate();_state=STATE_MFU_MEMORY;render();_showStatusAndReturn("Bad hex",STATE_MFU_ADVANCED_MENU,1200);return;}d[i]=(uint8_t)v;}
   if(!st25EnsureMfuAuth(dev,type,pages,pg,pg,false)){dev.deactivate();_showMfuAdvancedMenu();return;} _state=STATE_MFU_MEMORY;render(); bool ok=dev.type2WritePage((uint8_t)pg,d);dev.deactivate();_showStatusAndReturn(ok?"Page written":"Failed",STATE_MFU_ADVANCED_MENU,1600);
 #endif
@@ -3587,7 +3587,7 @@ void ST25R3916Screen::_setMfuPassword() {
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages)) {
-    dev.deactivate(); _showStatusAndReturn("Tag unsupported", STATE_MFU_ADVANCED_MENU, 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
   const uint16_t cfg = st25MfuConfig0(type);
   if (cfg == 0xFFFF || cfg + 3 >= pages) {
@@ -3699,7 +3699,7 @@ void ST25R3916Screen::_removeMfuPassword() {
   String type;
   uint16_t pages = 0;
   if (!_detectMfuType(dev, type, pages)) {
-    dev.deactivate(); _showStatusAndReturn("Tag unsupported", STATE_MFU_ADVANCED_MENU, 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_MFU_ADVANCED_MENU, 1600); return;
   }
   const uint16_t cfg = st25MfuConfig0(type);
   if (cfg == 0xFFFF || cfg + 3 >= pages) {
@@ -3802,11 +3802,11 @@ void ST25R3916Screen::_formatMfuNdef() {
   _state=STATE_MFU_NDEF_WRITING;render();_renderTagPrompt();ST25R3916Backend dev;
   if(!st25Begin(dev, _interface)){ShowStatusAction::show("ST25R3916 not found");_showMfuNdefMenu();return;}
   ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)){ShowStatusAction::show("Tag not detected");_showMfuNdefMenu();return;}
-  String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)){dev.deactivate();ShowStatusAction::show("Tag unsupported");_showMfuNdefMenu();return;}
+  String type;uint16_t pages=0;if(!_detectMfuType(dev,type,pages)){dev.deactivate();ShowStatusAction::show("Tag not supported");_showMfuNdefMenu();return;}
   if(!st25EnsureMfuAuth(dev,type,pages,3,4,false)){dev.deactivate();_showMfuNdefMenu();return;}
   _state=STATE_MFU_NDEF_WRITING;render();
   uint8_t current[4]={},desired[4]={};
-  if(!st25ReadPage(dev,3,current)||!st25Type2DefaultCc(type,desired)){dev.deactivate();ShowStatusAction::show("Format unsupported");_showMfuNdefMenu();return;}
+  if(!st25ReadPage(dev,3,current)||!st25Type2DefaultCc(type,desired)){dev.deactivate();ShowStatusAction::show("Format not supported");_showMfuNdefMenu();return;}
   bool ok=true;
   const bool hadValidCc=st25Type2CcIsValid(current);
   if(!hadValidCc){
@@ -3836,7 +3836,7 @@ void ST25R3916Screen::_showMfcKnownKeys() {
   ST25R3916Backend dev;
   if(!st25Begin(dev, _interface)){ShowStatusAction::show("ST25R3916 not found");return;}
   ST25R3916Backend::ScanResult tag;
-  if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||!isMifareClassic(tag.sak)){dev.deactivate();ShowStatusAction::show("Tag unsupported");return;}
+  if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||!isMifareClassic(tag.sak)){dev.deactivate();ShowStatusAction::show("Tag not supported");return;}
   dev.deactivate();
   size_t sectors=0,blocks=0;mfcDimensions(tag.sak,sectors,blocks);
   String uidDisplay,uidFile;
@@ -3887,7 +3887,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true) || !isMifareClassic(tag.sak)) {
     dev.deactivate();
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     return;
   }
 
@@ -4089,7 +4089,7 @@ void ST25R3916Screen::_runDetectMagic() {
     _magicDetectDone = true; render(); return;
   }
   if (!isMifareClassic(tag.sak)) {
-    _magicLog.addLine("Tag unsupported", TFT_DARKGREY);
+    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
     _magicDetectDone = true; render(); return;
   }
   _magicLog.addLine("Checking Magic type...", TFT_WHITE);
@@ -4198,7 +4198,7 @@ void ST25R3916Screen::_editMfcMemory() {
   }
   if (!isMifareClassic(tag.sak)) {
     dev.deactivate();
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcAdvancedMenu();
     return;
   }
@@ -4207,7 +4207,7 @@ void ST25R3916Screen::_editMfcMemory() {
   mfcDimensions(tag.sak, sectors, blocks);
   if (!blocks || blocks > 256) {
     dev.deactivate();
-    ShowStatusAction::show("Tag unsupported");
+    ShowStatusAction::show("Tag not supported");
     _showMfcAdvancedMenu();
     return;
   }
@@ -4638,10 +4638,10 @@ void ST25R3916Screen::_experimentalReadTag() {
   if ((_expFamily == EXP_DESFIRE && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) ||
       (_expFamily == EXP_NFCV && tag.technology != ST25R3916Backend::Technology::NFC_V) ||
       (_expFamily == EXP_FELICA && tag.technology != ST25R3916Backend::Technology::NFC_F)) {
-    dev.deactivate(); _showStatusAndReturn("Tag unsupported", STATE_EXP_TAG_MENU, 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_EXP_TAG_MENU, 1600); return;
   }
   if (_expFamily == EXP_DESFIRE && !ST25R3916Experimental::desfireProbe(dev)) {
-    dev.deactivate(); _showStatusAndReturn("Tag unsupported", STATE_EXP_TAG_MENU, 1600); return;
+    dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_EXP_TAG_MENU, 1600); return;
   }
   _rowCount = 0;
   auto add=[&](const char* l,const String& v){ if(_rowCount>=kMaxRows)return; _rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount; };
@@ -4672,8 +4672,8 @@ void ST25R3916Screen::_experimentalDesfireAction(uint8_t group, uint8_t index) {
 #if defined(DEVICE_HAS_ST25R3916)
   _state=STATE_EXP_WORKING; _advancedOperationTitle = group==1?"Applications":group==2?"Files":"Advanced"; render(); _renderTagPrompt();
   ST25R3916Backend dev; if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not found", STATE_EXP_TAG_MENU, 1600); return;}
-  ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||tag.technology!=ST25R3916Backend::Technology::NFC_A||!tag.isoDep){_showStatusAndReturn("Tag unsupported", STATE_EXP_TAG_MENU, 1600); return;}
-  if(!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag unsupported", STATE_EXP_TAG_MENU, 1600); return;}
+  ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||tag.technology!=ST25R3916Backend::Technology::NFC_A||!tag.isoDep){_showStatusAndReturn("Tag not supported", STATE_EXP_TAG_MENU, 1600); return;}
+  if(!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag not supported", STATE_EXP_TAG_MENU, 1600); return;}
   auto selectAid=[&](){if(!_expDesfireAidSelected)return true;uint8_t out[8]={};size_t n=0;uint8_t st=0;return ST25R3916Experimental::desfireExchange(dev,0x5A,_expDesfireAid,3,out,sizeof(out),n,st);};
   auto showData=[&](const char* title,const uint8_t* d,size_t n){_expResultReturn=(group==1?STATE_EXP_SUB1_MENU:group==2?STATE_EXP_SUB2_MENU:STATE_EXP_ADVANCED_MENU);dev.deactivate();_showExperimentalHex(title,d,n);};
   uint8_t out[512]={};size_t n=0;uint8_t st=0xFF;
@@ -4755,7 +4755,7 @@ void ST25R3916Screen::_experimentalType4bAction(uint8_t index) { if(index==0)_ex
 
 void ST25R3916Screen::_experimentalSendApdu(bool desfire) {
 #if defined(DEVICE_HAS_ST25R3916)
-  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){_showStatusAndReturn("Invalid APDU", STATE_EXP_ADVANCED_MENU, 1600); return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not found", STATE_EXP_ADVANCED_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(desfire){if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||!tag.isoDep){_showStatusAndReturn("Tag unsupported", STATE_EXP_ADVANCED_MENU, 1600); return;}}else{const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag unsupported", STATE_EXP_ADVANCED_MENU, 1600); return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_ADVANCED_MENU, 1600); return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
+  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){_showStatusAndReturn("Invalid APDU", STATE_EXP_ADVANCED_MENU, 1600); return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not found", STATE_EXP_ADVANCED_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(desfire){if(!dev.scan(ST25R3916Backend::TECH_A,tag,5000,true)||!tag.isoDep){_showStatusAndReturn("Tag not supported", STATE_EXP_ADVANCED_MENU, 1600); return;}}else{const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag not supported", STATE_EXP_ADVANCED_MENU, 1600); return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_ADVANCED_MENU, 1600); return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
 #endif
 }
 

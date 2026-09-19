@@ -391,7 +391,7 @@ void MFRC522Screen::_callAuthenticate() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMainMenu();
     return;
   }
@@ -473,7 +473,7 @@ void MFRC522Screen::_callMemoryReader() {
 
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMifareClassic();
     return;
   }
@@ -704,7 +704,7 @@ void MFRC522Screen::_callDictAttackWithFile(uint8_t fileIndex) {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMifareClassic();
     return;
   }
@@ -801,7 +801,7 @@ void MFRC522Screen::_callStaticNested() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }
@@ -955,7 +955,7 @@ void MFRC522Screen::_callNestedAttack() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }
@@ -1114,7 +1114,7 @@ void MFRC522Screen::_callDarksideAttack() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }
