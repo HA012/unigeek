@@ -315,7 +315,7 @@ void NfcDumpEditorScreen::_editMemory() {
     }
     memcpy(_dump + (size_t)block * 16u, data, sizeof(data));
     _dirty = true; _info = NfcDumpParser::inspect(_dump, _dumpLen);
-    _showActions(); ShowStatusAction::show("Block updated in working copy", 1600); return;
+    _showActions(); ShowStatusAction::show("Block updated", 1600); return;
   }
 
   if (NfcDumpParser::isType2(_info.type)) {
@@ -335,7 +335,7 @@ void NfcDumpEditorScreen::_editMemory() {
     }
     memcpy(_dump + (size_t)page * 4u, data, sizeof(data));
     _dirty = true; _info = NfcDumpParser::inspect(_dump, _dumpLen);
-    _showActions(); ShowStatusAction::show("Page updated in working copy", 1600); return;
+    _showActions(); ShowStatusAction::show("Page updated", 1600); return;
   }
 
   _showActions(); ShowStatusAction::show("Edit Memory not supported", 1600);
@@ -370,7 +370,7 @@ void NfcDumpEditorScreen::_editUid() {
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
   _showInfo();
-  ShowStatusAction::show("UID updated in working copy", 1600);
+  ShowStatusAction::show("UID updated", 1600);
 }
 
 bool NfcDumpEditorScreen::_applyEditedNdef(void* context, const uint8_t* ndef, size_t len) {
@@ -459,12 +459,12 @@ void NfcDumpEditorScreen::_setPassword() {
   const bool protectRead = strcmp(mode, "rw") == 0;
 
   if (!NfcDumpParser::setPassword(_dump, _dumpLen, pwd, pack, protectRead)) {
-    _showActions(); ShowStatusAction::show("Password setup failed", 1600);
+    _showActions(); ShowStatusAction::show("Failed", 1600);
     return;
   }
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
-  _showActions(); ShowStatusAction::show("Password set in working copy", 1600);
+  _showActions(); ShowStatusAction::show("Password set", 1600);
 }
 
 void NfcDumpEditorScreen::_removePassword() {
@@ -475,12 +475,12 @@ void NfcDumpEditorScreen::_removePassword() {
   if (!current.enabled) { _showActions(); ShowStatusAction::show("Password not set", 1600); return; }
 
   if (!NfcDumpParser::removePassword(_dump, _dumpLen)) {
-    _showActions(); ShowStatusAction::show("Remove failed", 1600);
+    _showActions(); ShowStatusAction::show("Failed", 1600);
     return;
   }
   _dirty = true;
   _info = NfcDumpParser::inspect(_dump, _dumpLen);
-  _showActions(); ShowStatusAction::show("Password removed from working copy", 1600);
+  _showActions(); ShowStatusAction::show("Password removed", 1600);
 }
 
 String NfcDumpEditorScreen::_suggestedDumpName() const {
@@ -533,21 +533,21 @@ bool NfcDumpEditorScreen::_saveAs() {
       }
     }
     if (!found) {
-      ShowStatusAction::show("No free file name", 1600);
+      ShowStatusAction::show("Failed", 1600);
       return false;
     }
   }
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     return false;
   }
   const size_t written = f.write(_dump, _dumpLen);
   f.close();
   if (written != _dumpLen) {
     Uni.Storage->deleteFile(path.c_str());
-    ShowStatusAction::show("Save failed", 1600);
+    ShowStatusAction::show("Failed", 1600);
     return false;
   }
 

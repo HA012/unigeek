@@ -657,10 +657,10 @@ bool NdefEditorScreen::_saveEdited(const uint8_t* ndef, size_t len) {
 
   if (_bufferMode) {
     if (!_saveCallback || !_saveCallback(_saveContext, ndef, len)) {
-      ShowStatusAction::show("NDEF update failed", 1500);
+      ShowStatusAction::show("Failed", 1500);
       return false;
     }
-    ShowStatusAction::show("NDEF updated in working copy", 1500);
+    ShowStatusAction::show("NDEF updated", 1500);
     return true;
   }
 
