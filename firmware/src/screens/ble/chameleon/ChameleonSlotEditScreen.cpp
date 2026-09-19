@@ -1,5 +1,6 @@
 #include "ChameleonSlotEditScreen.h"
 #include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 #include "ChameleonSlotsScreen.h"
 #include "ChameleonSlotViewScreen.h"
 #include "ChameleonSlotContentScreen.h"
@@ -118,21 +119,25 @@ void ChameleonSlotEditScreen::_editType(bool lf) {
     {"UltraLight",      "1103"},
     {"Empty",           "0"},
   };
-  static const InputSelectAction::Option lfOpts[] = {
-    {"EM410X",      "100"},
-    {"HID Prox",    "200"},
-    {"ioProx",      "201"},
-    {"Viking",      "170"},
-    {"PAC/Stanley", "150"},
-    {"Jablotron",   "180"},
-    {"Empty",       "0"},
-  };
+  InputSelectAction::Option lfOpts[8] = {};
+  char lfValues[8][8] = {};
+  uint8_t lfCount = 0;
+  for (size_t i = 0; i < LFCodec::formatCount() && lfCount < 7; ++i) {
+    const LFCodec::FormatInfo* info = LFCodec::formatAt(i);
+    if (!info) continue;
+    snprintf(lfValues[lfCount], sizeof(lfValues[lfCount]), "%u", info->chameleonType);
+    lfOpts[lfCount] = {info->name, lfValues[lfCount]};
+    ++lfCount;
+  }
+  snprintf(lfValues[lfCount], sizeof(lfValues[lfCount]), "0");
+  lfOpts[lfCount] = {"Empty", lfValues[lfCount]};
+  ++lfCount;
   uint16_t cur = lf ? _lfType : _hfType;
   char def[8];
   snprintf(def, sizeof(def), "%u", cur);
 
   const char* r = lf
-    ? InputSelectAction::popup("LF type", lfOpts, 7, def)
+    ? InputSelectAction::popup("LF type", lfOpts, lfCount, def)
     : InputSelectAction::popup("HF type", hfOpts, 11, def);
 
   if (!r) { render(); return; }
@@ -489,25 +494,13 @@ bool ChameleonSlotEditScreen::_writeHfFromBin(const char* path) {
   restoreContext();
   return true;
 }
-static bool _lfTypeFromFile(const String& path, uint16_t* type, uint8_t* size) {
-  if (!type || !size) return false;
-  const int slash = path.lastIndexOf('/');
-  const String name = slash >= 0 ? path.substring(slash + 1) : path;
-  if (name.startsWith("EM410X_"))      { *type = 100; *size = 5;  return true; }
-  if (name.startsWith("HID-Prox_"))    { *type = 200; *size = 13; return true; }
-  if (name.startsWith("ioProx_"))      { *type = 201; *size = 16; return true; }
-  if (name.startsWith("Viking_"))      { *type = 170; *size = 4;  return true; }
-  if (name.startsWith("PAC-Stanley_")) { *type = 150; *size = 8;  return true; }
-  if (name.startsWith("Jablotron_"))   { *type = 180; *size = 5;  return true; }
-  return false;
-}
-
 bool ChameleonSlotEditScreen::_writeLfFromBin(const char* path) {
   if (!path || !Uni.Storage) return false;
 
-  uint16_t tagType = 0;
-  uint8_t expected = 0;
-  if (!_lfTypeFromFile(path, &tagType, &expected)) return false;
+  const LFCodec::FormatInfo* info = LFCodec::fromFilename(path);
+  if (!info) return false;
+  const uint16_t tagType = info->chameleonType;
+  const uint8_t expected = info->dataSize;
 
   fs::File f = Uni.Storage->open(path, "r");
   if (!f || f.size() != expected) { if (f) f.close(); return false; }
@@ -589,13 +582,20 @@ bool ChameleonSlotEditScreen::_saveLfSlotToFile() {
   uint8_t data[16] = {};
   uint8_t len = 0;
   bool ok = false;
-  String typeName;
-  if (_lfType == 100) { len = 5; ok = c.getEM410XSlot(data); typeName = "EM410X"; }
-  else if (_lfType == 200) { ok = c.getHIDProxSlot(data, &len) && len == 13; typeName = "HID-Prox"; }
-  else if (_lfType == 201) { ok = c.getIoProxSlot(data, &len) && len == 16; typeName = "ioProx"; }
-  else if (_lfType == 170) { ok = c.getVikingSlot(data, &len) && len == 4; typeName = "Viking"; }
-  else if (_lfType == 150) { ok = c.getPACSlot(data, &len) && len == 8; typeName = "PAC-Stanley"; }
-  else if (_lfType == 180) { ok = c.getJablotronSlot(data, &len) && len == 5; typeName = "Jablotron"; }
+  const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(_lfType);
+  String typeName = info ? info->filePrefix : "LF";
+  if (info) {
+    switch (info->protocol) {
+      case LFCodec::Protocol::EM410X:     len = 5; ok = c.getEM410XSlot(data); break;
+      case LFCodec::Protocol::HIDProx:    ok = c.getHIDProxSlot(data, &len); break;
+      case LFCodec::Protocol::IoProx:     ok = c.getIoProxSlot(data, &len); break;
+      case LFCodec::Protocol::Viking:     ok = c.getVikingSlot(data, &len); break;
+      case LFCodec::Protocol::PACStanley: ok = c.getPACSlot(data, &len); break;
+      case LFCodec::Protocol::Jablotron:  ok = c.getJablotronSlot(data, &len); break;
+      default: break;
+    }
+    ok = ok && LFCodec::validate(info->protocol, len);
+  }
 
   if (restoreSlot) c.setActiveSlot(previousSlot);
   if (!ok || !len) return false;
@@ -907,7 +907,7 @@ void ChameleonSlotEditScreen::_writeTag() {
 
   // LF slots use the same T5577 writer as LF Tools so Reader Mode, manual
   // current-password entry, built-in keys and dictionary fallback stay identical.
-  if (_lfType == 100 || _lfType == 150 || _lfType == 170 || _lfType == 180 || _lfType == 200 || _lfType == 201) {
+  if (LFCodec::isSupportedT5577(_lfType)) {
     Screen.push(new ChameleonT5577WriteScreen(_slot, _lfType));
     return;
   }

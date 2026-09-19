@@ -16,16 +16,6 @@ void ChameleonLFScanScreen::_addRow(const char* label, const String& value) {
   _rowCount++;
 }
 
-String ChameleonLFScanScreen::_hexData() const {
-  String out;
-  char h[3];
-  for (uint8_t i = 0; i < _dataLen; ++i) {
-    snprintf(h, sizeof(h), "%02X", _data[i]);
-    out += h;
-  }
-  return out;
-}
-
 void ChameleonLFScanScreen::_draw() {
   _needsDraw = false;
   auto& lcd = Uni.Lcd;
@@ -35,67 +25,26 @@ void ChameleonLFScanScreen::_draw() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2);
+  sp.drawString("Place tag on reader...", bw / 2, bh / 2 - 8);
+  sp.setTextColor(TFT_WHITE, TFT_BLACK);
+  sp.drawString("[Press] Continue", bw / 2, bh / 2 + 10);
   sp.pushSprite(bx, by);
   sp.deleteSprite();
 }
 
 void ChameleonLFScanScreen::_buildResult() {
   _rowCount = 0;
-  const String hex = _hexData();
 
-  switch (_protocol) {
-    case EM410X: {
-      String uidHex;
-      char byteHex[3];
-      for (uint8_t i = 0; i < _dataLen; ++i) {
-        if (i) uidHex += ":";
-        snprintf(byteHex, sizeof(byteHex), "%02X", _data[i]);
-        uidHex += byteHex;
-      }
+  LFCodec::DecodedData decoded;
+  if (!LFCodec::decode(_protocol, _data, _dataLen, decoded)) return;
 
-      uint64_t dec = 0;
-      for (uint8_t i = 0; i < _dataLen; ++i) dec = (dec << 8) | _data[i];
-      _addRow("UID (Hex)", uidHex);
-      _addRow("UID (Dec)", String((unsigned long long)dec));
-      _addRow("Format", "EM410X");
-      break;
-    }
-    case HID_PROX:
-      _addRow("Data", hex);
-      _addRow("Format", "HID Prox");
-      break;
-    case IOPROX: {
-      if (_dataLen >= 4) {
-        _addRow("Facility", String(_data[1]));
-        _addRow("Card Number", String((uint16_t(_data[2]) << 8) | _data[3]));
-      }
-      _addRow("Format", "ioProx");
-      break;
-    }
-    case VIKING:
-      _addRow("UID", hex);
-      _addRow("Format", "Viking");
-      break;
-    case PAC_STANLEY: {
-      bool printable = _dataLen > 0;
-      String ascii;
-      for (uint8_t i = 0; i < _dataLen; ++i) {
-        if (_data[i] < 0x20 || _data[i] > 0x7E) printable = false;
-        ascii += char(_data[i]);
-      }
-      _addRow(printable ? "ID" : "Data", printable ? ascii : hex);
-      _addRow("Format", "PAC/Stanley");
-      break;
-    }
-    case JABLOTRON:
-      _addRow("ID", hex);
-      _addRow("Format", "Jablotron");
-      break;
-    default:
-      return;
-  }
+  const LFCodec::FormatInfo* info = LFCodec::format(decoded.protocol);
+  if (!info) return;
+  LFCodec::Field fields[3];
+  const size_t fieldCount = LFCodec::fields(decoded, fields, 3);
+  for (size_t i = 0; i < fieldCount; ++i) _addRow(fields[i].label, fields[i].value);
 
+  _addRow("Format", info->name);
   _addRow("Frequency", "125 kHz");
   _addRow("[Press]", "Actions");
   _scrollView.resetScroll();
@@ -104,39 +53,35 @@ void ChameleonLFScanScreen::_buildResult() {
 
 void ChameleonLFScanScreen::_doScan() {
   _scanning = true;
-  render();
-
-  // Match Chameleon HF Scan Tag: keep the placement prompt visible while the
-  // blocking reader calls run, rather than introducing a separate scan UI.
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  lcd.drawString("Reading tag...", bx + bw / 2, by + bh / 2);
 
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
   const bool restoreMode = c.getMode(&previousMode);
   c.setMode(1);
 
-  _protocol = NONE;
+  _protocol = LFCodec::Protocol::Unknown;
   _dataLen = 0;
   bool found = false;
 
   if (c.scanEM410X(_data)) {
-    _protocol = EM410X; _dataLen = 5; found = true;
+    _protocol = LFCodec::Protocol::EM410X; _dataLen = 5; found = true;
   } else if (c.scanHIDProx(_data, &_dataLen)) {
-    _protocol = HID_PROX; found = true;
+    _protocol = LFCodec::Protocol::HIDProx; found = true;
   } else if (c.scanIoProx(_data, &_dataLen)) {
-    _protocol = IOPROX; found = true;
+    _protocol = LFCodec::Protocol::IoProx; found = true;
   } else if (c.scanViking(_data, &_dataLen)) {
-    _protocol = VIKING; found = true;
+    _protocol = LFCodec::Protocol::Viking; found = true;
   } else if (c.scanPAC(_data, &_dataLen)) {
-    _protocol = PAC_STANLEY; found = true;
+    _protocol = LFCodec::Protocol::PACStanley; found = true;
   } else if (c.scanJablotron(_data, &_dataLen)) {
-    _protocol = JABLOTRON; found = true;
+    _protocol = LFCodec::Protocol::Jablotron; found = true;
   }
 
   if (restoreMode) c.setMode(previousMode);
@@ -161,7 +106,6 @@ void ChameleonLFScanScreen::_doScan() {
 void ChameleonLFScanScreen::onInit() {
   _state = STATE_IDLE;
   _needsDraw = true;
-  _doScan();
 }
 
 void ChameleonLFScanScreen::onRender() {
@@ -192,26 +136,19 @@ void ChameleonLFScanScreen::onUpdate() {
 
 
 const char* ChameleonLFScanScreen::_protocolName() const {
-  switch (_protocol) {
-    case EM410X: return "EM410X";
-    case HID_PROX: return "HID Prox";
-    case IOPROX: return "ioProx";
-    case VIKING: return "Viking";
-    case PAC_STANLEY: return "PAC/Stanley";
-    case JABLOTRON: return "Jablotron";
-    default: return "LF";
-  }
+  const LFCodec::FormatInfo* info = LFCodec::format(_protocol);
+  return info ? info->name : "LF";
 }
 
 void ChameleonLFScanScreen::_loadToSlot() {
   auto& c = ChameleonClient::get();
   bool ok = false;
-  if (_protocol == EM410X && _dataLen == 5) ok = c.setEM410XSlot(_data);
-  else if (_protocol == HID_PROX) ok = c.setHIDProxSlot(_data, _dataLen);
-  else if (_protocol == IOPROX && _dataLen == 16) ok = c.setIoProxSlot(_data);
-  else if (_protocol == VIKING) ok = c.setVikingSlot(_data, _dataLen);
-  else if (_protocol == PAC_STANLEY && _dataLen == 8) ok = c.setPACSlot(_data);
-  else if (_protocol == JABLOTRON && _dataLen == 5) ok = c.setJablotronSlot(_data);
+  if (_protocol == LFCodec::Protocol::EM410X && _dataLen == 5) ok = c.setEM410XSlot(_data);
+  else if (_protocol == LFCodec::Protocol::HIDProx) ok = c.setHIDProxSlot(_data, _dataLen);
+  else if (_protocol == LFCodec::Protocol::IoProx && _dataLen == 16) ok = c.setIoProxSlot(_data);
+  else if (_protocol == LFCodec::Protocol::Viking) ok = c.setVikingSlot(_data, _dataLen);
+  else if (_protocol == LFCodec::Protocol::PACStanley && _dataLen == 8) ok = c.setPACSlot(_data);
+  else if (_protocol == LFCodec::Protocol::Jablotron && _dataLen == 5) ok = c.setJablotronSlot(_data);
   if (ok) {
     c.setMode(0);
     int n = Achievement.inc("chameleon_clone");
@@ -228,9 +165,8 @@ void ChameleonLFScanScreen::_saveToFile() {
   if (!Uni.Storage || !Uni.Storage->isAvailable() || !_dataLen) {
     ShowStatusAction::show("Failed", 1200); render(); return;
   }
-  String type = _protocolName();
-  type.replace("/", "-"); type.replace(" ", "-");
-  String suggested = type + "_";
+  const LFCodec::FormatInfo* info = LFCodec::format(_protocol);
+  String suggested = String(info ? info->filePrefix : "LF") + "_";
   char h[3];
   for (uint8_t i = 0; i < _dataLen; ++i) { snprintf(h, sizeof(h), "%02X", _data[i]); suggested += h; }
   String name = InputTextAction::popup("File name", suggested.c_str());

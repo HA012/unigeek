@@ -1,4 +1,5 @@
 #include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -607,14 +608,9 @@ bool ChameleonClient::setEM410XSlot(const uint8_t uid[5]) {
 }
 
 const char* ChameleonClient::tagTypeName(uint16_t type) {
+  if (const LFCodec::FormatInfo* lf = LFCodec::fromChameleonType(type)) return lf->name;
   switch (type) {
-    case 100:  return "EM410X";
     case 101:  return "EM410Xx2";
-    case 150:  return "PAC/Stanley";
-    case 170:  return "Viking";
-    case 180:  return "Jablotron";
-    case 200:  return "HID Prox";
-    case 201:  return "ioProx";
     case 1000: return "MF-Mini";
     case 1001: return "MF-1K";
     case 1002: return "MF-2K";

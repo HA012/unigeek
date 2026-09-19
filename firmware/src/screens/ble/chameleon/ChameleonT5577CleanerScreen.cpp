@@ -20,6 +20,7 @@ void ChameleonT5577CleanerScreen::_loadPicker() {
 void ChameleonT5577CleanerScreen::onInit() { _state=STATE_SELECT; _loadPicker(); }
 
 void ChameleonT5577CleanerScreen::onBack() {
+  if (_state == STATE_PROMPT) { _state=STATE_SELECT; _loadPicker(); render(); return; }
   if (_state == STATE_SELECT) {
     if (_pickDir == T5577Dictionary::kDirectory || !_pickDir.length()) { _pickDir=""; Screen.goBack(); return; }
     int slash=_pickDir.lastIndexOf('/'); _pickDir=(slash>0)?_pickDir.substring(0,slash):T5577Dictionary::kDirectory;
@@ -30,6 +31,13 @@ void ChameleonT5577CleanerScreen::onBack() {
 
 void ChameleonT5577CleanerScreen::onUpdate() {
   if (_state == STATE_RUNNING) return;
+  if (_state == STATE_PROMPT) {
+    if (!Uni.Nav->wasPressed()) return;
+    auto dir=Uni.Nav->readDirection();
+    if (dir == INavigation::DIR_BACK) { _state=STATE_SELECT; _loadPicker(); render(); return; }
+    if (dir == INavigation::DIR_PRESS) { _run(_sourceLabel.c_str()); return; }
+    return;
+  }
   if (_state == STATE_DONE) {
     if (!Uni.Nav->wasPressed()) return;
     auto dir=Uni.Nav->readDirection();
@@ -45,6 +53,7 @@ void ChameleonT5577CleanerScreen::onUpdate() {
 }
 
 void ChameleonT5577CleanerScreen::onRender() {
+  if (_state == STATE_PROMPT) { _drawPrompt(); return; }
   if (_state == STATE_RUNNING || _state == STATE_DONE) {
     _log.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH()); StatusBar::refresh(); return;
   }
@@ -72,7 +81,7 @@ bool ChameleonT5577CleanerScreen::_loadFile(const char* path) {
 void ChameleonT5577CleanerScreen::onItemSelected(uint8_t index) {
   if (_state != STATE_SELECT) return;
   uint8_t off=(_pickDir==T5577Dictionary::kDirectory)?1:0; String label;
-  if (off && index==0) { _loadBuiltIn(); label="Built-in"; }
+  if (off && index==0) { _loadBuiltIn(); label="Built-in Keys"; }
   else {
     uint8_t fi=index-off; if (fi>=_browser.count()) return;
     const auto& e=_browser.entry(fi);
@@ -81,7 +90,21 @@ void ChameleonT5577CleanerScreen::onItemSelected(uint8_t index) {
     label=e.name;
   }
   if (!_keyCount) { ShowStatusAction::show("No keys in source",1200); render(); return; }
-  _run(label.c_str());
+  _sourceLabel = label;
+  _state = STATE_PROMPT;
+  render();
+}
+
+void ChameleonT5577CleanerScreen::_drawPrompt() {
+  auto& lcd=Uni.Lcd;
+  const int bx=bodyX(), by=bodyY(), bw=bodyW(), bh=bodyH();
+  lcd.fillRect(bx,by,bw,bh,TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW,TFT_BLACK);
+  lcd.drawString("Place tag on reader...",bx+bw/2,by+bh/2-8);
+  lcd.setTextColor(TFT_WHITE,TFT_BLACK);
+  lcd.drawString("[Press] Continue",bx+bw/2,by+bh/2+10);
 }
 
 void ChameleonT5577CleanerScreen::_run(const char* sourceLabel) {
@@ -90,7 +113,7 @@ void ChameleonT5577CleanerScreen::_run(const char* sourceLabel) {
   // recovery changes the tag contents and password.
   _state=STATE_RUNNING; _running=true; _log.clear();
   String src=String("Src: ")+sourceLabel; _log.addLine(src.c_str(),TFT_CYAN);
-  _log.addLine("Place T5577 tag on reader...",TFT_DARKGREY); render();
+  _log.addLine("Trying passwords...",TFT_DARKGREY); render();
   static const uint8_t dummyUid[5]={0xAA,0xAA,0xAA,0xAA,0xAA};
   static const uint8_t newPw[4]={0x51,0x24,0x36,0x48};
   auto& c=ChameleonClient::get(); c.setMode(1);

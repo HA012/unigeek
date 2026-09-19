@@ -1,5 +1,6 @@
 #include "ChameleonSlotContentScreen.h"
 #include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 #include "utils/nfc/NdefParser.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -355,59 +356,42 @@ void ChameleonSlotContentScreen::_run() {
     }
     delay(50);
 
-    auto hexData = [](const uint8_t* d, uint8_t n) {
-      String v; char h[3];
-      for (uint8_t i = 0; i < n; ++i) { snprintf(h, sizeof(h), "%02X", d[i]); v += h; }
-      return v;
-    };
-
-    if (lfType == 100) {
-      uint8_t d[5] = {};
-      if (c.getEM410XSlot(d)) {
-        char hex[20];
-        snprintf(hex, sizeof(hex), "%02X:%02X:%02X:%02X:%02X", d[0],d[1],d[2],d[3],d[4]);
-        uint64_t dec = 0; for (uint8_t b : d) dec = (dec << 8) | b;
-        _addRow("UID (Hex)", hex);
-        char decText[24]; snprintf(decText, sizeof(decText), "%llu", (unsigned long long)dec);
-        _addRow("UID (Dec)", decText);
-      } else _addRow("UID", "(unavailable)");
-    } else if (lfType == 200) {
-      uint8_t d[13] = {}, n = 0;
-      if (c.getHIDProxSlot(d, &n) && n) _addRow("Data", hexData(d, n));
-      else _addRow("Data", "(unavailable)");
-    } else if (lfType == 201) {
-      uint8_t d[16] = {}, n = 0;
-      if (c.getIoProxSlot(d, &n) && n >= 4) {
-        _addRow("Facility", String(d[1]));
-        _addRow("Card Number", String(((uint16_t)d[2] << 8) | d[3]));
-      } else _addRow("Data", "(unavailable)");
-    } else if (lfType == 170) {
-      uint8_t d[4] = {}, n = 0;
-      if (c.getVikingSlot(d, &n) && n) _addRow("Data", hexData(d, n));
-      else _addRow("Data", "(unavailable)");
-    } else if (lfType == 150) {
-      uint8_t d[8] = {}, n = 0;
-      if (c.getPACSlot(d, &n) && n) {
-        String value; bool printable = true;
-        for (uint8_t i = 0; i < n; ++i) if (d[i] < 32 || d[i] > 126) { printable = false; break; }
-        if (printable) for (uint8_t i = 0; i < n; ++i) value += (char)d[i];
-        if (!value.length()) value = hexData(d, n);
-        _addRow("Data", value);
-      } else _addRow("Data", "(unavailable)");
-    } else if (lfType == 180) {
-      uint8_t d[5] = {}, n = 0;
-      if (c.getJablotronSlot(d, &n) && n) _addRow("Data", hexData(d, n));
-      else _addRow("Data", "(unavailable)");
-    } else if (lfType == 0) {
+    if (lfType == 0) {
       _addRow("Data", "(empty)");
-    } else {
-      _addRow("Data", "Not supported yet");
+      _scrollView.setRows(_rows, _rowCount);
+      return;
     }
 
-    if (lfType != 0) {
-      _addRow("Format", ChameleonClient::tagTypeName(lfType));
-      _addRow("Frequency", "125 kHz");
+    const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(lfType);
+    if (!info) {
+      _addRow("Data", "Not supported yet");
+      _scrollView.setRows(_rows, _rowCount);
+      return;
     }
+
+    uint8_t data[LFCodec::kMaxDataSize] = {}, len = 0;
+    bool ok = false;
+    switch (info->protocol) {
+      case LFCodec::Protocol::EM410X:     len = 5; ok = c.getEM410XSlot(data); break;
+      case LFCodec::Protocol::HIDProx:    ok = c.getHIDProxSlot(data, &len); break;
+      case LFCodec::Protocol::IoProx:     ok = c.getIoProxSlot(data, &len); break;
+      case LFCodec::Protocol::Viking:     ok = c.getVikingSlot(data, &len); break;
+      case LFCodec::Protocol::PACStanley: ok = c.getPACSlot(data, &len); break;
+      case LFCodec::Protocol::Jablotron:  ok = c.getJablotronSlot(data, &len); break;
+      default: break;
+    }
+
+    LFCodec::DecodedData decoded;
+    if (!ok || !LFCodec::decode(info->protocol, data, len, decoded)) {
+      _addRow("Data", "(unavailable)");
+    } else {
+      LFCodec::Field fields[3];
+      const size_t fieldCount = LFCodec::fields(decoded, fields, 3);
+      for (size_t i = 0; i < fieldCount; ++i) _addRow(fields[i].label, fields[i].value);
+    }
+
+    _addRow("Format", info->name);
+    _addRow("Frequency", "125 kHz");
     _scrollView.setRows(_rows, _rowCount);
     return;
   }

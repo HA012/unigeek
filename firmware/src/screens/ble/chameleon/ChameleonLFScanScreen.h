@@ -1,6 +1,7 @@
 #pragma once
 #include "ui/templates/BaseScreen.h"
 #include "ui/views/ScrollListView.h"
+#include "utils/rfid/LFCodec.h"
 
 class ChameleonLFScanScreen : public BaseScreen {
 public:
@@ -13,10 +14,9 @@ public:
 
 private:
   enum State { STATE_IDLE, STATE_RESULT };
-  enum Protocol { NONE, EM410X, HID_PROX, IOPROX, VIKING, PAC_STANLEY, JABLOTRON };
 
   State _state = STATE_IDLE;
-  Protocol _protocol = NONE;
+  LFCodec::Protocol _protocol = LFCodec::Protocol::Unknown;
   bool _scanning = false;
   bool _needsDraw = true;
   uint8_t _data[16] = {};
@@ -33,7 +33,6 @@ private:
   void _doScan();
   void _buildResult();
   void _addRow(const char* label, const String& value);
-  String _hexData() const;
   const char* _protocolName() const;
   void _showActions();
   void _loadToSlot();

@@ -6,34 +6,42 @@
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "utils/rfid/T5577Dictionary.h"
-
-static bool t5577FileType(const String& path, uint16_t* type, uint8_t* size) {
-  if (!type || !size) return false;
-  const int slash = path.lastIndexOf('/');
-  const String name = slash >= 0 ? path.substring(slash + 1) : path;
-  if (name.startsWith("EM410X_"))      { *type = 100; *size = 5;  return true; }
-  if (name.startsWith("HID-Prox_"))    { *type = 200; *size = 13; return true; }
-  if (name.startsWith("ioProx_"))      { *type = 201; *size = 16; return true; }
-  if (name.startsWith("Viking_"))      { *type = 170; *size = 4;  return true; }
-  if (name.startsWith("PAC-Stanley_")) { *type = 150; *size = 8;  return true; }
-  if (name.startsWith("Jablotron_"))   { *type = 180; *size = 5;  return true; }
-  return false;
-}
-
-static bool supportedT5577Type(uint16_t type) {
-  return type == 100 || type == 150 || type == 170 || type == 180 || type == 200 || type == 201;
-}
+#include "utils/rfid/LFCodec.h"
 
 void ChameleonT5577WriteScreen::onInit() {
   if (_directWrite) {
-    const bool ok = _writeSlot(_directSlot, _directType);
-    render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
-    Screen.goBack();
+    if (!_loadSlot(_directSlot, _directType)) {
+      render(); ShowStatusAction::show("Slot unavailable", 1600); Screen.goBack(); return;
+    }
+    _sourceLabel = String("Slot ") + String(_directSlot + 1);
+    _buildPreview();
+    _preview = true;
+    render();
     return;
   }
   _items[0] = {"From File"};
   _items[1] = {"From Slot"};
   setItems(_items);
+}
+
+void ChameleonT5577WriteScreen::onUpdate() {
+  if (!_preview) { ListScreen::onUpdate(); return; }
+  if (_busy || !Uni.Nav->wasPressed()) return;
+  auto dir = Uni.Nav->readDirection();
+  if (_placePrompt) {
+    if (dir == INavigation::DIR_BACK) { _placePrompt = false; render(); return; }
+    if (dir == INavigation::DIR_PRESS) { _placePrompt = false; _performWrite(); return; }
+    return;
+  }
+  if (dir == INavigation::DIR_BACK) { Screen.goBack(); return; }
+  if (dir == INavigation::DIR_PRESS) { _writePreview(); return; }
+  _scrollView.onNav(dir);
+}
+
+void ChameleonT5577WriteScreen::onRender() {
+  if (_placePrompt) { _showTagPrompt(); return; }
+  if (_preview) { _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH()); return; }
+  ListScreen::onRender();
 }
 
 void ChameleonT5577WriteScreen::onItemSelected(uint8_t index) {
@@ -43,27 +51,56 @@ void ChameleonT5577WriteScreen::onItemSelected(uint8_t index) {
 
 void ChameleonT5577WriteScreen::onBack() { Screen.goBack(); }
 
+void ChameleonT5577WriteScreen::_addRow(const char* label, const String& value) {
+  if (_rowCount >= kMaxRows) return;
+  _labels[_rowCount] = label;
+  _values[_rowCount] = value;
+  _rows[_rowCount] = {_labels[_rowCount].c_str(), _values[_rowCount]};
+  ++_rowCount;
+}
+
+void ChameleonT5577WriteScreen::_buildPreview() {
+  _rowCount = 0;
+  const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(_sourceType);
+  if (!info) return;
+  LFCodec::DecodedData decoded;
+  if (!LFCodec::decode(info->protocol, _sourceData, _sourceLen, decoded)) return;
+  _addRow("Source", _sourceLabel);
+  _addRow("Type", info->name);
+  LFCodec::Field fields[3];
+  const size_t fieldCount = LFCodec::fields(decoded, fields, 3);
+  for (size_t i = 0; i < fieldCount; ++i) _addRow(fields[i].label, fields[i].value);
+  _addRow("Frequency", "125 kHz");
+  _addRow("[Press]", "Write to Tag");
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+}
+
 bool ChameleonT5577WriteScreen::_writeData(uint16_t type, const uint8_t* data, uint8_t len,
                                                 const uint8_t* currentKey, uint8_t keyCount) {
   if (!data) return false;
+  const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(type);
+  if (!info || !LFCodec::isSupportedT5577(type) || !LFCodec::validate(info->protocol, len)) return false;
   auto& c = ChameleonClient::get();
   if (!c.setMode(1)) return false;
-  if (type == 100 && len == 5) return c.writeEM410XToT5577(data, nullptr, currentKey, keyCount);
-  if (type == 200 && len == 13) return c.writeHIDProxToT5577(data, len, nullptr, currentKey, keyCount);
-  if (type == 201 && len == 16) return c.writeIoProxToT5577(data, nullptr, currentKey, keyCount);
-  if (type == 170 && len == 4) return c.writeVikingToT5577(data, nullptr, currentKey, keyCount);
-  if (type == 150 && len == 8) return c.writePACToT5577(data, nullptr, currentKey, keyCount);
-  if (type == 180 && len == 5) return c.writeJablotronToT5577(data, nullptr, currentKey, keyCount);
-  return false;
+  switch (info->protocol) {
+    case LFCodec::Protocol::EM410X:     return c.writeEM410XToT5577(data, nullptr, currentKey, keyCount);
+    case LFCodec::Protocol::HIDProx:    return c.writeHIDProxToT5577(data, len, nullptr, currentKey, keyCount);
+    case LFCodec::Protocol::IoProx:     return c.writeIoProxToT5577(data, nullptr, currentKey, keyCount);
+    case LFCodec::Protocol::Viking:     return c.writeVikingToT5577(data, nullptr, currentKey, keyCount);
+    case LFCodec::Protocol::PACStanley: return c.writePACToT5577(data, nullptr, currentKey, keyCount);
+    case LFCodec::Protocol::Jablotron:  return c.writeJablotronToT5577(data, nullptr, currentKey, keyCount);
+    default: return false;
+  }
 }
 
 bool ChameleonT5577WriteScreen::_retryWithKey(uint16_t type, const uint8_t* data, uint8_t len,
                                                const uint8_t key[4]) {
-  _showWritingPrompt();
   return _writeData(type, data, len, key, 1);
 }
 
 bool ChameleonT5577WriteScreen::_retryWithBuiltIn(uint16_t type, const uint8_t* data, uint8_t len) {
+  _showTryingPasswordsPrompt();
   for (size_t i = 0; i < T5577Dictionary::kBuiltinKeyCount; ++i) {
     if (_retryWithKey(type, data, len, T5577Dictionary::kBuiltinKeys[i])) return true;
   }
@@ -75,6 +112,7 @@ bool ChameleonT5577WriteScreen::_retryWithDictionary(uint16_t type, const uint8_
   if (!Uni.Storage || !Uni.Storage->isAvailable()) return false;
   String content = Uni.Storage->readFile(path);
   if (!content.length()) return false;
+  _showTryingPasswordsPrompt();
   int start = 0;
   while (start < (int)content.length()) {
     int nl = content.indexOf('\n', start); if (nl < 0) nl = content.length();
@@ -114,6 +152,7 @@ bool ChameleonT5577WriteScreen::_passwordFallback(uint16_t type, const uint8_t* 
     if (!T5577Dictionary::parseKey(value, key)) {
       render(); ShowStatusAction::show("Invalid password", 1400); render(); return false;
     }
+    _showWritingPrompt();
     return _retryWithKey(type, data, len, key);
   }
   if (!strcmp(choice, "builtin")) return _retryWithBuiltIn(type, data, len);
@@ -131,6 +170,19 @@ bool ChameleonT5577WriteScreen::_writeWithPasswordFallback(uint16_t type, const 
   return _passwordFallback(type, data, len);
 }
 
+void ChameleonT5577WriteScreen::_showTagPrompt() {
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY();
+  const int bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextSize(1);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2 - 8);
+  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  lcd.drawString("[Press] Continue", bx + bw / 2, by + bh / 2 + 10);
+}
+
 void ChameleonT5577WriteScreen::_showWritingPrompt() {
   render();
   auto& lcd = Uni.Lcd;
@@ -142,75 +194,82 @@ void ChameleonT5577WriteScreen::_showWritingPrompt() {
   lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
 }
 
-bool ChameleonT5577WriteScreen::_writeFile(const String& path) {
-  uint16_t type = 0;
-  uint8_t expected = 0;
-  if (!t5577FileType(path, &type, &expected) || !Uni.Storage) return false;
+void ChameleonT5577WriteScreen::_showTryingPasswordsPrompt() {
+  render();
+  auto& lcd = Uni.Lcd;
+  const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
+  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
+  lcd.setTextDatum(MC_DATUM);
+  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
+  lcd.drawString("Trying passwords...", bx + bw / 2, by + bh / 2);
+}
+
+bool ChameleonT5577WriteScreen::_loadFile(const String& path) {
+  const LFCodec::FormatInfo* info = LFCodec::fromFilename(path);
+  if (!info || !Uni.Storage) return false;
   fs::File f = Uni.Storage->open(path.c_str(), "r");
-  if (!f || f.size() != expected) { if (f) f.close(); return false; }
-  uint8_t data[16] = {};
-  const int n = f.read(data, expected);
+  if (!f || f.size() != info->dataSize) { if (f) f.close(); return false; }
+  const int n = f.read(_sourceData, info->dataSize);
   f.close();
-  return n == expected && _writeWithPasswordFallback(type, data, expected);
+  if (n != info->dataSize) return false;
+  _sourceType = info->chameleonType;
+  _sourceLen = info->dataSize;
+  _sourceLabel = "File";
+  return true;
 }
 
 void ChameleonT5577WriteScreen::_fromFile() {
   const uint8_t n = _browser.load(this, "/unigeek/rfid",
       BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
   if (!n) { render(); ShowStatusAction::show("No .bin in rfid", 1600); render(); return; }
-
   static constexpr uint8_t kMax = 10;
   const uint8_t count = n < kMax ? n : kMax;
   static InputSelectAction::Option opts[kMax];
   static String vals[kMax];
   for (uint8_t i = 0; i < count; ++i) {
-    vals[i] = String(i);
-    opts[i] = {_browser.entry(i).name.c_str(), vals[i].c_str()};
+    vals[i] = String(i); opts[i] = {_browser.entry(i).name.c_str(), vals[i].c_str()};
   }
   const char* r = InputSelectAction::popup("LF Data", opts, count, nullptr);
   if (!r) { render(); return; }
   const uint8_t idx = (uint8_t)atoi(r);
-  if (idx >= count) { render(); return; }
-
-  const bool ok = _writeFile(_browser.entry(idx).path);
-  render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
+  if (idx >= count || !_loadFile(_browser.entry(idx).path)) {
+    render(); ShowStatusAction::show("Invalid LF data", 1600); render(); return;
+  }
+  _buildPreview(); _preview = true; render();
 }
 
-bool ChameleonT5577WriteScreen::_writeSlot(uint8_t slot, uint16_t type) {
+bool ChameleonT5577WriteScreen::_loadSlot(uint8_t slot, uint16_t type) {
+  const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(type);
+  if (!info || !LFCodec::isSupportedT5577(type)) return false;
   auto& c = ChameleonClient::get();
   uint8_t previousSlot = 0;
   const bool restoreSlot = c.getActiveSlot(&previousSlot) && previousSlot != slot;
   if (!c.setActiveSlot(slot)) return false;
-
-  uint8_t data[16] = {};
-  uint8_t len = 0;
-  bool ok = false;
-  if (type == 100) { len = 5; ok = c.getEM410XSlot(data); }
-  else if (type == 200) ok = c.getHIDProxSlot(data, &len) && len == 13;
-  else if (type == 201) ok = c.getIoProxSlot(data, &len) && len == 16;
-  else if (type == 170) ok = c.getVikingSlot(data, &len) && len == 4;
-  else if (type == 150) ok = c.getPACSlot(data, &len) && len == 8;
-  else if (type == 180) ok = c.getJablotronSlot(data, &len) && len == 5;
-  if (ok) ok = _writeWithPasswordFallback(type, data, len);
+  uint8_t len = 0; bool ok = false;
+  switch (info->protocol) {
+    case LFCodec::Protocol::EM410X: len = 5; ok = c.getEM410XSlot(_sourceData); break;
+    case LFCodec::Protocol::HIDProx: ok = c.getHIDProxSlot(_sourceData, &len); break;
+    case LFCodec::Protocol::IoProx: ok = c.getIoProxSlot(_sourceData, &len); break;
+    case LFCodec::Protocol::Viking: ok = c.getVikingSlot(_sourceData, &len); break;
+    case LFCodec::Protocol::PACStanley: ok = c.getPACSlot(_sourceData, &len); break;
+    case LFCodec::Protocol::Jablotron: ok = c.getJablotronSlot(_sourceData, &len); break;
+    default: break;
+  }
   if (restoreSlot) c.setActiveSlot(previousSlot);
-  return ok;
+  if (!ok || !LFCodec::validate(info->protocol, len)) return false;
+  _sourceType = type; _sourceLen = len;
+  return true;
 }
 
 void ChameleonT5577WriteScreen::_fromSlot() {
   auto& c = ChameleonClient::get();
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) { render(); ShowStatusAction::show("Failed", 1600); render(); return; }
-
-  InputSelectAction::Option opts[8];
-  String labels[8], vals[8];
-  uint8_t slots[8] = {}, count = 0;
+  InputSelectAction::Option opts[8]; String labels[8], vals[8]; uint8_t slots[8] = {}, count = 0;
   for (uint8_t i = 0; i < 8; ++i) {
-    if (!supportedT5577Type(types[i].lfType)) continue;
+    if (!LFCodec::isSupportedT5577(types[i].lfType)) continue;
     labels[count] = String("Slot ") + String(i + 1) + " - " + ChameleonClient::tagTypeName(types[i].lfType);
-    vals[count] = String(count);
-    slots[count] = i;
-    opts[count] = {labels[count].c_str(), vals[count].c_str()};
-    ++count;
+    vals[count] = String(count); slots[count] = i; opts[count] = {labels[count].c_str(), vals[count].c_str()}; ++count;
   }
   if (!count) { render(); ShowStatusAction::show("No supported LF slot", 1600); render(); return; }
   const char* r = InputSelectAction::popup("From Slot", opts, count, nullptr);
@@ -218,10 +277,22 @@ void ChameleonT5577WriteScreen::_fromSlot() {
   const uint8_t picked = (uint8_t)atoi(r);
   if (picked >= count) { render(); return; }
   const uint8_t slot = slots[picked];
-  // Restore the parent screen immediately after dismissing the slot picker.
-  // _writeSlot() performs BLE reads before the writing prompt is shown, so
-  // leaving the popup pixels on screen here causes a visible transition artifact.
   render();
-  const bool ok = _writeSlot(slot, types[slot].lfType);
-  render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render();
+  if (!_loadSlot(slot, types[slot].lfType)) { ShowStatusAction::show("Slot unavailable", 1600); render(); return; }
+  _sourceLabel = String("Slot ") + String(slot + 1);
+  _buildPreview(); _preview = true; render();
+}
+
+void ChameleonT5577WriteScreen::_writePreview() {
+  _placePrompt = true;
+  render();
+}
+
+void ChameleonT5577WriteScreen::_performWrite() {
+  _busy = true;
+  const bool ok = _writeWithPasswordFallback(_sourceType, _sourceData, _sourceLen);
+  _busy = false;
+  _buildPreview(); render();
+  if (ok) { ShowStatusAction::show("Tag written", 1600); Screen.goBack(); return; }
+  ShowStatusAction::show("Failed", 1600); render();
 }

@@ -1,5 +1,6 @@
 #include "ChameleonSlotViewScreen.h"
 #include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 #include "ChameleonSlotEditScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -127,24 +128,26 @@ void ChameleonSlotViewScreen::_runLF() {
   _addRow("Type", ChameleonClient::tagTypeName(t));
   if (t == 0) { _addRow("Data", "(empty)"); return; }
 
-  uint8_t data[16] = {}, len = 0;
-  bool ok = false;
-  if (t == 100) { len = 5; ok = c.getEM410XSlot(data); }
-  else if (t == 200) ok = c.getHIDProxSlot(data, &len);
-  else if (t == 201) ok = c.getIoProxSlot(data, &len);
-  else if (t == 170) ok = c.getVikingSlot(data, &len);
-  else if (t == 150) ok = c.getPACSlot(data, &len);
-  else if (t == 180) ok = c.getJablotronSlot(data, &len);
-  else { _addRow("Data", "Unsupported"); return; }
+  const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(t);
+  if (!info) { _addRow("Data", "Unsupported"); return; }
 
-  if (!ok || !len) { _addRow("Data", "(unavailable)"); return; }
-  String hex;
-  char h[4];
-  for (uint8_t i = 0; i < len; ++i) {
-    snprintf(h, sizeof(h), "%02X", data[i]);
-    hex += h;
+  uint8_t data[LFCodec::kMaxDataSize] = {}, len = 0;
+  bool ok = false;
+  switch (info->protocol) {
+    case LFCodec::Protocol::EM410X:     len = 5; ok = c.getEM410XSlot(data); break;
+    case LFCodec::Protocol::HIDProx:    ok = c.getHIDProxSlot(data, &len); break;
+    case LFCodec::Protocol::IoProx:     ok = c.getIoProxSlot(data, &len); break;
+    case LFCodec::Protocol::Viking:     ok = c.getVikingSlot(data, &len); break;
+    case LFCodec::Protocol::PACStanley: ok = c.getPACSlot(data, &len); break;
+    case LFCodec::Protocol::Jablotron:  ok = c.getJablotronSlot(data, &len); break;
+    default: break;
   }
-  _addRow("Data", hex);
+
+  if (!ok || !LFCodec::validate(info->protocol, len)) {
+    _addRow("Data", "(unavailable)");
+    return;
+  }
+  _addRow("Data", LFCodec::hex(data, len));
 }
 
 void ChameleonSlotViewScreen::onInit() {
