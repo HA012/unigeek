@@ -44,7 +44,6 @@ private:
   void _showTagPrompt();
   void _showWritingPrompt();
   void _showTryingPasswordsPrompt();
-  void _clearPopupBackground();
   void _performWrite();
   bool _loadFile(const String& path);
   bool _loadSlot(uint8_t slot, uint16_t type);
