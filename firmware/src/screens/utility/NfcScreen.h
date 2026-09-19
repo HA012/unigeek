@@ -5,7 +5,7 @@
 class NfcScreen : public ListScreen
 {
 public:
-  const char* title() override { return "NFC Tools"; }
+  const char* title() override { return "NFC/RFID Tools"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;

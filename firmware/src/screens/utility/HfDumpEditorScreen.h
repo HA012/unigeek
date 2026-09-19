@@ -44,6 +44,7 @@ private:
   size_t _dumpLen = 0;
   bool _dirty = false;
   bool _returnToInfoAfterChild = false;
+  bool _holdFired = false;
 
   ScrollListView _infoView;
   static constexpr uint8_t INFO_ROW_MAX = 7;
@@ -57,7 +58,6 @@ private:
 
   void _openFiles();
   void _selectFile(uint8_t index);
-  bool _confirmDiscardChanges();
   bool _loadFile(const String& path);
   void _freeDump();
   void _editMemory();

@@ -4,7 +4,7 @@
 
 class LfDataGeneratorScreen : public ListScreen {
 public:
-  const char* title() override { return "New Data"; }
+  const char* title() override { return "New LF Data"; }
   void onInit() override;
   void onItemSelected(uint8_t index) override;
 private:

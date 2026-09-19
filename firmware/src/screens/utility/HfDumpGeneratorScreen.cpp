@@ -16,13 +16,13 @@
 
 const char* HfDumpGeneratorScreen::title() {
   switch (_state) {
-    case STATE_TAG_TYPE:         return "New Dump";
+    case STATE_TAG_TYPE:         return "New HF Dump";
     case STATE_NDEF_CONTENT:     return "NDEF Content";
     case STATE_NDEF_TYPE:        return "New NDEF Record";
     case STATE_NDEF_FILE_SELECT: return "NDEF Files";
     case STATE_NDEF_PREVIEW:     return "NDEF Preview";
   }
-  return "New Dump";
+  return "New HF Dump";
 }
 
 void HfDumpGeneratorScreen::onInit() {

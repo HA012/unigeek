@@ -100,9 +100,9 @@ HfDumpEditorScreen::HfDumpEditorScreen(uint8_t* initialDump, size_t initialDumpL
 
 const char* HfDumpEditorScreen::title() {
   switch (_state) {
-    case STATE_DUMP_INFO: return "Dump Details";
-    case STATE_ACTIONS:   return "Dump Actions";
-    default:              return "Edit Dump";
+    case STATE_DUMP_INFO: return "HF Dump Details";
+    case STATE_ACTIONS:   return "HF Dump Actions";
+    default:              return "Edit HF Dump";
   }
 }
 
@@ -141,6 +141,17 @@ void HfDumpEditorScreen::onUpdate() {
     return;
   }
   if (_state == STATE_DUMP_INFO) {
+    if (!_holdFired && Uni.Nav->isPressed() &&
+        Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+        Uni.Nav->heldDuration() >= 700) {
+      _holdFired = true;
+      Uni.Nav->suppressCurrentPress();
+      if (_newUnsaved) _showActions();
+      else if (_dirty) _saveAs();
+      return;
+    }
+    if (!Uni.Nav->isPressed()) _holdFired = false;
+
     if (Uni.Nav->wasPressed()) {
       const auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
@@ -149,14 +160,9 @@ void HfDumpEditorScreen::onUpdate() {
       }
       if (dir == INavigation::DIR_PRESS) {
         if (_newUnsaved) {
-          if (Uni.Nav->pressDuration() >= 700) {
-            _showActions();
-          } else if (_saveAs()) {
-            Screen.goBack();
-          }
+          if (_saveAs()) Screen.goBack();
         } else if (_dirty) {
-          if (Uni.Nav->pressDuration() >= 700) _saveAs();
-          else _save();
+          _save();
         } else {
           _showActions();
         }
@@ -183,7 +189,6 @@ void HfDumpEditorScreen::onBack() {
     return;
   }
   if (_state == STATE_DUMP_INFO) {
-    if (!_confirmDiscardChanges()) return;
     _freeDump();
     _filePath = "";
     if (_postCreate) {
@@ -199,20 +204,7 @@ void HfDumpEditorScreen::onBack() {
     _openFiles();
     return;
   }
-  if (!_confirmDiscardChanges()) return;
   Screen.goBack();
-}
-
-bool HfDumpEditorScreen::_confirmDiscardChanges() {
-  if (!_dirty) return true;
-
-  static constexpr InputSelectAction::Option opts[] = {
-    {"Cancel",  "cancel"},
-    {"Discard", "discard"},
-  };
-  const char* choice = InputSelectAction::popup(
-      _newUnsaved ? "Discard new dump?" : "Unsaved changes", opts, 2, "cancel");
-  return choice && strcmp(choice, "discard") == 0;
 }
 
 void HfDumpEditorScreen::onItemSelected(uint8_t index) {
@@ -260,8 +252,6 @@ void HfDumpEditorScreen::_selectFile(uint8_t index) {
     _openFiles();
     return;
   }
-
-  if (!_confirmDiscardChanges()) return;
 
   if (!_loadFile(entry.path)) {
     ShowStatusAction::show("Dump not supported", 1600);

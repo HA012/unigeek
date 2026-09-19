@@ -26,6 +26,7 @@ private:
   bool _newUnsaved = false;
   bool _loaded = false;
   bool _dirty = false;
+  bool _holdFired = false;
 
   ScrollListView _details;
   static constexpr uint8_t kMaxRows = 10;
@@ -45,6 +46,5 @@ private:
   bool _save();
   bool _saveAs();
   bool _writeFile(const String& path);
-  bool _confirmDiscard();
   String _suggestedName() const;
 };

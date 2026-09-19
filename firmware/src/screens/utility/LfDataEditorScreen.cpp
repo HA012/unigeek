@@ -2,7 +2,6 @@
 #include <ctype.h>
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 
@@ -22,9 +21,9 @@ static String sanitizeLfName(String name) {
 
 const char* LfDataEditorScreen::title() {
   switch (_state) {
-    case STATE_DETAILS: return "Data Details";
-    case STATE_ACTIONS: return "Data Actions";
-    default: return "Edit Data";
+    case STATE_DETAILS: return "LF Data Details";
+    case STATE_ACTIONS: return "LF Data Actions";
+    default: return "Edit LF Data";
   }
 }
 
@@ -36,17 +35,25 @@ void LfDataEditorScreen::onInit() {
 
 void LfDataEditorScreen::onUpdate() {
   if (_state == STATE_DETAILS) {
+    if (!_holdFired && Uni.Nav->isPressed() &&
+        Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+        Uni.Nav->heldDuration() >= 700) {
+      _holdFired = true;
+      Uni.Nav->suppressCurrentPress();
+      if (_newUnsaved) _showActions();
+      else if (_dirty) _saveAs();
+      return;
+    }
+    if (!Uni.Nav->isPressed()) _holdFired = false;
+
     if (Uni.Nav->wasPressed()) {
       const auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) { onBack(); return; }
       if (dir == INavigation::DIR_PRESS) {
         if (_newUnsaved) {
-          if (Uni.Nav->pressDuration() >= 700) _showActions();
-          else if (_saveAs()) Screen.goBack();
-        } else if (_dirty) {
-          if (Uni.Nav->pressDuration() >= 700) _saveAs();
-          else _save();
-        } else _showActions();
+          if (_saveAs()) Screen.goBack();
+        } else if (_dirty) _save();
+        else _showActions();
         return;
       }
       _details.onNav(dir);
@@ -64,7 +71,6 @@ void LfDataEditorScreen::onRender() {
 void LfDataEditorScreen::onBack() {
   if (_state == STATE_ACTIONS) { _showDetails(); return; }
   if (_state == STATE_DETAILS) {
-    if (!_confirmDiscard()) return;
     if (_newUnsaved) Screen.goBack(); else { _loaded = false; _filePath = ""; _openFiles(); }
     return;
   }
@@ -88,7 +94,8 @@ void LfDataEditorScreen::_openFiles() {
   _state = STATE_FILE_SELECT;
   if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable", 1500); Screen.goBack(); return; }
   Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir(kPath);
-  const uint8_t n = _browser.load(this, _pickDir, ".bin");
+  const uint8_t n = _browser.load(this, _pickDir, ".bin", nullptr, BrowseFileView::NAME, nullptr,
+                                  _pickDir == kPath ? "dictionaries" : nullptr);
   setItems(_browser.items(), n);
   render();
 }
@@ -141,11 +148,11 @@ void LfDataEditorScreen::_showActions() {
 
 String LfDataEditorScreen::_fieldValue(const LFCodec::FieldInfo& field) const {
   switch (field.id) {
-    case LFCodec::FieldId::NumericId: return LFCodec::hex(_data.data, _data.length, true);
+    case LFCodec::FieldId::NumericId: return LFCodec::hex(_data.data, _data.length, false);
     case LFCodec::FieldId::FacilityCode: return String(_data.facilityCode);
     case LFCodec::FieldId::CardNumber: return String(_data.cardNumber);
     case LFCodec::FieldId::TextId: return _data.hasTextId ? String(_data.textId) : String();
-    case LFCodec::FieldId::RawData: return LFCodec::hex(_data.data, _data.length, true);
+    case LFCodec::FieldId::RawData: return LFCodec::hex(_data.data, _data.length, false);
   }
   return "";
 }
@@ -220,11 +227,4 @@ bool LfDataEditorScreen::_saveAs() {
   const int slash = path.lastIndexOf('/');
   ShowStatusAction::show(("Saved: " + path.substring(slash + 1)).c_str(), 1500);
   return true;
-}
-
-bool LfDataEditorScreen::_confirmDiscard() {
-  if (!_dirty) return true;
-  static constexpr InputSelectAction::Option opts[] = {{"Cancel", "cancel"}, {"Discard", "discard"}};
-  const char* choice = InputSelectAction::popup(_newUnsaved ? "Discard new data?" : "Unsaved changes", opts, 2, "cancel");
-  return choice && strcmp(choice, "discard") == 0;
 }
