@@ -11,8 +11,8 @@
 #include "ui/views/LogView.h"
 #include "../../utils/nfc/NdefBuilder.h"
 #include "../../utils/nfc/NdefParser.h"
-#include "../../utils/nfc/NfcDumpBuilder.h"
-#include "../../utils/nfc/NfcDumpParser.h"
+#include "../../utils/nfc/HfDumpBuilder.h"
+#include "../../utils/nfc/HfDumpParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
 #include "utils/IdentityFile.h"
@@ -3086,10 +3086,10 @@ void PN532I2cScreen::_doUltralightEraseTag() {
     return;
   }
 
-  uint8_t image[NfcDumpBuilder::NTAG215_SIZE] = {};
+  uint8_t image[HfDumpBuilder::NTAG215_SIZE] = {};
   size_t imageLen = 0;
-  if (!NfcDumpBuilder::buildNtag215(_uid, nullptr, 0, image, imageLen,
-                                    NfcDumpBuilder::NTAG215_SIZE) || imageLen != 540) {
+  if (!HfDumpBuilder::buildNtag215(_uid, nullptr, 0, image, imageLen,
+                                    HfDumpBuilder::NTAG215_SIZE) || imageLen != 540) {
     ShowStatusAction::show("Cannot build empty tag");
     _goUltralightTag();
     return;

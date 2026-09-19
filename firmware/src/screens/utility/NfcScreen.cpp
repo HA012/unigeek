@@ -2,7 +2,7 @@
 #include "core/ScreenManager.h"
 #include "screens/utility/NdefGeneratorScreen.h"
 #include "screens/utility/NdefEditorScreen.h"
-#include "screens/utility/NfcDumpGeneratorScreen.h"
+#include "screens/utility/HfDumpGeneratorScreen.h"
 
 void NfcScreen::onInit() {
   setItems(_items);
@@ -17,7 +17,7 @@ void NfcScreen::onItemSelected(uint8_t index) {
       Screen.push(new NdefEditorScreen());
       break;
     case 2:
-      Screen.push(new NfcDumpGeneratorScreen());
+      Screen.push(new HfDumpGeneratorScreen());
       break;
   }
 }

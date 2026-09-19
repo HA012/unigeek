@@ -1,10 +1,10 @@
-#include "NfcDumpGeneratorScreen.h"
+#include "HfDumpGeneratorScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "screens/utility/NdefGeneratorScreen.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
-#include "utils/nfc/NfcDumpBuilder.h"
+#include "utils/nfc/HfDumpBuilder.h"
 #include "utils/nfc/NdefParser.h"
 #include "utils/ble/ChameleonClient.h"
 #include "screens/utility/NfcScreen.h"
@@ -37,7 +37,7 @@ static String _sanitizeDumpName(String name) {
   return name;
 }
 
-const char* NfcDumpGeneratorScreen::title() {
+const char* HfDumpGeneratorScreen::title() {
   switch (_state) {
     case STATE_TAG_TYPE:         return "Generate Dump";
     case STATE_NDEF_CONTENT:     return "NDEF Content";
@@ -48,11 +48,11 @@ const char* NfcDumpGeneratorScreen::title() {
   return "Generate Dump";
 }
 
-void NfcDumpGeneratorScreen::onInit() {
+void HfDumpGeneratorScreen::onInit() {
   _goTagType();
 }
 
-void NfcDumpGeneratorScreen::onUpdate() {
+void HfDumpGeneratorScreen::onUpdate() {
   if (_state == STATE_NDEF_PREVIEW) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -87,7 +87,7 @@ void NfcDumpGeneratorScreen::onUpdate() {
   ListScreen::onUpdate();
 }
 
-void NfcDumpGeneratorScreen::onRender() {
+void HfDumpGeneratorScreen::onRender() {
   if (_state == STATE_NDEF_PREVIEW) {
     _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
     return;
@@ -95,7 +95,7 @@ void NfcDumpGeneratorScreen::onRender() {
   ListScreen::onRender();
 }
 
-void NfcDumpGeneratorScreen::onBack() {
+void HfDumpGeneratorScreen::onBack() {
   switch (_state) {
     case STATE_TAG_TYPE:
       Screen.goBack();
@@ -136,7 +136,7 @@ void NfcDumpGeneratorScreen::onBack() {
   }
 }
 
-void NfcDumpGeneratorScreen::onItemSelected(uint8_t index) {
+void HfDumpGeneratorScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_TAG_TYPE:
       if (index == 0) {
@@ -203,22 +203,22 @@ void NfcDumpGeneratorScreen::onItemSelected(uint8_t index) {
   }
 }
 
-void NfcDumpGeneratorScreen::_goTagType() {
+void HfDumpGeneratorScreen::_goTagType() {
   _state = STATE_TAG_TYPE;
   setItems(_tagItems);
 }
 
-void NfcDumpGeneratorScreen::_goNdefContent() {
+void HfDumpGeneratorScreen::_goNdefContent() {
   _state = STATE_NDEF_CONTENT;
   setItems(_contentItems);
 }
 
-void NfcDumpGeneratorScreen::_goNdefType() {
+void HfDumpGeneratorScreen::_goNdefType() {
   _state = STATE_NDEF_TYPE;
   setItems(_ndefTypeItems);
 }
 
-void NfcDumpGeneratorScreen::_openNdefFiles() {
+void HfDumpGeneratorScreen::_openNdefFiles() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
     _goNdefContent();
@@ -242,7 +242,7 @@ void NfcDumpGeneratorScreen::_openNdefFiles() {
   setItems(_browser.items(), n);
 }
 
-void NfcDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
+void HfDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
   if (index >= _browser.count()) return;
 
   const auto& e = _browser.entry(index);
@@ -287,9 +287,9 @@ void NfcDumpGeneratorScreen::_selectNdefFile(uint8_t index) {
 
 
 
-void NfcDumpGeneratorScreen::_resetRows() { _rowCount = 0; }
+void HfDumpGeneratorScreen::_resetRows() { _rowCount = 0; }
 
-void NfcDumpGeneratorScreen::_pushRow(const String& label, const String& value) {
+void HfDumpGeneratorScreen::_pushRow(const String& label, const String& value) {
   if (_rowCount >= MAX_ROWS) return;
   _rowLabels[_rowCount] = label;
   _rowValues[_rowCount] = value;
@@ -297,7 +297,7 @@ void NfcDumpGeneratorScreen::_pushRow(const String& label, const String& value) 
   _rowCount++;
 }
 
-String NfcDumpGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
+String HfDumpGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const {
   String s;
   for (uint8_t i = 0; i < len; i++) {
     char buf[4];
@@ -307,7 +307,7 @@ String NfcDumpGeneratorScreen::_hexBlock(const uint8_t* data, uint8_t len) const
   return s;
 }
 
-void NfcDumpGeneratorScreen::_pushWrappedRow(const String& label, const String& value) {
+void HfDumpGeneratorScreen::_pushWrappedRow(const String& label, const String& value) {
   if (value.length() == 0) {
     _pushRow(label, "");
     return;
@@ -350,7 +350,7 @@ void NfcDumpGeneratorScreen::_pushWrappedRow(const String& label, const String& 
   }
 }
 
-void NfcDumpGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen,
+void HfDumpGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLen,
                                              const String& suggestedName) {
   _state = STATE_NDEF_PREVIEW;
   _resetRows();
@@ -450,7 +450,7 @@ void NfcDumpGeneratorScreen::_showNdefPreview(const uint8_t* ndef, size_t ndefLe
 }
 
 
-bool NfcDumpGeneratorScreen::_saveDump(const uint8_t* ndef, size_t ndefLen,
+bool HfDumpGeneratorScreen::_saveDump(const uint8_t* ndef, size_t ndefLen,
                                      const String& suggestedName) {
   switch (_tagType) {
     case TAG_MIFARE_CLASSIC_1K:
@@ -467,7 +467,7 @@ bool NfcDumpGeneratorScreen::_saveDump(const uint8_t* ndef, size_t ndefLen,
   return false;
 }
 
-void NfcDumpGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
+void HfDumpGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
 #if defined(ESP32)
   const uint32_t r = esp_random();
   uid[0] = (uint8_t)(r >> 0);
@@ -479,7 +479,7 @@ void NfcDumpGeneratorScreen::_generateMifareUid(uint8_t uid[4]) {
 #endif
 }
 
-bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
+bool HfDumpGeneratorScreen::_saveMifareClassic1K(
     const uint8_t* ndef, size_t ndefLen, const String&) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
@@ -489,9 +489,9 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
   uint8_t uid[4] = {};
   _generateMifareUid(uid);
 
-  uint8_t image[NfcDumpBuilder::MIFARE_CLASSIC_1K_SIZE] = {};
+  uint8_t image[HfDumpBuilder::MIFARE_CLASSIC_1K_SIZE] = {};
   size_t imageLen = 0;
-  if (!NfcDumpBuilder::buildMifareClassic1K(
+  if (!HfDumpBuilder::buildMifareClassic1K(
           uid, ndef, ndefLen, image, imageLen, sizeof(image))) {
     ShowStatusAction::show("Cannot build MFC1K", 1500);
     return false;
@@ -543,7 +543,7 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic1K(
 }
 
 
-bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
+bool HfDumpGeneratorScreen::_saveMifareClassic4K(
     const uint8_t* ndef, size_t ndefLen, const String&) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500);
@@ -554,16 +554,16 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
   _generateMifareUid(uid);
 
   // Keep the 4 KiB image off the task stack.
-  uint8_t* image = (uint8_t*)malloc(NfcDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
+  uint8_t* image = (uint8_t*)malloc(HfDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
   if (!image) {
     ShowStatusAction::show("Out of memory", 1500);
     return false;
   }
 
   size_t imageLen = 0;
-  const bool built = NfcDumpBuilder::buildMifareClassic4K(
+  const bool built = HfDumpBuilder::buildMifareClassic4K(
       uid, ndef, ndefLen, image, imageLen,
-      NfcDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
+      HfDumpBuilder::MIFARE_CLASSIC_4K_SIZE);
 
   if (!built) {
     free(image);
@@ -623,7 +623,7 @@ bool NfcDumpGeneratorScreen::_saveMifareClassic4K(
   return true;
 }
 
-void NfcDumpGeneratorScreen::_generateUid(uint8_t uid[7]) {
+void HfDumpGeneratorScreen::_generateUid(uint8_t uid[7]) {
   uid[0] = 0x04; // NXP manufacturer ID
 
 #if defined(ESP32)
@@ -640,21 +640,21 @@ void NfcDumpGeneratorScreen::_generateUid(uint8_t uid[7]) {
 #endif
 }
 
-bool NfcDumpGeneratorScreen::_saveNtag21x(
+bool HfDumpGeneratorScreen::_saveNtag21x(
     const uint8_t* ndef, size_t ndefLen, const String&) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable", 1500); return false;
   }
 
-  NfcDumpBuilder::Ntag21xType bt;
+  HfDumpBuilder::Ntag21xType bt;
   uint16_t cuType=0;
   size_t imageSize=0;
   switch (_tagType) {
-    case TAG_NTAG210: bt=NfcDumpBuilder::Ntag21xType::NTAG210; cuType=1107; imageSize=NfcDumpBuilder::NTAG210_SIZE; break;
-    case TAG_NTAG212: bt=NfcDumpBuilder::Ntag21xType::NTAG212; cuType=1108; imageSize=NfcDumpBuilder::NTAG212_SIZE; break;
-    case TAG_NTAG213: bt=NfcDumpBuilder::Ntag21xType::NTAG213; cuType=1100; imageSize=NfcDumpBuilder::NTAG213_SIZE; break;
-    case TAG_NTAG215: bt=NfcDumpBuilder::Ntag21xType::NTAG215; cuType=1101; imageSize=NfcDumpBuilder::NTAG215_SIZE; break;
-    case TAG_NTAG216: bt=NfcDumpBuilder::Ntag21xType::NTAG216; cuType=1102; imageSize=NfcDumpBuilder::NTAG216_SIZE; break;
+    case TAG_NTAG210: bt=HfDumpBuilder::Ntag21xType::NTAG210; cuType=1107; imageSize=HfDumpBuilder::NTAG210_SIZE; break;
+    case TAG_NTAG212: bt=HfDumpBuilder::Ntag21xType::NTAG212; cuType=1108; imageSize=HfDumpBuilder::NTAG212_SIZE; break;
+    case TAG_NTAG213: bt=HfDumpBuilder::Ntag21xType::NTAG213; cuType=1100; imageSize=HfDumpBuilder::NTAG213_SIZE; break;
+    case TAG_NTAG215: bt=HfDumpBuilder::Ntag21xType::NTAG215; cuType=1101; imageSize=HfDumpBuilder::NTAG215_SIZE; break;
+    case TAG_NTAG216: bt=HfDumpBuilder::Ntag21xType::NTAG216; cuType=1102; imageSize=HfDumpBuilder::NTAG216_SIZE; break;
     default: return false;
   }
 
@@ -663,7 +663,7 @@ bool NfcDumpGeneratorScreen::_saveNtag21x(
   if (!image) { ShowStatusAction::show("Out of memory",1500); return false; }
 
   size_t imageLen=0;
-  if (!NfcDumpBuilder::buildNtag21x(bt,uid,ndef,ndefLen,image,imageLen,imageSize)) {
+  if (!HfDumpBuilder::buildNtag21x(bt,uid,ndef,ndefLen,image,imageLen,imageSize)) {
     free(image); ShowStatusAction::show("Cannot build NTAG",1500); return false;
   }
 

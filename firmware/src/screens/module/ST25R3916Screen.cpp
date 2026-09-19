@@ -12,9 +12,9 @@
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
 #include "utils/nfc/NdefParser.h"
-#include "utils/nfc/NfcDumpParser.h"
+#include "utils/nfc/HfDumpParser.h"
 #include "utils/nfc/NdefBuilder.h"
-#include "utils/nfc/NfcDumpBuilder.h"
+#include "utils/nfc/HfDumpBuilder.h"
 #include "utils/nfc/MagicCard.h"
 #include "utils/nfc/MfcKeyStore.h"
 #include <mbedtls/md.h>
@@ -1366,7 +1366,7 @@ void ST25R3916Screen::_readMfcTag() {
   addRow("Status", blocksRead == blocks ? "Complete" : "Partial");
 
   uint8_t* ndef = nullptr; size_t ndefLen = 0; NdefParser::Result parsed;
-  if (NfcDumpParser::extractNdef(_mfcDump, _mfcDumpLen, &ndef, &ndefLen) &&
+  if (HfDumpParser::extractNdef(_mfcDump, _mfcDumpLen, &ndef, &ndefLen) &&
       NdefParser::parse(ndef, ndefLen, parsed)) {
     switch (parsed.kind) {
       case NdefParser::RECORD_TEXT:
@@ -1492,7 +1492,7 @@ void ST25R3916Screen::_emulateMfuTag() {
   if (_mfuUidLen == 4 || _mfuUidLen == 7) {
     id.nfcidLen = _mfuUidLen; memcpy(id.nfcid, _mfuUid, id.nfcidLen);
   } else {
-    const NfcDumpParser::Info info = NfcDumpParser::inspect(_mfuDump, _mfuDumpLen);
+    const HfDumpParser::Info info = HfDumpParser::inspect(_mfuDump, _mfuDumpLen);
     if (!info.uidValid || info.uidLen == 0 || info.uidLen > sizeof(id.nfcid)) {
       delete _emuDev; _emuDev = nullptr; ShowStatusAction::show("UID unavailable"); _showMfuTagMenu(); return;
     }
@@ -1570,9 +1570,9 @@ void ST25R3916Screen::_openMfcDumpFile(uint8_t index) {
 }
 
 void ST25R3916Screen::_showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile) {
-  const NfcDumpParser::Info info = NfcDumpParser::inspect(dump, len);
-  if (!dump || !NfcDumpParser::isMifareClassic(info.type) ||
-      info.type == NfcDumpParser::TYPE_MIFARE_CLASSIC_2K) {
+  const HfDumpParser::Info info = HfDumpParser::inspect(dump, len);
+  if (!dump || !HfDumpParser::isMifareClassic(info.type) ||
+      info.type == HfDumpParser::TYPE_MIFARE_CLASSIC_2K) {
     ShowStatusAction::show("Invalid dump", 1600);
     _showMfcTagMenu();
     return;
@@ -1595,8 +1595,8 @@ void ST25R3916Screen::_showMfcWritePreview(const uint8_t* dump, size_t len, bool
     _rowCount++;
   };
   addRow("Source", fromFile ? "File" : "Read Tag");
-  addRow("Type", info.type == NfcDumpParser::TYPE_MIFARE_CLASSIC_MINI ? "MF Classic Mini" :
-                 (info.type == NfcDumpParser::TYPE_MIFARE_CLASSIC_4K ? "MF Classic 4K" : "MF Classic 1K"));
+  addRow("Type", info.type == HfDumpParser::TYPE_MIFARE_CLASSIC_MINI ? "MF Classic Mini" :
+                 (info.type == HfDumpParser::TYPE_MIFARE_CLASSIC_4K ? "MF Classic 4K" : "MF Classic 1K"));
   String uid = "Unknown";
   if (_writeSourceUidKnown) {
     uid = "";
@@ -2637,8 +2637,8 @@ void ST25R3916Screen::_openMfuDumpFile(uint8_t index) {
 
 void ST25R3916Screen::_showMfuWritePreview(bool fromFile) {
   _mfuWritePreviewFromFile = fromFile;
-  const NfcDumpParser::Info info = NfcDumpParser::inspect(_mfuDump, _mfuDumpLen);
-  if (info.type != NfcDumpParser::TYPE_NTAG215 || _mfuPages != 135) {
+  const HfDumpParser::Info info = HfDumpParser::inspect(_mfuDump, _mfuDumpLen);
+  if (info.type != HfDumpParser::TYPE_NTAG215 || _mfuPages != 135) {
     ShowStatusAction::show("Write supports NTAG215", 1400); _showMfuTagMenu(); return;
   }
   _rowCount = 0;
@@ -2656,7 +2656,7 @@ void ST25R3916Screen::_showMfuWritePreview(bool fromFile) {
   addRow("Pages", "135");
   addRow("Dump", "540 bytes");
   uint8_t* ndef = nullptr; size_t ndefLen = 0; NdefParser::Result parsed;
-  if (NfcDumpParser::extractNdef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) && NdefParser::parse(ndef, ndefLen, parsed)) {
+  if (HfDumpParser::extractNdef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) && NdefParser::parse(ndef, ndefLen, parsed)) {
     switch (parsed.kind) {
       case NdefParser::RECORD_TEXT: addRow("NDEF", "Text"); break;
       case NdefParser::RECORD_URL: addRow("NDEF", "URL"); break;
@@ -2756,10 +2756,10 @@ void ST25R3916Screen::_eraseMfuTag() {
   }
   render(); _renderTagPrompt();
 
-  uint8_t image[NfcDumpBuilder::NTAG215_SIZE] = {};
+  uint8_t image[HfDumpBuilder::NTAG215_SIZE] = {};
   size_t imageLen = 0;
-  if (!NfcDumpBuilder::buildNtag215(tag.nfcid, nullptr, 0, image, imageLen, sizeof(image)) ||
-      imageLen != NfcDumpBuilder::NTAG215_SIZE) {
+  if (!HfDumpBuilder::buildNtag215(tag.nfcid, nullptr, 0, image, imageLen, sizeof(image)) ||
+      imageLen != HfDumpBuilder::NTAG215_SIZE) {
     dev.deactivate();
     ShowStatusAction::show("Cannot build empty tag", 1500);
     _showMfuTagMenu();
@@ -3480,7 +3480,7 @@ void ST25R3916Screen::_readMfuTag() {
   uint8_t* ndef = nullptr;
   size_t ndefLen = 0;
   NdefParser::Result parsed;
-  if (NfcDumpParser::extractNdef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) &&
+  if (HfDumpParser::extractNdef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) &&
       NdefParser::parse(ndef, ndefLen, parsed)) {
     switch (parsed.kind) {
       case NdefParser::RECORD_TEXT:

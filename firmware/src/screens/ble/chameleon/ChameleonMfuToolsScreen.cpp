@@ -11,7 +11,7 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/views/ProgressView.h"
-#include "utils/nfc/NfcDumpBuilder.h"
+#include "utils/nfc/HfDumpBuilder.h"
 
 namespace {
 static constexpr uint16_t kNtag215WritablePages = 126;
@@ -140,7 +140,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
     return;
   }
 
-  uint8_t* image = (uint8_t*)malloc(NfcDumpBuilder::NTAG215_SIZE);
+  uint8_t* image = (uint8_t*)malloc(HfDumpBuilder::NTAG215_SIZE);
   if (!image) {
     if (restoreMode) c.setMode(previousMode);
     render();
@@ -150,10 +150,10 @@ void ChameleonMfuToolsScreen::_eraseTag() {
   }
 
   size_t imageLen = 0;
-  const bool built = NfcDumpBuilder::buildNtag215(
-      info.uid, nullptr, 0, image, imageLen, NfcDumpBuilder::NTAG215_SIZE);
+  const bool built = HfDumpBuilder::buildNtag215(
+      info.uid, nullptr, 0, image, imageLen, HfDumpBuilder::NTAG215_SIZE);
 
-  if (!built || imageLen != NfcDumpBuilder::NTAG215_SIZE) {
+  if (!built || imageLen != HfDumpBuilder::NTAG215_SIZE) {
     free(image);
     if (restoreMode) c.setMode(previousMode);
     render();

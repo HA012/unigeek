@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-class NfcDumpParser {
+class HfDumpParser {
 public:
   enum Type {
     TYPE_UNKNOWN,

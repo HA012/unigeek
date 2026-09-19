@@ -4,7 +4,7 @@
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"
 
-class NfcDumpGeneratorScreen : public ListScreen
+class HfDumpGeneratorScreen : public ListScreen
 {
 public:
   const char* title() override;
