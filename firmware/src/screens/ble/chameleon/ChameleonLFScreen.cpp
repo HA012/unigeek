@@ -14,6 +14,10 @@
 void ChameleonLFScreen::_doScan() {
   _scanning = true;
 
+  // onInit() starts the blocking scan before BaseScreen gets its first render.
+  // Draw the full screen first so the header/sidebar stay visible while waiting.
+  render();
+
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -76,9 +80,7 @@ void ChameleonLFScreen::_doScan() {
     if (n == 1)  Achievement.unlock("chameleon_lf_read");
     if (n == 5)  Achievement.unlock("chameleon_lf_read_5");
     if (n == 10) Achievement.unlock("chameleon_lf_read_10");
-    if (_operation == LOAD_TO_SLOT) { _doLoadSlot(); return; }
     if (restoreMode) c.setMode(previousMode);
-    if (_operation == WRITE_T5577) { _doT5577(); return; }
   } else {
     if (restoreMode) c.setMode(previousMode);
     _state = STATE_IDLE;

@@ -1,6 +1,9 @@
 #include "ChameleonLFMenuScreen.h"
 #include "ChameleonLFScanScreen.h"
-#include "ChameleonLFProtocolMenuScreen.h"
+#include "ChameleonLFScreen.h"
+#include "ChameleonHIDProxScreen.h"
+#include "ChameleonVikingScreen.h"
+#include "ChameleonLFExtendedScreen.h"
 #include "ChameleonT5577MenuScreen.h"
 #include "core/ScreenManager.h"
 void ChameleonLFMenuScreen::onInit() {
@@ -9,12 +12,12 @@ void ChameleonLFMenuScreen::onInit() {
 void ChameleonLFMenuScreen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: Screen.push(new ChameleonLFScanScreen()); break;
-    case 1: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::EM410X)); break;
-    case 2: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::HID_PROX)); break;
-    case 3: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::IOPROX)); break;
-    case 4: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::VIKING)); break;
-    case 5: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::PAC_STANLEY)); break;
-    case 6: Screen.push(new ChameleonLFProtocolMenuScreen(ChameleonLFProtocolMenuScreen::JABLOTRON)); break;
+    case 1: Screen.push(new ChameleonLFScreen()); break;
+    case 2: Screen.push(new ChameleonHIDProxScreen()); break;
+    case 3: Screen.push(new ChameleonLFExtendedScreen(ChameleonLFExtendedScreen::IOPROX)); break;
+    case 4: Screen.push(new ChameleonVikingScreen()); break;
+    case 5: Screen.push(new ChameleonLFExtendedScreen(ChameleonLFExtendedScreen::PAC_STANLEY)); break;
+    case 6: Screen.push(new ChameleonLFExtendedScreen(ChameleonLFExtendedScreen::JABLOTRON)); break;
     case 7: Screen.push(new ChameleonT5577MenuScreen()); break;
   }
 }

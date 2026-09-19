@@ -73,6 +73,10 @@ void ChameleonLFExtendedScreen::onRender() {
 
 void ChameleonLFExtendedScreen::_doScan() {
   _scanning = true;
+
+  // onInit() starts the blocking scan before BaseScreen gets its first render.
+  // Draw the full screen first so the header/sidebar stay visible while waiting.
+  render();
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -94,9 +98,7 @@ void ChameleonLFExtendedScreen::_doScan() {
   _state = ok ? STATE_RESULT : STATE_IDLE;
   if (ok) {
     _buildResult();
-    if (_operation == LOAD_TO_SLOT) { _doLoadSlot(); return; }
     if (restoreMode) c.setMode(previousMode);
-    if (_operation == WRITE_T5577) { _doWriteTag(); return; }
   }
   _needsDraw = true;
   render();

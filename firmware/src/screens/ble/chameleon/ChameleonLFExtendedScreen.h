@@ -5,9 +5,7 @@
 class ChameleonLFExtendedScreen : public BaseScreen {
 public:
   enum Protocol { IOPROX, PAC_STANLEY, JABLOTRON };
-  enum Operation { READ_TAG, LOAD_TO_SLOT, WRITE_T5577 };
-  ChameleonLFExtendedScreen(Protocol protocol, Operation operation = READ_TAG)
-      : _protocol(protocol), _operation(operation) {}
+  explicit ChameleonLFExtendedScreen(Protocol protocol) : _protocol(protocol) {}
   const char* title() override;
   bool inhibitPowerOff() override { return _scanning; }
   void onInit() override;
@@ -17,7 +15,6 @@ public:
 private:
   enum State { STATE_IDLE, STATE_RESULT };
   Protocol _protocol;
-  Operation _operation;
   State _state = STATE_IDLE;
   bool _scanning = false;
   bool _needsDraw = true;
