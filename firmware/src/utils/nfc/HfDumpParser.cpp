@@ -1,8 +1,8 @@
-#include "NfcDumpParser.h"
+#include "HfDumpParser.h"
 #include "NdefParser.h"
 #include <string.h>
 
-NfcDumpParser::Type NfcDumpParser::typeForSize(size_t size) {
+HfDumpParser::Type HfDumpParser::typeForSize(size_t size) {
   switch (size) {
     case 320:  return TYPE_MIFARE_CLASSIC_MINI;
     case 1024: return TYPE_MIFARE_CLASSIC_1K;
@@ -17,7 +17,7 @@ NfcDumpParser::Type NfcDumpParser::typeForSize(size_t size) {
   }
 }
 
-const char* NfcDumpParser::typeName(Type type) {
+const char* HfDumpParser::typeName(Type type) {
   switch (type) {
     case TYPE_MIFARE_CLASSIC_MINI: return "MIFARE Classic Mini";
     case TYPE_MIFARE_CLASSIC_1K:   return "MIFARE Classic 1K";
@@ -32,15 +32,15 @@ const char* NfcDumpParser::typeName(Type type) {
   }
 }
 
-bool NfcDumpParser::isMifareClassic(Type type) {
+bool HfDumpParser::isMifareClassic(Type type) {
   return type >= TYPE_MIFARE_CLASSIC_MINI && type <= TYPE_MIFARE_CLASSIC_4K;
 }
 
-bool NfcDumpParser::isType2(Type type) {
+bool HfDumpParser::isType2(Type type) {
   return type >= TYPE_NTAG210 && type <= TYPE_NTAG216;
 }
 
-size_t NfcDumpParser::mifareClassicSectorCount(Type type) {
+size_t HfDumpParser::mifareClassicSectorCount(Type type) {
   switch (type) {
     case TYPE_MIFARE_CLASSIC_MINI: return 5;
     case TYPE_MIFARE_CLASSIC_1K:   return 16;
@@ -51,7 +51,7 @@ size_t NfcDumpParser::mifareClassicSectorCount(Type type) {
 }
 
 
-NfcDumpParser::PasswordInfo NfcDumpParser::inspectPassword(const uint8_t* dump, size_t dumpLen) {
+HfDumpParser::PasswordInfo HfDumpParser::inspectPassword(const uint8_t* dump, size_t dumpLen) {
   PasswordInfo info;
   if (!dump) return info;
 
@@ -83,7 +83,7 @@ NfcDumpParser::PasswordInfo NfcDumpParser::inspectPassword(const uint8_t* dump, 
   return info;
 }
 
-bool NfcDumpParser::setPassword(uint8_t* dump, size_t dumpLen,
+bool HfDumpParser::setPassword(uint8_t* dump, size_t dumpLen,
                                     const uint8_t pwd[4], const uint8_t pack[2],
                                     bool protectRead) {
   if (!dump || !pwd || !pack) return false;
@@ -112,7 +112,7 @@ bool NfcDumpParser::setPassword(uint8_t* dump, size_t dumpLen,
   return true;
 }
 
-bool NfcDumpParser::removePassword(uint8_t* dump, size_t dumpLen) {
+bool HfDumpParser::removePassword(uint8_t* dump, size_t dumpLen) {
   if (!dump) return false;
   const PasswordInfo current = inspectPassword(dump, dumpLen);
   if (!current.supported || current.configLocked) return false;
@@ -141,7 +141,7 @@ bool NfcDumpParser::removePassword(uint8_t* dump, size_t dumpLen) {
   return true;
 }
 
-bool NfcDumpParser::extractNdef(const uint8_t* dump, size_t dumpLen,
+bool HfDumpParser::extractNdef(const uint8_t* dump, size_t dumpLen,
                                 uint8_t** ndef, size_t* ndefLen) {
   if (!ndef || !ndefLen) return false;
   *ndef = nullptr;
@@ -180,13 +180,13 @@ bool NfcDumpParser::extractNdef(const uint8_t* dump, size_t dumpLen,
 
 namespace {
 
-static size_t _type2NdefCapacity(NfcDumpParser::Type type) {
+static size_t _type2NdefCapacity(HfDumpParser::Type type) {
   switch (type) {
-    case NfcDumpParser::TYPE_NTAG210: return 48;
-    case NfcDumpParser::TYPE_NTAG212: return 128;
-    case NfcDumpParser::TYPE_NTAG213: return 144;
-    case NfcDumpParser::TYPE_NTAG215: return 496;
-    case NfcDumpParser::TYPE_NTAG216: return 872;
+    case HfDumpParser::TYPE_NTAG210: return 48;
+    case HfDumpParser::TYPE_NTAG212: return 128;
+    case HfDumpParser::TYPE_NTAG213: return 144;
+    case HfDumpParser::TYPE_NTAG215: return 496;
+    case HfDumpParser::TYPE_NTAG216: return 872;
     default: return 0;
   }
 }
@@ -357,7 +357,7 @@ static void _writeClassicArea(uint8_t* dump, const uint8_t* sectors,
 
 } // namespace
 
-bool NfcDumpParser::replaceNdef(uint8_t* dump, size_t dumpLen,
+bool HfDumpParser::replaceNdef(uint8_t* dump, size_t dumpLen,
                                 const uint8_t* ndef, size_t ndefLen) {
   if (!dump || (ndefLen > 0 && !ndef)) return false;
   const Type type = typeForSize(dumpLen);
@@ -451,7 +451,7 @@ bool NfcDumpParser::replaceNdef(uint8_t* dump, size_t dumpLen,
   return false;
 }
 
-bool NfcDumpParser::setUid(uint8_t* dump, size_t dumpLen,
+bool HfDumpParser::setUid(uint8_t* dump, size_t dumpLen,
                            const uint8_t* uid, size_t uidLen) {
   if (!dump || !uid) return false;
 
@@ -490,7 +490,7 @@ bool NfcDumpParser::setUid(uint8_t* dump, size_t dumpLen,
   return false;
 }
 
-NfcDumpParser::Info NfcDumpParser::inspect(const uint8_t* dump, size_t dumpLen) {
+HfDumpParser::Info HfDumpParser::inspect(const uint8_t* dump, size_t dumpLen) {
   Info info;
   info.size = dumpLen;
   info.type = typeForSize(dumpLen);

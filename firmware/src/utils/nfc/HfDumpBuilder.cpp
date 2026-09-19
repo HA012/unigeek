@@ -1,9 +1,9 @@
-#include "NfcDumpBuilder.h"
+#include "HfDumpBuilder.h"
 
 #include <cstring>
 
 
-bool NfcDumpBuilder::buildMifareClassic1K(const uint8_t uid[4],
+bool HfDumpBuilder::buildMifareClassic1K(const uint8_t uid[4],
                                          const uint8_t* ndef, size_t ndefLen,
                                          uint8_t* out, size_t& outLen,
                                          size_t maxLen) {
@@ -150,7 +150,7 @@ static size_t _mfc4kNdefOffset(size_t logicalOffset) {
 } // namespace
 
 
-bool NfcDumpBuilder::buildMifareClassic4K(const uint8_t uid[4],
+bool HfDumpBuilder::buildMifareClassic4K(const uint8_t uid[4],
                                           const uint8_t* ndef, size_t ndefLen,
                                           uint8_t* out, size_t& outLen,
                                           size_t maxLen) {
@@ -251,7 +251,7 @@ bool NfcDumpBuilder::buildMifareClassic4K(const uint8_t uid[4],
 }
 
 
-bool NfcDumpBuilder::buildNtag21x(Ntag21xType type, const uint8_t uid[7],
+bool HfDumpBuilder::buildNtag21x(Ntag21xType type, const uint8_t uid[7],
                                   const uint8_t* ndef, size_t ndefLen,
                                   uint8_t* out, size_t& outLen, size_t maxLen) {
   if (!uid || !out || (ndefLen > 0 && !ndef)) return false;
@@ -304,7 +304,7 @@ bool NfcDumpBuilder::buildNtag21x(Ntag21xType type, const uint8_t uid[7],
   return true;
 }
 
-bool NfcDumpBuilder::buildNtag215(const uint8_t uid[7],
+bool HfDumpBuilder::buildNtag215(const uint8_t uid[7],
                                   const uint8_t* ndef, size_t ndefLen,
                                   uint8_t* out, size_t& outLen, size_t maxLen) {
   return buildNtag21x(Ntag21xType::NTAG215, uid, ndef, ndefLen,

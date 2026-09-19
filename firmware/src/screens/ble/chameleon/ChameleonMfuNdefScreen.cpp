@@ -3,7 +3,7 @@
 #include "utils/ble/ChameleonClient.h"
 #include "utils/nfc/NdefBuilder.h"
 #include "utils/nfc/NdefParser.h"
-#include "utils/nfc/NfcDumpBuilder.h"
+#include "utils/nfc/HfDumpBuilder.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"

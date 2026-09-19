@@ -11,9 +11,11 @@ public:
   void onItemSelected(uint8_t index) override;
 
 private:
-  ListItem _items[4] = {
-    {"New NFC Dump"},
-    {"Edit NFC Dump"},
+  ListItem _items[6] = {
+    {"New HF Dump"},
+    {"Edit HF Dump"},
+    {"New LF Data"},
+    {"Edit LF Data"},
     {"New NDEF Record"},
     {"Edit NDEF Record"},
   };

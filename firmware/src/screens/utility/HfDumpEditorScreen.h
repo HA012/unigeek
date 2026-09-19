@@ -3,15 +3,15 @@
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"
-#include "utils/nfc/NfcDumpParser.h"
+#include "utils/nfc/HfDumpParser.h"
 
-class NfcDumpEditorScreen : public ListScreen
+class HfDumpEditorScreen : public ListScreen
 {
 public:
-  explicit NfcDumpEditorScreen(const String& initialPath = "", bool postCreate = false)
+  explicit HfDumpEditorScreen(const String& initialPath = "", bool postCreate = false)
       : _initialPath(initialPath), _postCreate(postCreate) {}
   // Takes ownership of initialDump; it must have been allocated with new[].
-  NfcDumpEditorScreen(uint8_t* initialDump, size_t initialDumpLen);
+  HfDumpEditorScreen(uint8_t* initialDump, size_t initialDumpLen);
 
   const char* title() override;
 
@@ -20,7 +20,7 @@ public:
   void onRender() override;
   void onBack() override;
   void onItemSelected(uint8_t index) override;
-  ~NfcDumpEditorScreen() override;
+  ~HfDumpEditorScreen() override;
 
 private:
   enum State {
@@ -39,10 +39,11 @@ private:
   String _initialPath;
   bool _postCreate = false;
   bool _newUnsaved = false;
-  NfcDumpParser::Info _info;
+  HfDumpParser::Info _info;
   uint8_t* _dump = nullptr;
   size_t _dumpLen = 0;
   bool _dirty = false;
+  bool _returnToInfoAfterChild = false;
 
   ScrollListView _infoView;
   static constexpr uint8_t INFO_ROW_MAX = 7;
@@ -66,7 +67,9 @@ private:
   void _showPasswordInfo();
   void _setPassword();
   void _removePassword();
+  bool _save();
   bool _saveAs();
+  bool _writeFile(const String& path);
   String _suggestedDumpName() const;
   void _showInfo();
   void _showActions();
