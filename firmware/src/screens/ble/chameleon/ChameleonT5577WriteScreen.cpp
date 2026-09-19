@@ -5,6 +5,7 @@
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/rfid/T5577Dictionary.h"
 
 static bool t5577FileType(const String& path, uint16_t* type, uint8_t* size) {
   if (!type || !size) return false;
@@ -56,24 +57,6 @@ bool ChameleonT5577WriteScreen::_writeData(uint16_t type, const uint8_t* data, u
   return false;
 }
 
-static bool parseT5577Password(String s, uint8_t out[4]) {
-  s.trim(); s.replace(":", ""); s.replace(" ", "");
-  if (s.length() != 8) return false;
-  for (uint8_t i = 0; i < 4; ++i) {
-    const char a = s[i * 2], b = s[i * 2 + 1];
-    auto nibble = [](char c) -> int {
-      if (c >= '0' && c <= '9') return c - '0';
-      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-      if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-      return -1;
-    };
-    const int hi = nibble(a), lo = nibble(b);
-    if (hi < 0 || lo < 0) return false;
-    out[i] = (uint8_t)((hi << 4) | lo);
-  }
-  return true;
-}
-
 bool ChameleonT5577WriteScreen::_retryWithKey(uint16_t type, const uint8_t* data, uint8_t len,
                                                const uint8_t key[4]) {
   _showWritingPrompt();
@@ -81,13 +64,9 @@ bool ChameleonT5577WriteScreen::_retryWithKey(uint16_t type, const uint8_t* data
 }
 
 bool ChameleonT5577WriteScreen::_retryWithBuiltIn(uint16_t type, const uint8_t* data, uint8_t len) {
-  static const uint8_t keys[][4] = {
-    {0x51,0x24,0x36,0x48}, {0x00,0x00,0x00,0x00}, {0xAA,0xAA,0xAA,0xAA},
-    {0x55,0x55,0x55,0x55}, {0x12,0x34,0x56,0x78}, {0xFF,0xFF,0xFF,0xFF},
-    {0x19,0x92,0x04,0x27}, {0x01,0x23,0x45,0x67}, {0xAB,0xCD,0xEF,0x01},
-    {0xC6,0xB6,0xF9,0x2E},
-  };
-  for (const auto& key : keys) if (_retryWithKey(type, data, len, key)) return true;
+  for (size_t i = 0; i < T5577Dictionary::kBuiltinKeyCount; ++i) {
+    if (_retryWithKey(type, data, len, T5577Dictionary::kBuiltinKeys[i])) return true;
+  }
   return false;
 }
 
@@ -102,7 +81,7 @@ bool ChameleonT5577WriteScreen::_retryWithDictionary(uint16_t type, const uint8_
     String line = content.substring(start, nl); line.trim();
     if (line.length() && !line.startsWith("#")) {
       uint8_t key[4];
-      if (parseT5577Password(line, key) && _retryWithKey(type, data, len, key)) return true;
+      if (T5577Dictionary::parseKey(line, key) && _retryWithKey(type, data, len, key)) return true;
     }
     start = nl + 1;
   }
@@ -110,13 +89,12 @@ bool ChameleonT5577WriteScreen::_retryWithDictionary(uint16_t type, const uint8_
 }
 
 bool ChameleonT5577WriteScreen::_passwordFallback(uint16_t type, const uint8_t* data, uint8_t len) {
-  static constexpr const char* kDictDir = "/unigeek/rfid/dictionaries";
   // Reuse the screen-owned browser. Keeping a second BrowseFileView plus
   // popup arrays on this nested call path can exhaust the small UI task stack.
   // Confine the picker to the dictionary directory.  Besides preventing
   // navigation outside it, this suppresses the synthetic ".." entry.
-  _browser.root = kDictDir;
-  const uint8_t n = _browser.load(this, kDictDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
+  _browser.root = T5577Dictionary::kDirectory;
+  const uint8_t n = _browser.load(this, T5577Dictionary::kDirectory, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
   static constexpr uint8_t kMaxFiles = 8;
   const uint8_t files = n < kMaxFiles ? n : kMaxFiles;
   static InputSelectAction::Option opts[2 + kMaxFiles];
@@ -133,7 +111,7 @@ bool ChameleonT5577WriteScreen::_passwordFallback(uint16_t type, const uint8_t* 
     String value = InputTextAction::popup("Current Password (8 hex)", "", InputTextAction::INPUT_HEX);
     if (InputTextAction::wasCancelled()) return false;
     uint8_t key[4];
-    if (!parseT5577Password(value, key)) {
+    if (!T5577Dictionary::parseKey(value, key)) {
       render(); ShowStatusAction::show("Invalid password", 1400); render(); return false;
     }
     return _retryWithKey(type, data, len, key);

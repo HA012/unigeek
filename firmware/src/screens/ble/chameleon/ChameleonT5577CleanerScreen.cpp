@@ -5,33 +5,14 @@
 #include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/StatusBar.h"
-
-static constexpr const char* kDictDir = "/unigeek/rfid/dictionaries";
-static constexpr uint8_t kBuiltinPasswords[][4] = {
-  {0x51,0x24,0x36,0x48}, {0x00,0x00,0x00,0x00}, {0xAA,0xAA,0xAA,0xAA},
-  {0x55,0x55,0x55,0x55}, {0x12,0x34,0x56,0x78}, {0xFF,0xFF,0xFF,0xFF},
-  {0x19,0x92,0x04,0x27}, {0x01,0x23,0x45,0x67}, {0xAB,0xCD,0xEF,0x01},
-  {0xC6,0xB6,0xF9,0x2E},
-};
-
-static bool parseT55xxKey(const String& line, uint8_t out[4]) {
-  String s = line; s.trim();
-  if (!s.length() || s.startsWith("#")) return false;
-  s.replace(":", ""); s.replace(" ", "");
-  if (s.length() != 8) return false;
-  for (int i=0;i<4;i++) {
-    char hex[3] = {s[i*2], s[i*2+1], 0}; char* end=nullptr;
-    unsigned long v=strtoul(hex,&end,16); if (*end) return false; out[i]=(uint8_t)v;
-  }
-  return true;
-}
+#include "utils/rfid/T5577Dictionary.h"
 
 void ChameleonT5577CleanerScreen::_loadPicker() {
-  if (!_pickDir.length()) _pickDir = kDictDir;
-  _browser.root = kDictDir;
+  if (!_pickDir.length()) _pickDir = T5577Dictionary::kDirectory;
+  _browser.root = T5577Dictionary::kDirectory;
   uint8_t n = _browser.load(this, _pickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
   uint8_t off = 0;
-  if (_pickDir == kDictDir) { _items[0] = {"Built-in Keys"}; off = 1; }
+  if (_pickDir == T5577Dictionary::kDirectory) { _items[0] = {"Built-in Keys"}; off = 1; }
   for (uint8_t i=0;i<n;i++) _items[i+off] = _browser.items()[i];
   setItems(_items, n+off);
 }
@@ -40,8 +21,8 @@ void ChameleonT5577CleanerScreen::onInit() { _state=STATE_SELECT; _loadPicker();
 
 void ChameleonT5577CleanerScreen::onBack() {
   if (_state == STATE_SELECT) {
-    if (_pickDir == kDictDir || !_pickDir.length()) { _pickDir=""; Screen.goBack(); return; }
-    int slash=_pickDir.lastIndexOf('/'); _pickDir=(slash>0)?_pickDir.substring(0,slash):kDictDir;
+    if (_pickDir == T5577Dictionary::kDirectory || !_pickDir.length()) { _pickDir=""; Screen.goBack(); return; }
+    int slash=_pickDir.lastIndexOf('/'); _pickDir=(slash>0)?_pickDir.substring(0,slash):T5577Dictionary::kDirectory;
     _loadPicker(); render(); return;
   }
   _state=STATE_SELECT; _loadPicker(); render();
@@ -71,8 +52,9 @@ void ChameleonT5577CleanerScreen::onRender() {
 }
 
 bool ChameleonT5577CleanerScreen::_loadBuiltIn() {
-  _keyCount = sizeof(kBuiltinPasswords)/4;
-  memcpy(_keys, kBuiltinPasswords, sizeof(kBuiltinPasswords)); return true;
+  _keyCount = T5577Dictionary::kBuiltinKeyCount;
+  memcpy(_keys, T5577Dictionary::kBuiltinKeys, sizeof(T5577Dictionary::kBuiltinKeys));
+  return true;
 }
 
 bool ChameleonT5577CleanerScreen::_loadFile(const char* path) {
@@ -81,7 +63,7 @@ bool ChameleonT5577CleanerScreen::_loadFile(const char* path) {
   int start=0;
   while (start < (int)content.length() && _keyCount < MAX_KEYS) {
     int nl=content.indexOf('\n',start); if (nl<0) nl=content.length();
-    uint8_t key[4]; if (parseT55xxKey(content.substring(start,nl),key)) memcpy(_keys[_keyCount++],key,4);
+    uint8_t key[4]; if (T5577Dictionary::parseKey(content.substring(start,nl),key)) memcpy(_keys[_keyCount++],key,4);
     start=nl+1;
   }
   return _keyCount>0;
@@ -89,7 +71,7 @@ bool ChameleonT5577CleanerScreen::_loadFile(const char* path) {
 
 void ChameleonT5577CleanerScreen::onItemSelected(uint8_t index) {
   if (_state != STATE_SELECT) return;
-  uint8_t off=(_pickDir==kDictDir)?1:0; String label;
+  uint8_t off=(_pickDir==T5577Dictionary::kDirectory)?1:0; String label;
   if (off && index==0) { _loadBuiltIn(); label="Built-in"; }
   else {
     uint8_t fi=index-off; if (fi>=_browser.count()) return;
@@ -103,6 +85,9 @@ void ChameleonT5577CleanerScreen::onItemSelected(uint8_t index) {
 }
 
 void ChameleonT5577CleanerScreen::_run(const char* sourceLabel) {
+  // The CU API has no non-destructive T55xx password probe. Recovery therefore
+  // tests each candidate by attempting a known EM410X write; a successful
+  // recovery changes the tag contents and password.
   _state=STATE_RUNNING; _running=true; _log.clear();
   String src=String("Src: ")+sourceLabel; _log.addLine(src.c_str(),TFT_CYAN);
   _log.addLine("Place T5577 tag on reader...",TFT_DARKGREY); render();
