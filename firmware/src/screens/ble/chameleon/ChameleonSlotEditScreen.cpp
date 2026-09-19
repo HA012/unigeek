@@ -5,6 +5,7 @@
 #include "ChameleonSlotContentScreen.h"
 #include "ChameleonMfuWriteScreen.h"
 #include "ChameleonMfcWriteScreen.h"
+#include "ChameleonT5577WriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
@@ -904,31 +905,11 @@ void ChameleonSlotEditScreen::_writeTag() {
     return;
   }
 
-  // LF slots can be written to a physical T5577 tag.
+  // LF slots use the same T5577 writer as LF Tools so Reader Mode, manual
+  // current-password entry, built-in keys and dictionary fallback stay identical.
   if (_lfType == 100 || _lfType == 150 || _lfType == 170 || _lfType == 180 || _lfType == 200 || _lfType == 201) {
-    // Restore the full screen after Actions/menus before drawing the blocking write prompt.
-    render();
-
-    // Match the LF Tools write flow: show progress while the blocking T5577
-    // write operation is running. Result wording is intentionally unchanged
-    // until the global success/failure-message audit.
-    auto& lcd = Uni.Lcd;
-    int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-    lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-    lcd.setTextDatum(MC_DATUM);
-    lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-    lcd.drawString("Writing tag...", bx + bw / 2, by + bh / 2);
-
-    auto& c = ChameleonClient::get();
-    if (!c.setActiveSlot(_slot)) { render(); ShowStatusAction::show("Failed", 1600); render(); return; }
-    bool ok = false;
-    if (_lfType == 100) { uint8_t d[5]={}; ok=c.getEM410XSlot(d) && c.writeEM410XToT5577(d,nullptr,nullptr,0); }
-    else if (_lfType == 200) { uint8_t d[13]={},n=0; ok=c.getHIDProxSlot(d,&n) && n && c.writeHIDProxToT5577(d,n,nullptr,nullptr,0); }
-    else if (_lfType == 201) { uint8_t d[16]={},n=0; ok=c.getIoProxSlot(d,&n) && n==16 && c.writeIoProxToT5577(d,nullptr,nullptr,0); }
-    else if (_lfType == 170) { uint8_t d[4]={},n=0; ok=c.getVikingSlot(d,&n) && n==4 && c.writeVikingToT5577(d,nullptr,nullptr,0); }
-    else if (_lfType == 150) { uint8_t d[8]={},n=0; ok=c.getPACSlot(d,&n) && n==8 && c.writePACToT5577(d,nullptr,nullptr,0); }
-    else if (_lfType == 180) { uint8_t d[5]={},n=0; ok=c.getJablotronSlot(d,&n) && n==5 && c.writeJablotronToT5577(d,nullptr,nullptr,0); }
-    render(); ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600); render(); return;
+    Screen.push(new ChameleonT5577WriteScreen(_slot, _lfType));
+    return;
   }
   render();
   ShowStatusAction::show("Tag unsupported", 1600);

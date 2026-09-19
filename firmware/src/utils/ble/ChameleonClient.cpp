@@ -1599,7 +1599,10 @@ bool ChameleonClient::getEM410XSlot(uint8_t uid[5]) {
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_GET_EM410X_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 5) return false;
-  memcpy(uid, buf, 5);
+  // Some CU firmware revisions prefix the stored EM410X ID with two
+  // metadata bytes (e.g. 00 64/67), just like EM410X_SCAN.  The actual
+  // credential is always the final five bytes of the response.
+  memcpy(uid, buf + len - 5, 5);
   return true;
 }
 
