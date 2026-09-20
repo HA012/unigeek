@@ -313,6 +313,7 @@ private:
   void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
   bool _writeMfcDumpToTag();
   void _eraseMfcTag();
+  void _saveMfcUid();
   void _saveMfcDump();
   void _renderMfcDump();
   void _handleMfcDumpNav(INavigation::Direction dir);
@@ -359,6 +360,7 @@ private:
   void _showMfuWritePreview(bool fromFile);
   bool _writeMfuDumpToTag();
   void _eraseMfuTag();
+  void _saveMfuUid();
   void _saveMfuDump();
   void _renderMfuDump();
   void _handleMfuDumpNav(INavigation::Direction dir);

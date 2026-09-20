@@ -17,6 +17,7 @@
 #include "utils/nfc/HfDumpBuilder.h"
 #include "utils/nfc/MagicCard.h"
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/IdentityFile.h"
 #include <mbedtls/md.h>
 
 #if defined(DEVICE_HAS_ST25R3916)
@@ -1412,11 +1413,12 @@ void ST25R3916Screen::_showMfcDumpActions() {
 
   static const InputSelectAction::Option opts[] = {
     {"View Dump", "view"},
+    {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
     {"Emulate UID", "emulate"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
   if (!r) { render(); return; }
 
   render();
@@ -1424,6 +1426,8 @@ void ST25R3916Screen::_showMfcDumpActions() {
     _mfcDumpOffset = 0;
     _state = STATE_MFC_DUMP_HEX;
     render();
+  } else if (strcmp(r, "uid") == 0) {
+    _saveMfcUid();
   } else if (strcmp(r, "save") == 0) {
     _saveMfcDump();
   } else if (strcmp(r, "write") == 0) {
@@ -1953,6 +1957,38 @@ void ST25R3916Screen::_eraseMfcTag() {
 }
 
 
+void ST25R3916Screen::_saveMfcUid() {
+  if (!_mfcUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1200);
+    render();
+    return;
+  }
+
+  const char* typeName = (_mfcSak == 0x09) ? "MF-Mini"
+                       : (_mfcSak == 0x18) ? "MF-4K"
+                                           : "MF-1K";
+  String suggested = String(typeName) + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _mfcUidLen; ++i) {
+    snprintf(h, sizeof(h), "%02X", _mfcUid[i]);
+    suggested += h;
+  }
+
+  String name = InputTextAction::popup("Save UID", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+
+  Uni.Storage->makeDir("/unigeek");
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  const bool ok = IdentityFile::saveNfcUid(
+      String("/unigeek/nfc/uids/") + filename, _mfcUid, _mfcUidLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void ST25R3916Screen::_saveMfcDump() {
   if (!_mfcDumpLen || !_mfcUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Failed", 1200);
@@ -1970,7 +2006,7 @@ void ST25R3916Screen::_saveMfcDump() {
     suggested += h;
   }
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) {
     render();
     return;
@@ -2578,11 +2614,12 @@ void ST25R3916Screen::_showMfuDumpActions() {
 
   static const InputSelectAction::Option opts[] = {
     {"View Dump", "view"},
+    {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
     {"Emulate Tag", "emulate"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
   if (!r) { render(); return; }
 
   render();
@@ -2590,6 +2627,8 @@ void ST25R3916Screen::_showMfuDumpActions() {
     _mfuDumpOffset = 0;
     _state = STATE_MFU_DUMP_HEX;
     render();
+  } else if (strcmp(r, "uid") == 0) {
+    _saveMfuUid();
   } else if (strcmp(r, "save") == 0) {
     _saveMfuDump();
   } else if (strcmp(r, "write") == 0) {
@@ -2806,6 +2845,39 @@ void ST25R3916Screen::_eraseMfuTag() {
 #endif
 }
 
+void ST25R3916Screen::_saveMfuUid() {
+  if (!_mfuUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1200);
+    render();
+    return;
+  }
+
+  String safeType = _mfuType;
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  safeType.replace("/", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _mfuUidLen; ++i) {
+    snprintf(h, sizeof(h), "%02X", _mfuUid[i]);
+    suggested += h;
+  }
+
+  String name = InputTextAction::popup("Save UID", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+
+  Uni.Storage->makeDir("/unigeek");
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  const bool ok = IdentityFile::saveNfcUid(
+      String("/unigeek/nfc/uids/") + filename, _mfuUid, _mfuUidLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void ST25R3916Screen::_saveMfuDump() {
   if (!_mfuDumpLen || !_mfuUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Failed", 1200);
@@ -2813,20 +2885,19 @@ void ST25R3916Screen::_saveMfuDump() {
     return;
   }
 
-  String typeName = _mfuType;
-  typeName.replace("MIFARE ", "MF-");
-  typeName.replace("Ultralight ", "UL-");
-  typeName.replace(" ", "-");
-  typeName.replace("/", "-");
+  String safeType = _mfuType;
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  safeType.replace("/", "-");
 
-  String suggested = typeName + "_";
+  String suggested = safeType + "_";
   for (uint8_t i = 0; i < _mfuUidLen; ++i) {
     char h[3];
     snprintf(h, sizeof(h), "%02X", _mfuUid[i]);
     suggested += h;
   }
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) {
     render();
     return;
@@ -2865,27 +2936,21 @@ void ST25R3916Screen::_renderMfuDump() {
   static constexpr int kScrollW = 3;
   const int fullyVisible = max(1, bh / kRowH);
   const int visible = fullyVisible + ((bh % kRowH >= 5) ? 1 : 0);
-  const uint16_t totalRows = (_mfuPages + 1U) / 2U;
+  const uint16_t totalRows = _mfuPages;
   const int textW = bw - kScrollW - 4;
 
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   for (int i = 0; i < visible; ++i) {
     const uint16_t row = _mfuDumpOffset + (uint16_t)i;
     if (row >= totalRows) break;
-    const uint16_t firstPage = row * 2U;
-    const size_t off = (size_t)firstPage * 4U;
-    const size_t remaining = _mfuDumpLen > off ? _mfuDumpLen - off : 0;
-    const uint8_t bytes = (uint8_t)min((size_t)8, remaining);
+    const uint16_t page = row;
+    const size_t off = (size_t)page * 4U;
 
     char label[16];
-    if (firstPage + 1U < _mfuPages) snprintf(label, sizeof(label), "P%u-%u", (unsigned)firstPage, (unsigned)(firstPage + 1U));
-    else snprintf(label, sizeof(label), "P%u", (unsigned)firstPage);
-    char value[24] = {};
-    size_t valuePos = 0;
-    for (uint8_t b = 0; b < bytes; ++b) {
-      valuePos += snprintf(value + valuePos, sizeof(value) - valuePos,
-                           "%02X%s", _mfuDump[off + b], b + 1U == bytes ? "" : " ");
-    }
+    snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+    char value[9];
+    snprintf(value, sizeof(value), "%02X%02X%02X%02X",
+             _mfuDump[off], _mfuDump[off + 1U], _mfuDump[off + 2U], _mfuDump[off + 3U]);
 
     const int rowY = by + i * kRowH;
     const int rowH = min(kRowH, by + bh - rowY);
@@ -2915,7 +2980,7 @@ void ST25R3916Screen::_renderMfuDump() {
 
 void ST25R3916Screen::_handleMfuDumpNav(INavigation::Direction dir) {
   static constexpr int kRowH = 14;
-  const uint16_t totalRows = (_mfuPages + 1U) / 2U;
+  const uint16_t totalRows = _mfuPages;
   const uint16_t visible = (uint16_t)max(1, bodyH() / kRowH);
   const uint16_t maxOffset = totalRows > visible ? totalRows - visible : 0;
 
