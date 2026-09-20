@@ -25,8 +25,10 @@ class NdefLibraryScreen : public ListScreen {
 public:
   const char* title() override;
   void onInit() override; void onItemSelected(uint8_t) override; void onBack() override;
+  void onUpdate() override;
+  void onRender() override;
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE; BrowseFileView _browser; String _dir="/unigeek/nfc/ndefs",_pick="/unigeek/nfc/ndefs",_path; bool _editable=false; size_t _len=0;
-  ListItem _details[5]; String _dl[5],_dv[5]; uint8_t _dc=0; ListItem _actions[2]; uint8_t _ac=0;
+  ScrollListView _detailsView; ScrollListView::Row _details[5]; String _dl[5],_dv[5]; uint8_t _dc=0; ListItem _actions[2]; uint8_t _ac=0;
   void browse(); void details(); bool inspect(const String&); void copyRaw();
 };

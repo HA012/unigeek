@@ -7,11 +7,11 @@
 class LfDataLibraryScreen : public ListScreen {
 public:
   const char* title() override;
-  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override;
+  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override; void onUpdate() override; void onRender() override;
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE;
   BrowseFileView _browser; String _dir="/unigeek/rfid", _browseDir="/unigeek/rfid", _path;
-  LFCodec::DecodedData _data; ListItem _details[10], _actions[2]={{"Create Copy"},{"Edit"}};
+  LFCodec::DecodedData _data; ScrollListView _detailsView; ScrollListView::Row _details[10]; ListItem _actions[2]={{"Create Copy"},{"Edit"}};
   String _dl[10],_dv[10]; uint8_t _dc=0;
   void open(); void details(); bool load(const String&);
 };

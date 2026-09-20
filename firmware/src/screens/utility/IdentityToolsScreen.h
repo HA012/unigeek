@@ -1,17 +1,18 @@
 #pragma once
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
+#include "ui/views/ScrollListView.h"
 #include "utils/rfid/LFCodec.h"
 
 class UidLibraryScreen : public ListScreen {
 public:
   const char* title() override;
-  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override;
+  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override; void onUpdate() override; void onRender() override;
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state = BROWSE;
   BrowseFileView _browser; String _dir = "/unigeek/nfc/uids", _browseDir = "/unigeek/nfc/uids", _path;
   uint8_t _uid[10] = {}; size_t _uidLen = 0;
-  ListItem _details[4], _actions[2] = {{"Create Copy"},{"Edit"}};
+  ScrollListView _detailsView; ScrollListView::Row _details[4]; ListItem _actions[2] = {{"Create Copy"},{"Edit"}};
   String _d0,_d1,_d2;
   void open(); void details();
 };
@@ -36,12 +37,12 @@ private:
 class IdLibraryScreen : public ListScreen {
 public:
   const char* title() override;
-  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override;
+  void onInit() override; void onItemSelected(uint8_t) override; void onBack() override; void onUpdate() override; void onRender() override;
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE;
   BrowseFileView _browser; String _dir="/unigeek/rfid/ids", _browseDir="/unigeek/rfid/ids", _path;
-  LFCodec::DecodedData _data; ListItem _details[9], _actions[2]={{"Create Copy"},{"Edit"}};
-  String _dl[8],_dv[8]; uint8_t _dc=0; void open(); void details();
+  LFCodec::DecodedData _data; ScrollListView _detailsView; ScrollListView::Row _details[9]; ListItem _actions[2]={{"Create Copy"},{"Edit"}};
+  String _dl[9],_dv[9]; uint8_t _dc=0; void open(); void details();
 };
 
 class IdFormScreen : public ListScreen {

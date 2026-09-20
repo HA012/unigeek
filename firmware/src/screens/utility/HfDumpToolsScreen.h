@@ -11,6 +11,8 @@ public:
   void onInit() override;
   void onItemSelected(uint8_t index) override;
   void onBack() override;
+  void onUpdate() override;
+  void onRender() override;
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state = BROWSE;
   BrowseFileView _browser;
@@ -18,7 +20,7 @@ private:
   String _browseDir = "/unigeek/nfc/dumps";
   String _path;
   HfDumpParser::Info _info;
-  ListItem _details[7]; String _dl[7], _dv[7]; uint8_t _dc = 0;
+  ScrollListView _detailsView; ScrollListView::Row _details[7]; String _dl[7], _dv[7]; uint8_t _dc = 0;
   ListItem _actions[2] = {{"Create Copy"},{"Edit"}};
   void open(); void details(); bool inspect(const String& path);
 };
@@ -45,7 +47,7 @@ private:
   BrowseFileView _browser; String _uidPickDir; String _ndefPickDir;
   static constexpr uint8_t MAX_ROWS = 12;
   ListItem _items[MAX_ROWS]; String _values[MAX_ROWS]; uint8_t _count = 0;
-  ListItem _types[7] = {{"MIFARE Classic 1K"},{"MIFARE Classic 4K"},{"NTAG210"},{"NTAG212"},{"NTAG213"},{"NTAG215"},{"NTAG216"}};
+  ListItem _types[7] = {{"MF Classic 1K"},{"MF Classic 4K"},{"NTAG210"},{"NTAG212"},{"NTAG213"},{"NTAG215"},{"NTAG216"}};
   ListItem _uidSourcesNew[3] = {{"Random"},{"File"},{"Manual"}};
   ListItem _uidSourcesExisting[4] = {{"Current"},{"Random"},{"File"},{"Manual"}};
   ListItem _ndefSourcesNew[3] = {{"None"},{"File"},{"New"}};

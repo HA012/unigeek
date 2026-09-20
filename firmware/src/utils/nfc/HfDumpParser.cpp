@@ -19,10 +19,10 @@ HfDumpParser::Type HfDumpParser::typeForSize(size_t size) {
 
 const char* HfDumpParser::typeName(Type type) {
   switch (type) {
-    case TYPE_MIFARE_CLASSIC_MINI: return "MIFARE Classic Mini";
-    case TYPE_MIFARE_CLASSIC_1K:   return "MIFARE Classic 1K";
-    case TYPE_MIFARE_CLASSIC_2K:   return "MIFARE Classic 2K";
-    case TYPE_MIFARE_CLASSIC_4K:   return "MIFARE Classic 4K";
+    case TYPE_MIFARE_CLASSIC_MINI: return "MF Classic Mini";
+    case TYPE_MIFARE_CLASSIC_1K:   return "MF Classic 1K";
+    case TYPE_MIFARE_CLASSIC_2K:   return "MF Classic 2K";
+    case TYPE_MIFARE_CLASSIC_4K:   return "MF Classic 4K";
     case TYPE_NTAG210: return "NTAG210";
     case TYPE_NTAG212: return "NTAG212";
     case TYPE_NTAG213: return "NTAG213";
