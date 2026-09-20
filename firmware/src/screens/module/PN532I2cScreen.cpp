@@ -1240,7 +1240,7 @@ bool PN532I2cScreen::_initModule() {
 #endif
   }
 
-  ShowStatusAction::show("PN532 I2C not found");
+  ShowStatusAction::show("PN532 I2C not detected");
   Screen.goBack();
   return false;
 }
