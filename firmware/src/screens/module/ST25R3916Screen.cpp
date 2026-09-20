@@ -1990,8 +1990,13 @@ void ST25R3916Screen::_saveMfcUid() {
 }
 
 void ST25R3916Screen::_saveMfcDump() {
-  if (!_mfcDumpLen || !_mfcUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Failed", 1200);
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1600);
+    render();
+    return;
+  }
+  if (!_mfcDumpLen || !_mfcUidLen) {
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -2031,9 +2036,9 @@ void ST25R3916Screen::_saveMfcDump() {
   render();
   if (ok) {
     const String msg = String("Saved: ") + filename;
-    ShowStatusAction::show(msg.c_str(), 1500);
+    ShowStatusAction::show(msg.c_str(), 1600);
   } else {
-    ShowStatusAction::show("Failed", 1200);
+    ShowStatusAction::show("Failed", 1600);
   }
   render();
 }
@@ -2879,8 +2884,13 @@ void ST25R3916Screen::_saveMfuUid() {
 }
 
 void ST25R3916Screen::_saveMfuDump() {
-  if (!_mfuDumpLen || !_mfuUidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Failed", 1200);
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1600);
+    render();
+    return;
+  }
+  if (!_mfuDumpLen || !_mfuUidLen) {
+    ShowStatusAction::show("Failed", 1600);
     render();
     return;
   }
@@ -2922,9 +2932,9 @@ void ST25R3916Screen::_saveMfuDump() {
   render();
   if (ok) {
     const String msg = String("Saved: ") + filename;
-    ShowStatusAction::show(msg.c_str(), 1500);
+    ShowStatusAction::show(msg.c_str(), 1600);
   } else {
-    ShowStatusAction::show("Failed", 1200);
+    ShowStatusAction::show("Failed", 1600);
   }
   render();
 }
