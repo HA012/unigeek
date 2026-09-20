@@ -9,6 +9,7 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
+#include "utils/IdentityFile.h"
 
 namespace {
 void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
@@ -292,15 +293,17 @@ void ChameleonMfuScreen::_save() {
   // Keep the save-name convention consistent with the other NFC dump
   // workflows: suggest the UID as the editable basename. The .bin extension
   // is deliberately not shown in the editor; it is appended only on save.
-  char suggested[32] = {};
-  const char* typeName = ChameleonClient::mfuTagTypeName(_info.type);
-  size_t pos = snprintf(suggested, sizeof(suggested), "%s_", typeName);
-  for (uint8_t i = 0; i < _info.uidLen && pos + 2 < sizeof(suggested); ++i) {
-    pos += snprintf(suggested + pos, sizeof(suggested) - pos,
-                    "%02X", _info.uid[i]);
+  String safeType = String(ChameleonClient::mfuTagTypeName(_info.type));
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _info.uidLen; ++i) {
+    snprintf(h, sizeof(h), "%02X", _info.uid[i]);
+    suggested += h;
   }
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
 
   // Treat the edited value as a basename. Do not expose the extension in the
@@ -324,7 +327,7 @@ void ChameleonMfuScreen::_save() {
   if (ok) {
     String msg = String("Saved: ") + filename;
     ShowStatusAction::show(msg.c_str(), 1600);
-    Screen.goBack();
+    render();
     return;
   } else {
     ShowStatusAction::show("Failed", 1200);
@@ -332,18 +335,47 @@ void ChameleonMfuScreen::_save() {
   render();
 }
 
+void ChameleonMfuScreen::_saveUid() {
+  if (!_info.uidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1200); render(); return;
+  }
+  String safeType = String(ChameleonClient::mfuTagTypeName(_info.type));
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _info.uidLen; ++i) { snprintf(h, sizeof(h), "%02X", _info.uid[i]); suggested += h; }
+  String name = InputTextAction::popup("Save UID", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  const bool ok = IdentityFile::saveNfcUid(String("/unigeek/nfc/uids/") + filename,
+                                            _info.uid, _info.uidLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void ChameleonMfuScreen::_resultActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump",          "view"},
+    {"Save UID",           "uid"},
     {"Save Dump",          "save"},
     {"Write to Tag",       "write"},
   };
 
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
   if (!r) { render(); return; }
 
   if (strcmp(r, "view") == 0) {
     Screen.push(new ChameleonMfuPagesScreen(_info, _dump, _dumpLen));
+    return;
+  }
+
+  if (strcmp(r, "uid") == 0) {
+    _saveUid();
     return;
   }
 

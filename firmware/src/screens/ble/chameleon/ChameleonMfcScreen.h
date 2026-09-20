@@ -116,6 +116,7 @@ private:
   void _showDumpActions();
   void _loadDumpToSlot();
   void _saveDump();
+  void _saveUid();
   void _freeDump();
   bool _extractDumpNdef(uint8_t** ndef, size_t* ndefLen) const;
   void _loadDictPicker();

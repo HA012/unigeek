@@ -7,6 +7,7 @@
 #include "ui/actions/InputTextAction.h"
 #include "core/AchievementManager.h"
 #include "ui/components/StatusBar.h"
+#include "utils/IdentityFile.h"
 
 void ChameleonLFScanScreen::_addRow(const char* label, const String& value) {
   if (_rowCount >= kMaxRows) return;
@@ -161,6 +162,27 @@ void ChameleonLFScanScreen::_loadToSlot() {
   render();
 }
 
+void ChameleonLFScanScreen::_saveId() {
+  if (!Uni.Storage || !Uni.Storage->isAvailable() || !_dataLen) {
+    ShowStatusAction::show("Failed", 1200); render(); return;
+  }
+  const LFCodec::FormatInfo* info = LFCodec::format(_protocol);
+  String suggested = String(info ? info->filePrefix : "LF") + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _dataLen; ++i) { snprintf(h, sizeof(h), "%02X", _data[i]); suggested += h; }
+  String name = InputTextAction::popup("Save ID", suggested.c_str());
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".id")) name.remove(name.length() - 3);
+  const String filename = name + ".id";
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/rfid");
+  Uni.Storage->makeDir("/unigeek/rfid/ids");
+  const bool ok = IdentityFile::saveLfId(String("/unigeek/rfid/ids/") + filename,
+                                          _protocol, _data, _dataLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void ChameleonLFScanScreen::_saveToFile() {
   if (!Uni.Storage || !Uni.Storage->isAvailable() || !_dataLen) {
     ShowStatusAction::show("Failed", 1200); render(); return;
@@ -169,7 +191,7 @@ void ChameleonLFScanScreen::_saveToFile() {
   String suggested = String(info ? info->filePrefix : "LF") + "_";
   char h[3];
   for (uint8_t i = 0; i < _dataLen; ++i) { snprintf(h, sizeof(h), "%02X", _data[i]); suggested += h; }
-  String name = InputTextAction::popup("File name", suggested.c_str());
+  String name = InputTextAction::popup("Save LF Data", suggested.c_str());
   if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
   render();
   if (name.endsWith(".bin")) name.remove(name.length() - 4);
@@ -187,11 +209,12 @@ void ChameleonLFScanScreen::_saveToFile() {
 
 void ChameleonLFScanScreen::_showActions() {
   static const InputSelectAction::Option opts[] = {
-    {"Load to Slot", "slot"}, {"Save to File", "save"},
+    {"Load to Slot", "slot"}, {"Save ID", "id"}, {"Save LF Data", "save"},
   };
   String title = String(_protocolName()) + " Actions";
-  const char* r = InputSelectAction::popup(title.c_str(), opts, 2, nullptr);
+  const char* r = InputSelectAction::popup(title.c_str(), opts, 3, nullptr);
   if (r && strcmp(r, "slot") == 0) _loadToSlot();
+  else if (r && strcmp(r, "id") == 0) _saveId();
   else if (r && strcmp(r, "save") == 0) _saveToFile();
   else render();
 }

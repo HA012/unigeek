@@ -14,6 +14,7 @@
 #include "../../utils/nfc/NfcDumpBuilder.h"
 
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/IdentityFile.h"
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
 // Adafruit_PN532 exposes sendCommandCheckAck() publicly but readdata() is
 #include <mbedtls/md.h>
@@ -2862,7 +2863,7 @@ void PN532I2cScreen::_saveUltralightDump(const char* typeName) {
   String uid = _hexUid(_uid, _uidLen); uid.replace(":", "");
   String safeType = typeName ? String(typeName) : String("Ultralight");
   safeType.replace(" / ", "-"); safeType.replace(" ", "-");
-  String name = InputTextAction::popup("Save dump", safeType + "_" + uid);
+  String name = InputTextAction::popup("Save Dump", safeType + "_" + uid);
   if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
   if (name.endsWith(".bin")) name.remove(name.length() - 4);
   const String filename = name + ".bin";
@@ -2925,20 +2926,45 @@ void PN532I2cScreen::_showUltralightDumpHex() {
   render();
 }
 
+void PN532I2cScreen::_saveUid(const char* typeName) {
+  if (!_uidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable");
+    render();
+    return;
+  }
+  Uni.Storage->makeDir("/unigeek");
+  Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  String uid = _hexUid(_uid, _uidLen); uid.replace(":", "");
+  String safeType = typeName ? String(typeName) : String("NFC");
+  safeType.replace(" / ", "-"); safeType.replace(" ", "-");
+  String name = InputTextAction::popup("Save UID", safeType + "_" + uid);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+  const String path = String("/unigeek/nfc/uids/") + filename;
+  const bool ok = IdentityFile::saveNfcUid(path, _uid, _uidLen);
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void PN532I2cScreen::_showUltralightDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump", "view"},
+    {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "view") == 0) {
     _showUltralightDumpHex();
     return;
   }
   render();
-  if (strcmp(r, "save") == 0) {
+  if (strcmp(r, "uid") == 0) {
+    _saveUid(_ulTypeName.c_str());
+  } else if (strcmp(r, "save") == 0) {
     _saveUltralightDump(_ulTypeName.c_str());
   } else {
     if (_ulTypeName != "NTAG215" || _ulPages != 135 || _dumpLen != 540) {
@@ -5383,10 +5409,11 @@ void PN532I2cScreen::_doGen3LockUid() {
 void PN532I2cScreen::_showDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump",    "view"},
+    {"Save UID",     "uid"},
     {"Save Dump",    "save"},
     {"Write to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "view") == 0) {
     _showDumpHex();
@@ -5397,7 +5424,10 @@ void PN532I2cScreen::_showDumpActions() {
   // popup only clears its own rectangle, so launching Save/Write immediately
   // could leave fragments of Dump Actions visible underneath the next UI.
   render();
-  if (strcmp(r, "save") == 0) _doSaveDump();
+  if (strcmp(r, "uid") == 0) {
+    const char* typeName = (_sak == 0x09) ? "MF-Mini" : (_sak == 0x18) ? "MF-4K" : "MF-1K";
+    _saveUid(typeName);
+  } else if (strcmp(r, "save") == 0) _doSaveDump();
   else _showWriteDumpPreview(_dumpImg, _dumpLen, _uid, _uidLen, false);
 }
 
@@ -5762,7 +5792,7 @@ void PN532I2cScreen::_doSaveDump() {
                                         : "MF-1K";
   String suggested = String(typeName) + "_" + uid;
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) {
     render();
     return;

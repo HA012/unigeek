@@ -37,4 +37,5 @@ private:
   void _showActions();
   void _loadToSlot();
   void _saveToFile();
+  void _saveId();
 };

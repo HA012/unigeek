@@ -34,6 +34,7 @@ private:
   void _read();
   void _buildResult();
   void _save();
+  void _saveUid();
   void _resultActions();
   void _freeDump();
 };

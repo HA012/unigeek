@@ -13,6 +13,7 @@
 #include "utils/nfc/NdefParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/IdentityFile.h"
 extern "C" {
 #include "utils/crypto/crapto1.h"
 }
@@ -778,17 +779,20 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
 void ChameleonMfcScreen::_showDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump",          "view"},
+    {"Save UID",           "uid"},
     {"Save Dump",          "save"},
     {"Load Dump to Slot",  "slot"},
     {"Write to Tag",       "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
   if (!r) { render(); return; }
   render();
   if (strcmp(r, "view") == 0) {
     _buildDumpHex();
     _state = STATE_DUMP_HEX;
     render();
+  } else if (strcmp(r, "uid") == 0) {
+    _saveUid();
   } else if (strcmp(r, "save") == 0) {
     _saveDump();
   } else if (strcmp(r, "slot") == 0) {
@@ -801,6 +805,30 @@ void ChameleonMfcScreen::_showDumpActions() {
   }
 }
 
+void ChameleonMfcScreen::_saveUid() {
+  if (!_uidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1200); render(); return;
+  }
+  const char* typeName = ChameleonClient::tagTypeName(
+      _sectors == 5 ? 1000 : (_sectors == 40 ? 1003 : 1001));
+  String safeType = String(typeName);
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _uidLen; ++i) { snprintf(h, sizeof(h), "%02X", _uid[i]); suggested += h; }
+  String name = InputTextAction::popup("Save UID", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  const bool ok = IdentityFile::saveNfcUid(String("/unigeek/nfc/uids/") + filename, _uid, _uidLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
+  render();
+}
+
 void ChameleonMfcScreen::_saveDump() {
   if (!_dump || !_dumpLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Failed", 1200);
@@ -808,15 +836,18 @@ void ChameleonMfcScreen::_saveDump() {
     return;
   }
 
-  char suggested[32] = {};
-  size_t pos = snprintf(suggested, sizeof(suggested), "%s_",
-                        ChameleonClient::tagTypeName(
-                            _sectors == 5 ? 1000 : (_sectors == 40 ? 1003 : 1001)));
-  for (uint8_t i = 0; i < _uidLen && pos + 2 < sizeof(suggested); ++i) {
-    pos += snprintf(suggested + pos, sizeof(suggested) - pos, "%02X", _uid[i]);
+  String safeType = String(ChameleonClient::tagTypeName(
+      _sectors == 5 ? 1000 : (_sectors == 40 ? 1003 : 1001)));
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _uidLen; ++i) {
+    snprintf(h, sizeof(h), "%02X", _uid[i]);
+    suggested += h;
   }
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) {
     render();
     return;

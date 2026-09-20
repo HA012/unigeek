@@ -334,6 +334,7 @@ private:
   bool _writeUltralightNtag215Dump(const uint8_t* dump, size_t len);
   void _showUltralightTagDetails(const char* typeName, uint16_t pages);
   void _showUltralightDumpActions();
+  void _saveUid(const char* typeName);
   void _showUltralightDumpHex();
   void _saveUltralightDump(const char* typeName);
   void _doReadNdef();
