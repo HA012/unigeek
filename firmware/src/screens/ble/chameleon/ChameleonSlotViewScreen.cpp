@@ -54,12 +54,16 @@ void ChameleonSlotViewScreen::_runHF() {
         break;
       }
 
-      char lbl[8];
-      snprintf(lbl, sizeof(lbl), "B%03u", b);
-      char hex[40];
+      char lbl[16];
+      char hex[17];
+      snprintf(lbl, sizeof(lbl), "B%u 0-7", (unsigned)b);
       snprintf(hex, sizeof(hex),
-               "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-               buf[0],buf[1],buf[2],buf[3],buf[4],buf[5],buf[6],buf[7],
+               "%02X%02X%02X%02X%02X%02X%02X%02X",
+               buf[0],buf[1],buf[2],buf[3],buf[4],buf[5],buf[6],buf[7]);
+      _addRow(lbl, hex);
+      snprintf(lbl, sizeof(lbl), "B%u 8-F", (unsigned)b);
+      snprintf(hex, sizeof(hex),
+               "%02X%02X%02X%02X%02X%02X%02X%02X",
                buf[8],buf[9],buf[10],buf[11],buf[12],buf[13],buf[14],buf[15]);
       _addRow(lbl, hex);
 
@@ -196,8 +200,7 @@ void ChameleonSlotViewScreen::onUpdate() {
 
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
-    if (dir == INavigation::DIR_BACK ||
-        dir == INavigation::DIR_PRESS) {
+    if (dir == INavigation::DIR_BACK) {
       _restoreActiveSlot();
       Screen.goBack();
       return;

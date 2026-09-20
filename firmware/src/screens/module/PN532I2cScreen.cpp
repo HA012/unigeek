@@ -529,6 +529,7 @@ const char* PN532I2cScreen::title() {
       if (_rawResultTypeB) return _rawResultTypeBRaw ? "Raw Response" : "APDU Response";
       return "Read Memory";
     case STATE_ULTRALIGHT_DUMP: return "Tag Details";
+    case STATE_ULTRALIGHT_DUMP_HEX: return "Memory Dump";
     case STATE_NDEF_WRITE_MENU: return "Write NDEF";
     case STATE_NDEF_RESULT:     return "NDEF Details";
     case STATE_NDEF_FILE_SELECT:return "NDEF Files";
@@ -598,7 +599,7 @@ void PN532I2cScreen::onUpdate() {
           _dumpComplete = false;
           _goMifareTag();
         }
-      } else if (dir == INavigation::DIR_PRESS && _hasDump) {
+      } else if (dir == INavigation::DIR_PRESS && _state == STATE_MIFARE_DUMP && _hasDump) {
         if (_dumpComplete) _showDumpActions();
         else {
           _resumeReadAfterDict = true;
@@ -705,12 +706,15 @@ void PN532I2cScreen::onUpdate() {
     return;
   }
 
-  if (_state == STATE_ULTRALIGHT_DUMP) {
+  if (_state == STATE_ULTRALIGHT_DUMP || _state == STATE_ULTRALIGHT_DUMP_HEX) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        _goUltralightTag();
-      } else if (dir == INavigation::DIR_PRESS) {
+        if (_state == STATE_ULTRALIGHT_DUMP_HEX)
+          _showUltralightTagDetails(_ulTypeName.c_str(), _ulPages);
+        else
+          _goUltralightTag();
+      } else if (dir == INavigation::DIR_PRESS && _state == STATE_ULTRALIGHT_DUMP) {
         _showUltralightDumpActions();
       } else {
         _scrollView.onNav(dir);
@@ -2442,7 +2446,6 @@ void PN532I2cScreen::_showDumpHex() {
     _pushRow("B" + String((unsigned)blk) + " 8-F",
              _hexBlock(&_dumpImg[blk * 16 + 8], 8));
   }
-  _pushRow("[Press]", "Actions");
   _scrollView.setRows(_rows, _rowCount);
   render();
 }
@@ -2903,13 +2906,38 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
   return ok;
 }
 
+void PN532I2cScreen::_showUltralightDumpHex() {
+  if (!_hasDump || !_dumpLen) { _showUltralightTagDetails(_ulTypeName.c_str(), _ulPages); return; }
+
+  _state = STATE_ULTRALIGHT_DUMP_HEX;
+  _resetRows();
+  _scrollView.resetScroll();
+  const size_t pages = _dumpLen / 4u;
+  for (size_t page = 0; page < pages; ++page) {
+    char label[12];
+    snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+    const uint8_t* d = &_dumpImg[page * 4u];
+    char value[9];
+    snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
+    _pushRow(label, value);
+  }
+  _scrollView.setRows(_rows, _rowCount);
+  render();
+}
+
 void PN532I2cScreen::_showUltralightDumpActions() {
   static const InputSelectAction::Option opts[] = {
+    {"View Dump", "view"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
   if (!r) { render(); return; }
+  if (strcmp(r, "view") == 0) {
+    _showUltralightDumpHex();
+    return;
+  }
+  render();
   if (strcmp(r, "save") == 0) {
     _saveUltralightDump(_ulTypeName.c_str());
   } else {
@@ -3111,13 +3139,16 @@ void PN532I2cScreen::_doUltralightReadPages() {
     uint8_t data[4] = {};
     if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, page, pages, data)) {
       if (pages == 48 && page >= 44) {
-        _pushRow("P" + String(page), "Unreadable (key)");
+        char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+        _pushRow(label, "Unreadable (key)");
         continue;
       }
-      _pushRow("P" + String(page), "Failed");
+      char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+      _pushRow(label, "Failed");
       break;
     }
-    _pushRow("P" + String(page), _hexBlock(data, 4));
+    char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+    _pushRow(label, _hexBlock(data, 4));
   }
   ProgressView::finish();
   _scrollView.setRows(_rows, _rowCount);

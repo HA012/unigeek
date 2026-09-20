@@ -690,8 +690,8 @@ void ChameleonMfcScreen::_buildDumpHex() {
       String value;
       const uint8_t* data = _dump + (size_t)block * 16u + half * 8u;
       for (uint8_t i = 0; i < 8; ++i) {
-        char b[4];
-        snprintf(b, sizeof(b), "%02X%s", data[i], i == 7 ? "" : " ");
+        char b[3];
+        snprintf(b, sizeof(b), "%02X", data[i]);
         value += b;
       }
       _rowLabels[_rowCount] = label;
@@ -778,7 +778,7 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
 void ChameleonMfcScreen::_showDumpActions() {
   static const InputSelectAction::Option opts[] = {
     {"View Dump",          "view"},
-    {"Save Dump to File",  "save"},
+    {"Save Dump",          "save"},
     {"Load Dump to Slot",  "slot"},
     {"Write to Tag",       "write"},
   };

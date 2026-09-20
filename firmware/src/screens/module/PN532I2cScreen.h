@@ -53,6 +53,7 @@ private:
     STATE_MAGIC_DETECT,
     STATE_RAW_RESULT,
     STATE_ULTRALIGHT_DUMP,
+    STATE_ULTRALIGHT_DUMP_HEX,
     STATE_NDEF_WRITE_MENU,
     STATE_NDEF_RESULT,
     STATE_NDEF_FILE_SELECT,
@@ -333,6 +334,7 @@ private:
   bool _writeUltralightNtag215Dump(const uint8_t* dump, size_t len);
   void _showUltralightTagDetails(const char* typeName, uint16_t pages);
   void _showUltralightDumpActions();
+  void _showUltralightDumpHex();
   void _saveUltralightDump(const char* typeName);
   void _doReadNdef();
   void _doReadClassicNdef();

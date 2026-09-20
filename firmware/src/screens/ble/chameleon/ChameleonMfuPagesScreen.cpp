@@ -40,9 +40,35 @@ void ChameleonMfuPagesScreen::_addRow(const String& label, const String& value) 
 }
 
 void ChameleonMfuPagesScreen::_freeDump() {
-  if (_dump) free(_dump);
+  if (_dump && _ownsDump) free(_dump);
   _dump = nullptr;
   _dumpLen = 0;
+}
+
+void ChameleonMfuPagesScreen::_buildRows() {
+  _rowCount = 0;
+  _addRow("Type", ChameleonClient::mfuTagTypeName(_info.type));
+  String uidText;
+  for (uint8_t i = 0; i < _info.uidLen; ++i) {
+    char b[4]; snprintf(b, sizeof(b), "%s%02X", i ? ":" : "", _info.uid[i]); uidText += b;
+  }
+  _addRow("UID", uidText);
+  _addRow("Pages", String(_info.pages));
+  const uint16_t pages = min<uint16_t>(_info.pages, _dumpLen / 4u);
+  for (uint16_t page = 0; page < pages; ++page) {
+    const uint8_t* d = _dump + page * 4u;
+    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C && page >= 44) {
+      char label[8]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+      _addRow(label, "Unreadable (key)");
+    } else {
+      char label[8]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
+      char value[9]; snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
+      _addRow(label, value);
+    }
+  }
+  _view.resetScroll();
+  _view.setRows(_rows, _rowCount);
+  _ready = true;
 }
 
 void ChameleonMfuPagesScreen::_read() {
@@ -109,35 +135,24 @@ void ChameleonMfuPagesScreen::_read() {
   }
 
   _dumpLen = got;
-  _rowCount = 0;
-  _addRow("Type", ChameleonClient::mfuTagTypeName(_info.type));
-  String uidText;
-  for (uint8_t i = 0; i < _info.uidLen; ++i) {
-    char b[4]; snprintf(b, sizeof(b), "%s%02X", i ? ":" : "", _info.uid[i]); uidText += b;
-  }
-  _addRow("UID", uidText);
-  _addRow("Pages", String(_info.pages));
-  for (uint16_t page = 0; page < _info.pages; ++page) {
-    const uint8_t* d = _dump + page * 4u;
-    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C && page >= 44) {
-      _addRow("P" + String(page), "Unreadable (key)");
-    } else {
-      char value[9]; snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
-      _addRow("P" + String(page), value);
-    }
-  }
-  _view.resetScroll(); _view.setRows(_rows, _rowCount);
-  _ready = true;
+  _buildRows();
   render();
 }
 
-void ChameleonMfuPagesScreen::onInit() { _read(); }
+void ChameleonMfuPagesScreen::onInit() {
+  if (_viewOnly) {
+    _buildRows();
+    render();
+  } else {
+    _read();
+  }
+}
 
 void ChameleonMfuPagesScreen::onUpdate() {
   if (_busy) return;
   if (!Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
-  if (dir == INavigation::DIR_BACK || (_ready && dir == INavigation::DIR_PRESS)) {
+  if (dir == INavigation::DIR_BACK) {
     _freeDump();
     Screen.goBack();
     return;

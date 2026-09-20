@@ -1,6 +1,7 @@
 #include "ChameleonMfuScreen.h"
 #include "ChameleonMfuAuthUtils.h"
 #include "ChameleonMfuWriteScreen.h"
+#include "ChameleonMfuPagesScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
@@ -333,12 +334,18 @@ void ChameleonMfuScreen::_save() {
 
 void ChameleonMfuScreen::_resultActions() {
   static const InputSelectAction::Option opts[] = {
-    {"Save Dump",         "save"},
+    {"View Dump",          "view"},
+    {"Save Dump",          "save"},
     {"Write to Tag",       "write"},
   };
 
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 3, nullptr);
   if (!r) { render(); return; }
+
+  if (strcmp(r, "view") == 0) {
+    Screen.push(new ChameleonMfuPagesScreen(_info, _dump, _dumpLen));
+    return;
+  }
 
   if (strcmp(r, "save") == 0) {
     _save();
