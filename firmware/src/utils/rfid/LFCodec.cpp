@@ -8,11 +8,11 @@ namespace LFCodec {
 namespace {
 
 static const FormatInfo kFormats[] = {
-    {Protocol::EM410X,     100, "EM410X",      "EM410X",       5, CanWriteT5577},
+    {Protocol::EM410X,     100, "EM410X",      "EM410X",       5, CanWriteT5577 | CanGenerateRandom},
     {Protocol::HIDProx,    200, "HID Prox",    "HID-Prox",     13, CanWriteT5577},
-    {Protocol::IoProx,     201, "ioProx",      "ioProx",       16, CanWriteT5577},
+    {Protocol::IoProx,     201, "ioProx",      "ioProx",       16, CanWriteT5577 | CanGenerateRandom},
     {Protocol::Viking,     170, "Viking",      "Viking",        4, CanWriteT5577},
-    {Protocol::PACStanley, 150, "PAC/Stanley", "PAC-Stanley",   8, CanWriteT5577},
+    {Protocol::PACStanley, 150, "PAC/Stanley", "PAC-Stanley",   8, CanWriteT5577 | CanGenerateRandom},
     {Protocol::Jablotron,  180, "Jablotron",   "Jablotron",     5, CanWriteT5577},
 };
 
@@ -240,6 +240,36 @@ bool setField(DecodedData& data, FieldId id, const String& value) {
     }
   }
   return false;
+}
+
+bool isComplete(const DecodedData& decoded) {
+  const FormatInfo* info = format(decoded.protocol);
+  if (!info || decoded.length != info->dataSize ||
+      !validate(decoded.protocol, decoded.length)) return false;
+
+  switch (decoded.protocol) {
+    case Protocol::EM410X:
+      return decoded.hasNumericId && decoded.numericId <= 0xFFFFFFFFFFULL;
+    case Protocol::IoProx:
+      return decoded.hasFacilityCode && decoded.facilityCode <= 0xFF &&
+             decoded.hasCardNumber && decoded.cardNumber <= 0xFFFF;
+    case Protocol::PACStanley: {
+      if (!decoded.hasTextId) return false;
+      const size_t textLen = strnlen(decoded.textId, sizeof(decoded.textId));
+      if (textLen != info->dataSize) return false;
+      for (size_t i = 0; i < textLen; ++i) {
+        const uint8_t ch = static_cast<uint8_t>(decoded.textId[i]);
+        if (ch < 0x20 || ch > 0x7E) return false;
+      }
+      return true;
+    }
+    case Protocol::HIDProx:
+    case Protocol::Viking:
+    case Protocol::Jablotron:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool encode(const DecodedData& decoded, uint8_t* out, size_t outSize) {

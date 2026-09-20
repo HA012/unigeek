@@ -19,6 +19,7 @@ static constexpr uint8_t kMaxDataSize = 16;
 
 enum Capability : uint8_t {
   CanWriteT5577 = 1 << 0,
+  CanGenerateRandom = 1 << 1,
 };
 
 enum class FieldId : uint8_t {
@@ -99,6 +100,10 @@ bool decode(Protocol protocol, const uint8_t* data, size_t length, DecodedData& 
 
 // Encode protocol-aware semantic data back to canonical LF credential bytes.
 // Unknown/opaque fields are preserved from DecodedData::data.
+// Return true when all protocol-required semantic fields are present and the
+// canonical representation is structurally valid.
+bool isComplete(const DecodedData& decoded);
+
 bool encode(const DecodedData& decoded, uint8_t* out, size_t outSize);
 
 struct Field {
