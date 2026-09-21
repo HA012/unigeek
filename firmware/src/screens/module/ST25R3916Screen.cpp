@@ -27,6 +27,7 @@
 #endif
 
 namespace {
+String st25BaseName(const String& path) { int slash=path.lastIndexOf('/'); return slash>=0 ? path.substring(slash+1) : path; }
 constexpr uint8_t kSt25I2cAddr = 0x50;
 const char* inferNfcAType(uint8_t sak, const uint8_t atqa[2]) {
   if (sak == 0x09) return "MF Classic Mini";
@@ -483,7 +484,7 @@ void ST25R3916Screen::onUpdate() {
       _state == STATE_MFU_NDEF_WRITE_MENU || _state == STATE_MFU_NDEF_FILE_SELECT ||
       _state == STATE_MFC_NDEF_MENU ||
       _state == STATE_MFC_NDEF_WRITE_MENU || _state == STATE_MFC_NDEF_FILE_SELECT ||
-      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
+      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_SOURCE_FORM || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
       _state == STATE_EXP_MENU || _state == STATE_EXP_TAG_MENU || _state == STATE_EXP_ADVANCED_MENU ||
       _state == STATE_EXP_SUB1_MENU || _state == STATE_EXP_SUB2_MENU || _state == STATE_EXP_NDEF_MENU ||
       _state == STATE_EXP_NDEF_WRITE_MENU || _state == STATE_EXP_NDEF_FILE_SELECT) {
@@ -570,7 +571,7 @@ void ST25R3916Screen::onRender() {
       _state == STATE_MFU_NDEF_WRITE_MENU || _state == STATE_MFU_NDEF_FILE_SELECT ||
       _state == STATE_MFC_NDEF_MENU ||
       _state == STATE_MFC_NDEF_WRITE_MENU || _state == STATE_MFC_NDEF_FILE_SELECT ||
-      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
+      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_SOURCE_FORM || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
       _state == STATE_EXP_MENU || _state == STATE_EXP_TAG_MENU || _state == STATE_EXP_ADVANCED_MENU ||
       _state == STATE_EXP_SUB1_MENU || _state == STATE_EXP_SUB2_MENU || _state == STATE_EXP_NDEF_MENU ||
       _state == STATE_EXP_NDEF_WRITE_MENU || _state == STATE_EXP_NDEF_FILE_SELECT) {
@@ -640,8 +641,9 @@ void ST25R3916Screen::onBack() {
     _showMfcAdvancedMenu();
     return;
   }
-  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_UID_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT ||
-      _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT || _state == STATE_MFC_UID_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
+  if (_state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT || _state == STATE_MFC_UID_WRITE_PREVIEW) { _rebuildMfcUidWriteForm(1); return; }
+  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_SOURCE_FORM ||
+      _state == STATE_MFC_UID_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _showMfcTagMenu();
     return;
   }
@@ -828,6 +830,24 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     return;
   }
   if (_state == STATE_MFC_DUMP_SELECT) { _openMfcDumpFile(index); return; }
+  if (_state == STATE_MFC_UID_SOURCE_FORM) {
+    if (index == 0) {
+      static const InputSelectAction::Option sources[] = {{"Manual","manual"},{"UID File","uid"},{"Dump","dump"}};
+      const char* current = _uidWriteSourceMode == UID_WRITE_MANUAL ? "manual" : _uidWriteSourceMode == UID_WRITE_FILE ? "uid" : "dump";
+      const char* r = InputSelectAction::popup("UID", sources, 3, current);
+      if (r) {
+        _uidWriteSourceMode = strcmp(r,"manual")==0 ? UID_WRITE_MANUAL : strcmp(r,"uid")==0 ? UID_WRITE_FILE : UID_WRITE_DUMP;
+        _uidWriteLen = 0;
+        _uidWriteFilePath = ""; _uidWriteDumpPath = "";
+        _rebuildMfcUidWriteForm(0);
+      } else render();
+    } else if (index == 1) {
+      if (_uidWriteSourceMode == UID_WRITE_MANUAL) _editMfcUidManual();
+      else if (_uidWriteSourceMode == UID_WRITE_FILE) _openMfcUidPicker();
+      else _openMfcUidDumpPicker();
+    } else if (index == 2) _startMfcUidWriteFromForm();
+    return;
+  }
   if (_state == STATE_MFC_UID_FILE_SELECT) { _openMfcUidFile(index); return; }
   if (_state == STATE_MFC_UID_DUMP_SELECT) { _openMfcUidDumpFile(index); return; }
 
@@ -1540,41 +1560,79 @@ void ST25R3916Screen::_stopEmulation() {
 }
 
 void ST25R3916Screen::_chooseMfcUidSource() {
-  static const InputSelectAction::Option sources[] = {
-    {"Manual", "manual"}, {"UID File", "uid"}, {"Dump", "dump"},
+  _uidWriteSourceMode = UID_WRITE_MANUAL;
+  _uidWriteLen = 0;
+  _uidWriteFilePath = "";
+  _uidWriteDumpPath = "";
+  _rebuildMfcUidWriteForm(0);
+}
+
+void ST25R3916Screen::_rebuildMfcUidWriteForm(uint8_t selected) {
+  _state = STATE_MFC_UID_SOURCE_FORM;
+  _rowCount = 0;
+  auto add = [&](const char* label, const String& value) {
+    if (_rowCount >= 3) return;
+    _rowLabels[_rowCount] = label; _rowValues[_rowCount] = value;
+    _uidWriteItems[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount].c_str()};
+    ++_rowCount;
   };
-  const char* choice = InputSelectAction::popup("UID Source", sources, 3, nullptr);
-  if (!choice) { _showMfcTagMenu(); return; }
-  if (strcmp(choice, "uid") == 0) { _openMfcUidPicker(); return; }
-  if (strcmp(choice, "dump") == 0) { _openMfcUidDumpPicker(); return; }
-  String hex = InputTextAction::popup("UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
-  if (InputTextAction::wasCancelled()) { _showMfcTagMenu(); return; }
+  const char* source = _uidWriteSourceMode == UID_WRITE_MANUAL ? "Manual" :
+                       _uidWriteSourceMode == UID_WRITE_FILE ? "UID File" : "Dump";
+  add("UID", source);
+  if (_uidWriteSourceMode == UID_WRITE_MANUAL) {
+    String value = "-";
+    if (_uidWriteLen) { value = ""; for(uint8_t i=0;i<_uidWriteLen;++i){char b[4];snprintf(b,sizeof(b),"%s%02X",i?":":"",_uidWriteValue[i]);value+=b;} }
+    add("Value", value);
+  } else if (_uidWriteSourceMode == UID_WRITE_FILE) {
+    add("UID File", _uidWriteFilePath.length() ? st25BaseName(_uidWriteFilePath) : "-");
+  } else {
+    add("Dump File", _uidWriteDumpPath.length() ? st25BaseName(_uidWriteDumpPath) : "-");
+  }
+  add("Write", "");
+  setItems(_uidWriteItems, _rowCount, min<uint8_t>(selected, _rowCount - 1));
+  render();
+}
+
+void ST25R3916Screen::_editMfcUidManual() {
+  String initial;
+  for(uint8_t i=0;i<_uidWriteLen;++i){char b[4];snprintf(b,sizeof(b),"%s%02X",i?":":"",_uidWriteValue[i]);initial+=b;}
+  String hex = InputTextAction::popup("UID (8 or 14 hex)", initial, InputTextAction::INPUT_HEX);
+  if (InputTextAction::wasCancelled()) { _rebuildMfcUidWriteForm(1); return; }
   hex.replace(" ", ""); hex.replace(":", "");
-  if (hex.length() != 8 && hex.length() != 14) { ShowStatusAction::show("UID must be 4 or 7 bytes",1600); _showMfcTagMenu(); return; }
-  uint8_t uid[7] = {}; const uint8_t n = (uint8_t)(hex.length()/2);
-  for (uint8_t i=0;i<n;++i) { char b[3]={hex[i*2],hex[i*2+1],0}; char* e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){ShowStatusAction::show("Bad hex",1600);_showMfcTagMenu();return;} uid[i]=(uint8_t)v; }
-  _showMfcUidWritePreview(uid,n,"Manual");
+  if (hex.length()!=8 && hex.length()!=14) { _rebuildMfcUidWriteForm(1); ShowStatusAction::show("UID must be 4 or 7 bytes",1600); return; }
+  uint8_t uid[7]={}; const uint8_t len=(uint8_t)(hex.length()/2u);
+  for(uint8_t i=0;i<len;++i){char b[3]={hex[i*2],hex[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(b,&e,16);if(!e||*e){_rebuildMfcUidWriteForm(1);ShowStatusAction::show("Bad hex",1200);return;}uid[i]=(uint8_t)v;}
+  memcpy(_uidWriteValue,uid,len); _uidWriteLen=len; _rebuildMfcUidWriteForm(1);
+}
+
+void ST25R3916Screen::_startMfcUidWriteFromForm() {
+  if (_uidWriteLen != 4 && _uidWriteLen != 7) {
+    ShowStatusAction::show(_uidWriteSourceMode == UID_WRITE_MANUAL ? "Enter UID" : "Select source file", 1600);
+    render(); return;
+  }
+  _showMfcUidWritePreview(_uidWriteValue, _uidWriteLen,
+      _uidWriteSourceMode == UID_WRITE_MANUAL ? "Manual" : _uidWriteSourceMode == UID_WRITE_FILE ? "UID File" : "Dump");
 }
 
 void ST25R3916Screen::_openMfcUidPicker() {
   _state=STATE_MFC_UID_FILE_SELECT; _browser.root="/unigeek/nfc/uids";
   if(!_uidPickDir.startsWith(_browser.root)) _uidPickDir=_browser.root;
   uint8_t n=_browser.load(this,_uidPickDir,BrowseFileView::Mode(".uid"));
-  if(n==0&&_uidPickDir==_browser.root){ShowStatusAction::show("No saved UIDs",1600);_showMfcTagMenu();return;} setItems(_browser.items(),n);
+  if(n==0&&_uidPickDir==_browser.root){_rebuildMfcUidWriteForm(1);ShowStatusAction::show("No saved UIDs",1600);return;} setItems(_browser.items(),n);
 }
 void ST25R3916Screen::_openMfcUidDumpPicker() {
   _state=STATE_MFC_UID_DUMP_SELECT; _browser.root="/unigeek/nfc/dumps";
   if(!_uidDumpPickDir.startsWith(_browser.root)) _uidDumpPickDir=_browser.root;
   uint8_t n=_browser.load(this,_uidDumpPickDir,BrowseFileView::Mode(".bin"));
-  if(n==0&&_uidDumpPickDir==_browser.root){ShowStatusAction::show("No saved dumps",1600);_showMfcTagMenu();return;} setItems(_browser.items(),n);
+  if(n==0&&_uidDumpPickDir==_browser.root){_rebuildMfcUidWriteForm(1);ShowStatusAction::show("No saved dumps",1600);return;} setItems(_browser.items(),n);
 }
 void ST25R3916Screen::_openMfcUidFile(uint8_t index) {
   if(index>=_browser.count())return; const auto&e=_browser.entry(index); if(e.isDir){_uidPickDir=e.path;_openMfcUidPicker();return;}
-  uint8_t uid[7]={};size_t n=0;if(!IdentityFile::loadNfcUid(e.path,uid,sizeof(uid),n)||(n!=4&&n!=7)){ShowStatusAction::show("Invalid UID file",1600);return;}_showMfcUidWritePreview(uid,(uint8_t)n,"UID File");
+  uint8_t uid[7]={};size_t n=0;if(!IdentityFile::loadNfcUid(e.path,uid,sizeof(uid),n)||(n!=4&&n!=7)){ShowStatusAction::show("Invalid UID file",1600);return;}memcpy(_uidWriteValue,uid,n);_uidWriteLen=(uint8_t)n;_uidWriteFilePath=e.path;_rebuildMfcUidWriteForm(1);
 }
 void ST25R3916Screen::_openMfcUidDumpFile(uint8_t index) {
   if(index>=_browser.count())return;const auto&e=_browser.entry(index);if(e.isDir){_uidDumpPickDir=e.path;_openMfcUidDumpPicker();return;}
-  if(!Uni.Storage||!Uni.Storage->isAvailable()){ShowStatusAction::show("Storage unavailable",1600);return;}fs::File f=Uni.Storage->open(e.path.c_str(),"r");if(!f){ShowStatusAction::show("Failed to open file",1600);return;}size_t n=f.size();if(n==0||n>kMfcMaxDumpLen){f.close();ShowStatusAction::show("Invalid dump",1600);return;}uint8_t*d=new uint8_t[n];if(!d){f.close();ShowStatusAction::show("Out of memory",1600);return;}size_t got=f.read(d,n);f.close();if(got!=n){delete[]d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=HfDumpParser::inspect(d,n);delete[]d;if(!HfDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}_showMfcUidWritePreview(info.uid,info.uidLen,"Dump");
+  if(!Uni.Storage||!Uni.Storage->isAvailable()){ShowStatusAction::show("Storage unavailable",1600);return;}fs::File f=Uni.Storage->open(e.path.c_str(),"r");if(!f){ShowStatusAction::show("Failed to open file",1600);return;}size_t n=f.size();if(n==0||n>kMfcMaxDumpLen){f.close();ShowStatusAction::show("Invalid dump",1600);return;}uint8_t*d=new uint8_t[n];if(!d){f.close();ShowStatusAction::show("Out of memory",1600);return;}size_t got=f.read(d,n);f.close();if(got!=n){delete[]d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=HfDumpParser::inspect(d,n);delete[]d;if(!HfDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}memcpy(_uidWriteValue,info.uid,info.uidLen);_uidWriteLen=info.uidLen;_uidWriteDumpPath=e.path;_rebuildMfcUidWriteForm(1);
 }
 void ST25R3916Screen::_showMfcUidWritePreview(const uint8_t* uid,uint8_t uidLen,const char* source) {
   if(!uid||(uidLen!=4&&uidLen!=7)){ShowStatusAction::show("UID not supported",1600);_showMfcTagMenu();return;}memcpy(_uidWriteValue,uid,uidLen);_uidWriteLen=uidLen;

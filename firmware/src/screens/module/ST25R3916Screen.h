@@ -74,6 +74,7 @@ public:
       case STATE_MFC_DUMP_SELECT: return "Write Dump to Tag";
       case STATE_MFC_WRITE_PREVIEW: return "Write Dump to Tag";
       case STATE_MFC_WRITING: return "Write Dump to Tag";
+      case STATE_MFC_UID_SOURCE_FORM: return "Write UID to Tag";
       case STATE_MFC_UID_FILE_SELECT: return "Saved UIDs";
       case STATE_MFC_UID_DUMP_SELECT: return "Saved Dumps";
       case STATE_MFC_UID_WRITE_PREVIEW: return "Write UID to Tag";
@@ -120,6 +121,7 @@ private:
     STATE_MFC_DUMP_HEX,
     STATE_MFC_DUMP_SELECT,
     STATE_MFC_WRITE_PREVIEW,
+    STATE_MFC_UID_SOURCE_FORM,
     STATE_MFC_UID_FILE_SELECT,
     STATE_MFC_UID_DUMP_SELECT,
     STATE_MFC_UID_WRITE_PREVIEW,
@@ -304,6 +306,11 @@ private:
   String _dumpPickDir;
   String _uidPickDir;
   String _uidDumpPickDir;
+  enum UidWriteSource : uint8_t { UID_WRITE_MANUAL, UID_WRITE_FILE, UID_WRITE_DUMP };
+  UidWriteSource _uidWriteSourceMode = UID_WRITE_MANUAL;
+  ListItem _uidWriteItems[3];
+  String _uidWriteFilePath;
+  String _uidWriteDumpPath;
   uint8_t _uidWriteValue[7] = {};
   uint8_t _uidWriteLen = 0;
   String _ndefPickDir;
@@ -324,6 +331,9 @@ private:
   void _openMfcDumpFile(uint8_t index);
   void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
   void _chooseMfcUidSource();
+  void _rebuildMfcUidWriteForm(uint8_t selected = 0);
+  void _editMfcUidManual();
+  void _startMfcUidWriteFromForm();
   void _openMfcUidPicker();
   void _openMfcUidDumpPicker();
   void _openMfcUidFile(uint8_t index);
