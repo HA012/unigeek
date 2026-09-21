@@ -32,7 +32,8 @@ String BrowseFileView::prettifyTitle(const String& filename)
 
 uint8_t BrowseFileView::load(BaseScreen* host, String dir,
                               Mode mode, const char* fileSublabel,
-                              LabelStyle style, const char* preferredFile)
+                              LabelStyle style, const char* preferredFile,
+                              const char* hiddenDirName)
 {
   _count = 0;
 
@@ -84,6 +85,7 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
 
   String base = (dir == "/") ? "" : dir;
   for (uint8_t i = 0; i < n && _count < kCap; i++) {
+    if (hiddenDirName && raw[i].isDir && strcasecmp(raw[i].name.c_str(), hiddenDirName) == 0) continue;
     if (mode.kind == Mode::DIRECTORY && !raw[i].isDir) continue;
     if (mode.kind == Mode::FILE_ONLY && raw[i].isDir) continue;
     if (mode.ext && !raw[i].isDir && !raw[i].name.endsWith(mode.ext)) continue;

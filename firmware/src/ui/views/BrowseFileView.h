@@ -89,6 +89,7 @@ struct BrowseFileView {
   //                    extension plus up to three accepted exact file sizes
   //   fileSublabel   - sublabel on file rows; nullptr = none
   //                    Directory rows always get "DIR".
+  // hiddenDirName   - optional exact directory name to omit from this listing.
   // Returns populated count. Returns 0 if storage unavailable.
   // `dir` is taken by value on purpose: callers commonly pass entry(i).path,
   // which aliases _entries[]. load() overwrites _entries[] as it builds the
@@ -98,7 +99,8 @@ struct BrowseFileView {
                Mode        mode         = {},
                const char* fileSublabel = nullptr,
                LabelStyle  style        = NAME,
-               const char* preferredFile = nullptr);
+               const char* preferredFile = nullptr,
+               const char* hiddenDirName = nullptr);
 
   uint8_t        count()          const { return _count; }
   const Entry&   entry(uint8_t i) const { return _entries[i]; }
