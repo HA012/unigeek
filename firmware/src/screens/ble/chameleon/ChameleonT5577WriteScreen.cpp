@@ -217,9 +217,9 @@ bool ChameleonT5577WriteScreen::_loadFile(const String& path) {
 }
 
 void ChameleonT5577WriteScreen::_fromFile() {
-  const uint8_t n = _browser.load(this, "/unigeek/rfid",
+  const uint8_t n = _browser.load(this, "/unigeek/rfid/data",
       BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
-  if (!n) { render(); ShowStatusAction::show("No .bin in rfid", 1600); render(); return; }
+  if (!n) { render(); ShowStatusAction::show("No saved LF data", 1600); render(); return; }
   static constexpr uint8_t kMax = 10;
   const uint8_t count = n < kMax ? n : kMax;
   static InputSelectAction::Option opts[kMax];

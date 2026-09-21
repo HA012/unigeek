@@ -21,7 +21,7 @@ private:
   String _path;
   HfDumpParser::Info _info;
   ScrollListView _detailsView; ScrollListView::Row _details[7]; String _dl[7], _dv[7]; uint8_t _dc = 0;
-  ListItem _actions[2] = {{"Create Copy"},{"Edit"}};
+  ListItem _actions[2] = {{"Make a Copy"},{"Edit"}};
   void open(); void details(); bool inspect(const String& path);
 };
 

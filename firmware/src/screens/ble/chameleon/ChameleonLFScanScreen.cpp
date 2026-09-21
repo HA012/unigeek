@@ -196,8 +196,8 @@ void ChameleonLFScanScreen::_saveToFile() {
   render();
   if (name.endsWith(".bin")) name.remove(name.length() - 4);
   String filename = name + ".bin";
-  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/rfid");
-  String path = String("/unigeek/rfid/") + filename;
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/rfid"); Uni.Storage->makeDir("/unigeek/rfid/data");
+  String path = String("/unigeek/rfid/data/") + filename;
   fs::File file = Uni.Storage->open(path.c_str(), "w");
   bool ok = false;
   if (file) { ok = file.write(_data, _dataLen) == (size_t)_dataLen; file.close(); }

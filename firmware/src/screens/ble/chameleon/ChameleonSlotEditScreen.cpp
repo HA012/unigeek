@@ -605,11 +605,12 @@ bool ChameleonSlotEditScreen::_saveLfSlotToFile() {
   if (InputTextAction::wasCancelled()) return true; // cancellation is not a write failure
 
   Uni.Storage->makeDir("/unigeek/rfid");
+  Uni.Storage->makeDir("/unigeek/rfid/data");
   const String base = _sanitizeDownloadName(name);
-  String path = String("/unigeek/rfid/") + base + ".bin";
+  String path = String("/unigeek/rfid/data/") + base + ".bin";
   if (Uni.Storage->exists(path.c_str())) {
     for (int n = 2; n < 1000; ++n) {
-      String candidate = String("/unigeek/rfid/") + base + "_(" + n + ").bin";
+      String candidate = String("/unigeek/rfid/data/") + base + "_(" + n + ").bin";
       if (!Uni.Storage->exists(candidate.c_str())) { path = candidate; break; }
     }
   }
@@ -843,13 +844,13 @@ void ChameleonSlotEditScreen::_writeContent() {
   if (!f) { render(); return; }
 
   const bool lf = strcmp(f, "lf") == 0;
-  const char* dir = lf ? "/unigeek/rfid" : "/unigeek/nfc/dumps";
+  const char* dir = lf ? "/unigeek/rfid/data" : "/unigeek/nfc/dumps";
   static constexpr uint8_t kMax = 10;
   uint8_t n = _browser.load(this, dir,
       BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
   if (n == 0) {
     render();
-    ShowStatusAction::show(lf ? "No .bin in rfid" : "No .bin in nfc/dumps", 1600);
+    ShowStatusAction::show(lf ? "No saved LF data" : "No .bin in nfc/dumps", 1600);
     render();
     return;
   }

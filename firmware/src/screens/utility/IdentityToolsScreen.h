@@ -12,7 +12,7 @@ private:
   enum State { BROWSE, DETAILS, ACTIONS } _state = BROWSE;
   BrowseFileView _browser; String _dir = "/unigeek/nfc/uids", _browseDir = "/unigeek/nfc/uids", _path;
   uint8_t _uid[10] = {}; size_t _uidLen = 0;
-  ScrollListView _detailsView; ScrollListView::Row _details[4]; ListItem _actions[2] = {{"Create Copy"},{"Edit"}};
+  ScrollListView _detailsView; ScrollListView::Row _details[4]; ListItem _actions[2] = {{"Make a Copy"},{"Edit"}};
   String _d0,_d1,_d2;
   void open(); void details();
 };
@@ -41,7 +41,7 @@ public:
 private:
   enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE;
   BrowseFileView _browser; String _dir="/unigeek/rfid/ids", _browseDir="/unigeek/rfid/ids", _path;
-  LFCodec::DecodedData _data; ScrollListView _detailsView; ScrollListView::Row _details[9]; ListItem _actions[2]={{"Create Copy"},{"Edit"}};
+  LFCodec::DecodedData _data; ScrollListView _detailsView; ScrollListView::Row _details[9]; ListItem _actions[2]={{"Make a Copy"},{"Edit"}};
   String _dl[9],_dv[9]; uint8_t _dc=0; void open(); void details();
 };
 

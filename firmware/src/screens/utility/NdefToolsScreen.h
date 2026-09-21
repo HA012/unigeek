@@ -28,7 +28,7 @@ public:
   void onUpdate() override;
   void onRender() override;
 private:
-  enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE; BrowseFileView _browser; String _dir="/unigeek/nfc/ndefs",_pick="/unigeek/nfc/ndefs",_path; bool _editable=false; size_t _len=0;
-  ScrollListView _detailsView; ScrollListView::Row _details[5]; String _dl[5],_dv[5]; uint8_t _dc=0; ListItem _actions[2]; uint8_t _ac=0;
-  void browse(); void details(); bool inspect(const String&); void copyRaw();
+  enum State { BROWSE, DETAILS, ACTIONS } _state=BROWSE; BrowseFileView _browser; String _dir="/unigeek/nfc/ndefs",_pick="/unigeek/nfc/ndefs",_path; bool _editable=false; size_t _len=0; String _recordType,_recordPreview;
+  ScrollListView _detailsView; ScrollListView::Row _details[6]; String _dl[6],_dv[6]; uint8_t _dc=0; ListItem _actions[2]; uint8_t _ac=0;
+  void browse(); void details(); bool inspect(const String&);
 };
