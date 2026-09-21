@@ -4,6 +4,7 @@
 #include "ChameleonMfcUidWriteScreen.h"
 #include "ChameleonMagicScreen.h"
 #include "ChameleonMfcAdvancedScreen.h"
+#include "utils/IdentityFile.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
@@ -112,7 +113,7 @@ void ChameleonMfcToolsScreen::_writeUidFromDump() {
   _state = UID_DUMP_PICKER;
   _browser.root = "/unigeek/nfc/dumps";
   if (!_dumpPickDir.startsWith(_browser.root)) _dumpPickDir = _browser.root;
-  const uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(".bin"));
+  const uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(".bin", 320, 1024, 4096));
   if (!n && _dumpPickDir == _browser.root) {
     _rebuildUidForm(1);
     ShowStatusAction::show("No saved dumps", 1600);
@@ -281,7 +282,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
 
 void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
   if (_state == UID_FORM) {
-    if(index==0){static const InputSelectAction::Option src[]={{"Manual","manual"},{"UID File","uid"},{"Dump","dump"}};const char*r=InputSelectAction::popup("UID",src,3,_uidSource==UID_MANUAL?"manual":_uidSource==UID_FILE?"uid":"dump");if(r){_uidSource=strcmp(r,"manual")==0?UID_MANUAL:strcmp(r,"uid")==0?UID_FILE:UID_DUMP;_uidLen=0;_rebuildUidForm(0);}else render();}
+    if(index==0){static const InputSelectAction::Option src[]={{"Manual","manual"},{"UID File","uid"},{"Dump","dump"}};const char*r=InputSelectAction::popup("UID",src,3,_uidSource==UID_MANUAL?"manual":_uidSource==UID_FILE?"uid":"dump");if(r){_uidSource=strcmp(r,"manual")==0?UID_MANUAL:strcmp(r,"uid")==0?UID_FILE:UID_DUMP;_uidLen=0;_uidFile="";_uidDumpFile="";_rebuildUidForm(0);}else render();}
     else if(index==1){if(_uidSource==UID_MANUAL)_editUidManual();else if(_uidSource==UID_FILE)_writeUidFromFile();else _writeUidFromDump();}
     else if(index==2)_startUidWrite(); return;
   }
@@ -306,7 +307,7 @@ void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
     }
     const size_t len = f.size();
     uint8_t* dump = new uint8_t[len];
-    if (!dump) { f.close(); ShowStatusAction::show("Failed", 1600); return; }
+    if (!dump) { f.close(); ShowStatusAction::show("Out of memory", 1600); return; }
     const size_t got = f.read(dump, len); f.close();
     if (got != len) { delete[] dump; ShowStatusAction::show("Invalid dump", 1600); return; }
     const auto info = NfcDumpParser::inspect(dump, len); delete[] dump;
