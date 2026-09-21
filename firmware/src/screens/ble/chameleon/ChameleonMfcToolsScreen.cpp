@@ -1,11 +1,14 @@
 #include "ChameleonMfcToolsScreen.h"
 #include "ChameleonMfcScreen.h"
 #include "ChameleonMfcWriteScreen.h"
+#include "ChameleonMfcUidWriteScreen.h"
 #include "ChameleonMagicScreen.h"
 #include "ChameleonMfcAdvancedScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
+#include "ui/actions/InputTextAction.h"
+#include "utils/nfc/NfcDumpParser.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/views/ProgressView.h"
@@ -54,10 +57,54 @@ static bool _mfcWriteWithKnownKey(
 void ChameleonMfcToolsScreen::onInit() {
   _items[0] = {"Detect Magic"};
   _items[1] = {"Read Tag"};
-  _items[2] = {"Write to Tag"};
-  _items[3] = {"Erase Tag"};
-  _items[4] = {"Advanced"};
-  setItems(_items);
+  _items[2] = {"Write UID to Tag"};
+  _items[3] = {"Write Dump to Tag"};
+  _items[4] = {"Erase Tag"};
+  _items[5] = {"Advanced"};
+  setItems(_items, 6);
+}
+
+
+void ChameleonMfcToolsScreen::_writeUid() {
+  static const InputSelectAction::Option sources[] = {
+    {"Manual", "manual"}, {"UID File", "uid"}, {"Dump", "dump"},
+  };
+  const char* r = InputSelectAction::popup("UID Source", sources, 3, nullptr);
+  if (!r) { render(); return; }
+  if (strcmp(r, "manual") == 0) {
+    String hex = InputTextAction::popup("UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
+    if (InputTextAction::wasCancelled()) { render(); return; }
+    hex.replace(" ", ""); hex.replace(":", "");
+    if (hex.length() != 8 && hex.length() != 14) { render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1600); return; }
+    uint8_t uid[7] = {}; const uint8_t len = (uint8_t)(hex.length() / 2u);
+    for (uint8_t i=0;i<len;++i) { char b[3]={hex[i*2],hex[i*2+1],0}; char* e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){render();ShowStatusAction::show("Bad hex",1200);return;} uid[i]=(uint8_t)v; }
+    Screen.push(new ChameleonMfcUidWriteScreen(uid, len));
+    return;
+  }
+  if (strcmp(r, "uid") == 0) { _writeUidFromFile(); return; }
+  _writeUidFromDump();
+}
+
+void ChameleonMfcToolsScreen::_writeUidFromFile() {
+  uint8_t n = _browser.load(this, "/unigeek/nfc/uids", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".uid"));
+  if (!n) { render(); ShowStatusAction::show("No saved UIDs", 1600); render(); return; }
+  static constexpr uint8_t kMax=10; const uint8_t count=n<kMax?n:kMax; InputSelectAction::Option opts[kMax]; String vals[kMax];
+  for(uint8_t i=0;i<count;++i){vals[i]=String(i);opts[i]={_browser.entry(i).name.c_str(),vals[i].c_str()};}
+  const char* r=InputSelectAction::popup("Saved UIDs",opts,count,nullptr); if(!r){render();return;} uint8_t i=(uint8_t)atoi(r); if(i>=count){render();return;}
+  Screen.push(new ChameleonMfcUidWriteScreen(_browser.entry(i).path));
+}
+
+void ChameleonMfcToolsScreen::_writeUidFromDump() {
+  uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
+  if (!n) { render(); ShowStatusAction::show("No saved dumps", 1600); render(); return; }
+  static constexpr uint8_t kMax=10; const uint8_t count=n<kMax?n:kMax; InputSelectAction::Option opts[kMax]; String vals[kMax];
+  for(uint8_t i=0;i<count;++i){vals[i]=String(i);opts[i]={_browser.entry(i).name.c_str(),vals[i].c_str()};}
+  const char* r=InputSelectAction::popup("Saved Dumps",opts,count,nullptr); if(!r){render();return;} uint8_t i=(uint8_t)atoi(r); if(i>=count){render();return;}
+  fs::File f=Uni.Storage->open(_browser.entry(i).path.c_str(),"r"); if(!f||f.size()==0||f.size()>4096){if(f)f.close();render();ShowStatusAction::show("Invalid dump",1600);return;}
+  const size_t len=f.size(); uint8_t* dump=new uint8_t[len]; if(!dump){f.close();render();ShowStatusAction::show("Failed",1600);return;} const size_t got=f.read(dump,len); f.close();
+  if(got!=len){delete[] dump;render();ShowStatusAction::show("Invalid dump",1600);return;} const auto info=NfcDumpParser::inspect(dump,len); delete[] dump;
+  if(!NfcDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){render();ShowStatusAction::show("Dump UID not supported",1600);return;}
+  Screen.push(new ChameleonMfcUidWriteScreen(info.uid, info.uidLen));
 }
 
 void ChameleonMfcToolsScreen::_writeFromFile() {
@@ -132,7 +179,7 @@ void ChameleonMfcToolsScreen::_writeTag() {
     {"From File", "file"},
     {"From Slot", "slot"},
   };
-  const char* r = InputSelectAction::popup("Write to Tag", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Write Dump to Tag", opts, 2, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "file") == 0) _writeFromFile();
   else _writeFromSlot();
@@ -238,9 +285,10 @@ void ChameleonMfcToolsScreen::_eraseTag() {
 void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
   if (index == 0) Screen.push(new ChameleonMagicScreen());
   else if (index == 1) Screen.push(new ChameleonMfcScreen());
-  else if (index == 2) _writeTag();
-  else if (index == 3) _eraseTag();
-  else if (index == 4) Screen.push(new ChameleonMfcAdvancedScreen());
+  else if (index == 2) _writeUid();
+  else if (index == 3) _writeTag();
+  else if (index == 4) _eraseTag();
+  else if (index == 5) Screen.push(new ChameleonMfcAdvancedScreen());
 }
 
 void ChameleonMfcToolsScreen::onBack() { Screen.goBack(); }

@@ -12,6 +12,7 @@
 #include "../../utils/nfc/NdefBuilder.h"
 #include "../../utils/nfc/NdefParser.h"
 #include "../../utils/nfc/NfcDumpBuilder.h"
+#include "../../utils/nfc/NfcDumpParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
 #include "utils/IdentityFile.h"
@@ -514,7 +515,10 @@ const char* PN532I2cScreen::title() {
     case STATE_MIFARE_DUMP_HEX: return "Memory Dump";
     case STATE_MIFARE_KEYS:     return "Check Known Keys";
     case STATE_MIFARE_DUMP_SELECT:return "Dump Files";
-    case STATE_MIFARE_WRITE_PREVIEW:return "Write to Tag";
+    case STATE_MIFARE_UID_SELECT:return "Saved UIDs";
+    case STATE_MIFARE_UID_DUMP_SELECT:return "Saved Dumps";
+    case STATE_MIFARE_WRITE_PREVIEW:return "Write Dump to Tag";
+    case STATE_MIFARE_UID_WRITE_PREVIEW:return "Write UID to Tag";
     case STATE_DICT_SELECT:     return "Dictionary Attack";
     case STATE_ULTRALIGHT_MENU: return "Ultralight / NTAG";
     case STATE_ULTRALIGHT_TAG_MENU:return "Tag Operations";
@@ -673,6 +677,15 @@ void PN532I2cScreen::onUpdate() {
     }
     return;
   }
+  if (_state == STATE_MIFARE_UID_WRITE_PREVIEW) {
+    if (Uni.Nav->wasPressed()) {
+      auto dir = Uni.Nav->readDirection();
+      if (dir == INavigation::DIR_BACK) { if (_uidWriteReturnToDetails) _showTagDetails(); else _goMifareTag(); }
+      else if (dir == INavigation::DIR_PRESS) { if (_doWriteUidToTag()) { if (_uidWriteReturnToDetails) _showTagDetails(); else _goMifareTag(); } else render(); }
+      else _scrollView.onNav(dir);
+    }
+    return;
+  }
   if (_state == STATE_NDEF_RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -749,7 +762,7 @@ void PN532I2cScreen::onRender() {
   }
   if (_state == STATE_DEVICE_INFO || _state == STATE_SCAN_RESULT ||
       _state == STATE_MIFARE_DUMP || _state == STATE_MIFARE_DUMP_HEX ||
-      _state == STATE_MIFARE_WRITE_PREVIEW ||
+      _state == STATE_MIFARE_WRITE_PREVIEW || _state == STATE_MIFARE_UID_WRITE_PREVIEW ||
       _state == STATE_MIFARE_KEYS || _state == STATE_MIFARE_KEY_DB_VIEW ||
       _state == STATE_RAW_RESULT || _state == STATE_ULTRALIGHT_DUMP || _state == STATE_NDEF_RESULT ||
       _state == STATE_TYPEB_RESULT) {
@@ -815,17 +828,17 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       switch (index) {
         case 0: _goDetectMagic(); break;
         case 1: _doReadTag(); break;
-        case 2: _doWriteDumpFromFilePicker(); break;
-        case 3: _doEraseTag(); break;
-        case 4: _goMifareAdvanced(); break;
+        case 2: _doWriteUidSource(); break;
+        case 3: _doWriteDumpFromFilePicker(); break;
+        case 4: _doEraseTag(); break;
+        case 5: _goMifareAdvanced(); break;
       }
       break;
     case STATE_MIFARE_ADVANCED_MENU:
       switch (index) {
         case 0: _doMifareReadMemory(); break;
         case 1: _doMifareEditMemory(); break;
-        case 2: _doEditUid(); break;
-        case 3: _doGen3LockUid(); break;
+        case 2: _doGen3LockUid(); break;
       }
       break;
     case STATE_MIFARE_NDEF_MENU:
@@ -916,6 +929,12 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_MIFARE_DUMP_SELECT:
       _doWriteDumpFileSelected(index);
       break;
+    case STATE_MIFARE_UID_SELECT:
+      _doWriteUidFileSelected(index);
+      break;
+    case STATE_MIFARE_UID_DUMP_SELECT:
+      _doWriteUidDumpSelected(index);
+      break;
     case STATE_NDEF_WRITE_MENU:
       if (index == 0) _doWriteNdefText();
       else if (index == 1) _doWriteNdefUrl();
@@ -974,6 +993,14 @@ void PN532I2cScreen::onBack() {
     case STATE_TYPEB_RESULT:
       if (_typeBFromMainScan) _goMain();
       else _goTypeBTag();
+      break;
+    case STATE_MIFARE_UID_SELECT:
+      if (_uidPickDir == "/unigeek/nfc/uids" || _uidPickDir.length() == 0) { _uidPickDir=""; _goMifareTag(); }
+      else { int slash=_uidPickDir.lastIndexOf('/'); _uidPickDir=(slash>0)?_uidPickDir.substring(0,slash):String("/unigeek/nfc/uids"); _doWriteUidFromFilePicker(); }
+      break;
+    case STATE_MIFARE_UID_DUMP_SELECT:
+      if (_dumpPickDir == _dumpPath || _dumpPickDir.length() == 0) { _dumpPickDir = ""; _goMifareTag(); }
+      else { int slash = _dumpPickDir.lastIndexOf('/'); _dumpPickDir = (slash > 0) ? _dumpPickDir.substring(0, slash) : _dumpPath; _doWriteUidFromDumpPicker(); }
       break;
     case STATE_MIFARE_DUMP_SELECT:
       if (_dumpPickDir == _dumpPath || _dumpPickDir.length() == 0) {
@@ -1294,14 +1321,14 @@ void PN532I2cScreen::_goMifareKeys() {
 
 void PN532I2cScreen::_goMifareTag() {
   _state = STATE_MIFARE_TAG_MENU;
-  setItems(_mfTagItems, 5, _selMifareTag);
+  setItems(_mfTagItems, 6, _selMifareTag);
   render();
 }
 
 void PN532I2cScreen::_goMifareAdvanced() {
   _rawResultTypeB = false;
   _state = STATE_MIFARE_ADVANCED_MENU;
-  setItems(_mfAdvancedItems, 4, _selMifareAdvanced);
+  setItems(_mfAdvancedItems, 3, _selMifareAdvanced);
   render();
 }
 
@@ -2880,7 +2907,7 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
   static constexpr uint8_t kLast = 129;
   if (!dump || len != kBytes) return false;
 
-  renderOperationTitle("Write to Tag");
+  renderOperationTitle("Write Dump to Tag");
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || pages != 135 ||
@@ -5411,9 +5438,10 @@ void PN532I2cScreen::_showDumpActions() {
     {"View Dump",    "view"},
     {"Save UID",     "uid"},
     {"Save Dump",    "save"},
-    {"Write to Tag", "write"},
+    {"Write UID to Tag", "writeuid"},
+    {"Write Dump to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "view") == 0) {
     _showDumpHex();
@@ -5428,7 +5456,70 @@ void PN532I2cScreen::_showDumpActions() {
     const char* typeName = (_sak == 0x09) ? "MF-Mini" : (_sak == 0x18) ? "MF-4K" : "MF-1K";
     _saveUid(typeName);
   } else if (strcmp(r, "save") == 0) _doSaveDump();
+  else if (strcmp(r, "writeuid") == 0) _showWriteUidPreview(_uid, _uidLen, true);
   else _showWriteDumpPreview(_dumpImg, _dumpLen, _uid, _uidLen, false);
+}
+
+void PN532I2cScreen::_doWriteUidSource() {
+  static const InputSelectAction::Option sources[] = {
+    {"Manual", "manual"}, {"UID File", "uid"}, {"Dump", "dump"},
+  };
+  const char* r = InputSelectAction::popup("UID Source", sources, 3, nullptr);
+  if (!r) { render(); return; }
+  if (strcmp(r, "manual") == 0) {
+    String hex = InputTextAction::popup("UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
+    if (InputTextAction::wasCancelled()) { render(); return; }
+    hex.replace(" ", ""); hex.replace(":", "");
+    if (hex.length()!=8 && hex.length()!=14) { render(); ShowStatusAction::show("UID must be 4 or 7 bytes",1600); return; }
+    uint8_t uid[7]={}; const uint8_t len=(uint8_t)(hex.length()/2u);
+    for(uint8_t i=0;i<len;++i){char b[3]={hex[i*2],hex[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(b,&e,16);if(!e||*e){render();ShowStatusAction::show("Bad hex",1200);return;}uid[i]=(uint8_t)v;}
+    _showWriteUidPreview(uid,len,false); return;
+  }
+  if (strcmp(r,"uid")==0) { _doWriteUidFromFilePicker(); return; }
+  _doWriteUidFromDumpPicker();
+}
+
+void PN532I2cScreen::_doWriteUidFromFilePicker() {
+  _state = STATE_MIFARE_UID_SELECT;
+  const String root = "/unigeek/nfc/uids";
+  if (_uidPickDir.length() == 0) _uidPickDir = root;
+  _browser.root = root;
+  uint8_t n = _browser.load(this, _uidPickDir, BrowseFileView::Mode(".uid"));
+  if (n == 0 && _uidPickDir == root) { ShowStatusAction::show("No saved UIDs",1600); _goMifareTag(); return; }
+  setItems(_browser.items(), n);
+}
+void PN532I2cScreen::_doWriteUidFileSelected(uint8_t i) {
+  if (i >= _browser.count()) return; const auto& e=_browser.entry(i);
+  if (e.isDir) { _uidPickDir=e.path; _doWriteUidFromFilePicker(); return; }
+  size_t n=0; uint8_t uid[7]={};
+  if (!IdentityFile::loadNfcUid(e.path,uid,sizeof(uid),n) || (n!=4&&n!=7)) { ShowStatusAction::show("Invalid UID file",1600); return; }
+  _showWriteUidPreview(uid,(uint8_t)n,false);
+}
+void PN532I2cScreen::_doWriteUidFromDumpPicker() {
+  _state=STATE_MIFARE_UID_DUMP_SELECT; if(_dumpPickDir.length()==0)_dumpPickDir=_dumpPath; _browser.root=_dumpPath;
+  uint8_t n=_browser.load(this,_dumpPickDir,BrowseFileView::Mode(".bin",320,1024,4096));
+  if(n==0&&_dumpPickDir==_dumpPath){ShowStatusAction::show("No saved dumps",1600);_goMifareTag();return;} setItems(_browser.items(),n);
+}
+void PN532I2cScreen::_doWriteUidDumpSelected(uint8_t i) {
+  if(i>=_browser.count())return;const auto&e=_browser.entry(i);if(e.isDir){_dumpPickDir=e.path;_doWriteUidFromDumpPicker();return;}
+  fs::File f=Uni.Storage->open(e.path.c_str(),"r");if(!f||f.size()==0||f.size()>4096){if(f)f.close();ShowStatusAction::show("Invalid dump",1600);return;}size_t len=f.size();uint8_t* d=new uint8_t[len];if(!d){f.close();ShowStatusAction::show("Failed",1600);return;}size_t got=f.read(d,len);f.close();
+  if(got!=len){delete[] d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=NfcDumpParser::inspect(d,len);delete[] d;if(!NfcDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}_showWriteUidPreview(info.uid,info.uidLen,false);
+}
+
+void PN532I2cScreen::_showWriteUidPreview(const uint8_t* uid,uint8_t n,bool returnToDetails) {
+  if(!uid||(n!=4&&n!=7))return; memcpy(_uidWriteSource,uid,n);_uidWriteSourceLen=n;_uidWriteReturnToDetails=returnToDetails;
+  _state=STATE_MIFARE_UID_WRITE_PREVIEW;_resetRows();_pushRow("UID",_hexUid(uid,n));_pushRow("Target","Magic Gen1A/Gen3");_pushRow("[Press]","Write to Tag");_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();
+}
+bool PN532I2cScreen::_readGen1aBlock0(uint8_t out[16]) {
+  if(!_resetAndReselect())return false;uint8_t resp[20]={};uint8_t n=sizeof(resp);bool raw=_nfcWriteReg(_nfc,_wire,0x6302,0)&&_nfcWriteReg(_nfc,_wire,0x6303,0);bool ok=false;
+  if(raw){static const uint8_t halt[]={0x50,0,0x57,0xCD};(void)_nfcCommThru(_nfc,_wire,halt,sizeof(halt),resp,n,200);if(_nfcWriteReg(_nfc,_wire,0x633D,7)){static const uint8_t wake[]={0x40};n=sizeof(resp);bool a1=_nfcCommThru(_nfc,_wire,wake,1,resp,n,250)&&n>=1&&(resp[0]&0x0F)==0x0A;_nfcWriteReg(_nfc,_wire,0x633D,0);if(a1){static const uint8_t unlock[]={0x43};n=sizeof(resp);bool a2=_nfcCommThru(_nfc,_wire,unlock,1,resp,n,250)&&n>=1&&(resp[0]&0x0F)==0x0A;if(a2){_nfcWriteReg(_nfc,_wire,0x6302,0x80);_nfcWriteReg(_nfc,_wire,0x6303,0x80);static const uint8_t rd[]={0x30,0};n=sizeof(resp);if(_nfcCommThru(_nfc,_wire,rd,2,resp,n,500)&&n>=16){memcpy(out,resp,16);ok=true;}}}}}
+  _nfcWriteReg(_nfc,_wire,0x633D,0);_nfcWriteReg(_nfc,_wire,0x6302,0x80);_nfcWriteReg(_nfc,_wire,0x6303,0x80);_resetAndReselect();return ok;
+}
+bool PN532I2cScreen::_doWriteUidToTag() {
+  Header h;h.render("Write UID to Tag");renderTagPrompt("Place target tag...",bodyX(),bodyY(),bodyW(),bodyH());uint8_t u[7]={},n=0;bool found=false;uint32_t start=millis();
+  while(millis()-start<5000){Uni.update();if(Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){render();return false;}if(_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,u,&n,200)){found=true;break;}delay(50);}if(!found){ShowStatusAction::show("Tag not detected",1200);return false;}
+  MagicCardType m=_detectMagicType();if(m!=MagicCardType::GEN1A&&m!=MagicCardType::GEN3){ShowStatusAction::show("Tag not Gen1A/Gen3",2000);return false;}if(m==MagicCardType::GEN1A&&_uidWriteSourceLen!=4){ShowStatusAction::show("Gen1A UID must be 4 bytes",1600);return false;}
+  uint8_t b0[16]={};bool ok=m==MagicCardType::GEN3||_readGen1aBlock0(b0);if(ok)ok=_writeMagicUid(m,_uidWriteSource,_uidWriteSourceLen,b0);ShowStatusAction::show(ok?"UID written":"Failed",1600);return ok;
 }
 
 void PN532I2cScreen::_doWriteDumpFromFilePicker() {
@@ -5513,7 +5604,7 @@ void PN532I2cScreen::_showWriteDumpPreview(const uint8_t* dump, size_t len,
   const size_t totalSectors = len == 320 ? 5u : (len == 4096 ? 40u : 16u);
   _appendDumpNdefDetails(_dumpImg, len, totalSectors);
 
-  _pushRow("[Press]", "Write to Tag");
+  _pushRow("[Press]", "Write Dump to Tag");
   _scrollView.setRows(_rows, _rowCount);
   render();
 }
@@ -5553,7 +5644,7 @@ bool PN532I2cScreen::_doWriteDumpToTag(const uint8_t* dump, size_t len,
   const bool sourceUidKnown = sourceUid && (sourceUidLen == 4 || sourceUidLen == 7);
   if (sourceUidKnown) memcpy(sourceUidCopy, sourceUid, sourceUidLen);
 
-  renderOperationTitle("Write to Tag");
+  renderOperationTitle("Write Dump to Tag");
   if (!dump || (len != 320 && len != 1024 && len != 4096)) {
     ShowStatusAction::show("Invalid dump"); return false;
   }

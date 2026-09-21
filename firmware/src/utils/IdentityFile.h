@@ -8,6 +8,7 @@
 namespace IdentityFile {
 
 bool saveNfcUid(const String& path, const uint8_t* uid, size_t uidLen);
+bool loadNfcUid(const String& path, uint8_t* uid, size_t capacity, size_t& uidLen);
 bool saveLfId(const String& path, LFCodec::Protocol protocol,
               const uint8_t* data, size_t dataLen);
 

@@ -10,6 +10,7 @@
 #include "ui/components/StatusBar.h"
 #include "ui/views/ProgressView.h"
 #include "ChameleonMfcWriteScreen.h"
+#include "ChameleonMfcUidWriteScreen.h"
 #include "utils/nfc/NdefParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
@@ -782,9 +783,10 @@ void ChameleonMfcScreen::_showDumpActions() {
     {"Save UID",           "uid"},
     {"Save Dump",          "save"},
     {"Load Dump to Slot",  "slot"},
-    {"Write to Tag",       "write"},
+    {"Write UID to Tag",     "writeuid"},
+    {"Write Dump to Tag", "write"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 6, nullptr);
   if (!r) { render(); return; }
   render();
   if (strcmp(r, "view") == 0) {
@@ -797,6 +799,8 @@ void ChameleonMfcScreen::_showDumpActions() {
     _saveDump();
   } else if (strcmp(r, "slot") == 0) {
     _loadDumpToSlot();
+  } else if (strcmp(r, "writeuid") == 0) {
+    Screen.push(new ChameleonMfcUidWriteScreen(_uid, _uidLen));
   } else if (_dumpLen != 1024) {
     ShowStatusAction::show("Classic 1K only for now", 1600);
     render();

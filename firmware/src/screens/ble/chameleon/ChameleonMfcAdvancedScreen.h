@@ -11,7 +11,7 @@ public:
   void onItemSelected(uint8_t index) override;
   void onBack() override;
 private:
-  ListItem _items[4];
+  ListItem _items[3];
   bool _showingMemory = false;
   uint8_t _selMenu = 0;
   ScrollListView _view;
@@ -24,7 +24,6 @@ private:
   uint16_t _rowCount = 0;
   void _readMemory();
   void _editMemory();
-  void _editUid();
   void _lockUidGen3();
   void _addRow(const String& label, const String& value);
 };

@@ -39,7 +39,10 @@ private:
     STATE_MIFARE_DUMP_HEX,
     STATE_MIFARE_KEYS,
     STATE_MIFARE_DUMP_SELECT,
+    STATE_MIFARE_UID_SELECT,
+    STATE_MIFARE_UID_DUMP_SELECT,
     STATE_MIFARE_WRITE_PREVIEW,
+    STATE_MIFARE_UID_WRITE_PREVIEW,
     STATE_DICT_SELECT,
     STATE_ULTRALIGHT_MENU,
     STATE_ULTRALIGHT_TAG_MENU,
@@ -135,18 +138,18 @@ private:
     {"Dictionaries"},
   };
 
-  ListItem _mfTagItems[5] = {
+  ListItem _mfTagItems[6] = {
     {"Detect Magic"},
     {"Read Tag"},
-    {"Write to Tag"},
+    {"Write UID to Tag"},
+    {"Write Dump to Tag"},
     {"Erase Tag"},
     {"Advanced"},
   };
 
-  ListItem _mfAdvancedItems[4] = {
+  ListItem _mfAdvancedItems[3] = {
     {"Read Memory"},
     {"Edit Memory"},
-    {"Edit UID (Gen1A/Gen3)"},
     {"Lock UID (Gen3)"},
   };
 
@@ -229,6 +232,10 @@ private:
   bool     _dumpComplete = false;
   bool     _resumeReadAfterDict = false;
   String   _dumpPickDir;
+  String   _uidPickDir;
+  uint8_t  _uidWriteSource[7] = {};
+  uint8_t  _uidWriteSourceLen = 0;
+  bool     _uidWriteReturnToDetails = false;
   bool     _writePreviewFromFile = false;
   bool     _writePreviewSourceUidKnown = false;
   uint8_t  _writePreviewSourceUid[7] = {};
@@ -311,6 +318,14 @@ private:
   bool _tryWriteMifareBlock(uint16_t block, const uint8_t data[16],
                             const uint8_t key[6], bool useKeyB);
   void _doWriteDumpFromFilePicker();
+  void _doWriteUidSource();
+  void _doWriteUidFromFilePicker();
+  void _doWriteUidFromDumpPicker();
+  void _doWriteUidFileSelected(uint8_t fileIndex);
+  void _doWriteUidDumpSelected(uint8_t fileIndex);
+  void _showWriteUidPreview(const uint8_t* uid, uint8_t uidLen, bool returnToDetails);
+  bool _doWriteUidToTag();
+  bool _readGen1aBlock0(uint8_t block0[16]);
   void _doWriteDumpFileSelected(uint8_t fileIndex);
   void _showWriteDumpPreview(const uint8_t* dump, size_t len,
                              const uint8_t* sourceUid = nullptr, uint8_t sourceUidLen = 0,
