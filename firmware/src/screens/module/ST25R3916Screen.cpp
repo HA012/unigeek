@@ -483,7 +483,7 @@ void ST25R3916Screen::onUpdate() {
       _state == STATE_MFU_NDEF_WRITE_MENU || _state == STATE_MFU_NDEF_FILE_SELECT ||
       _state == STATE_MFC_NDEF_MENU ||
       _state == STATE_MFC_NDEF_WRITE_MENU || _state == STATE_MFC_NDEF_FILE_SELECT ||
-      _state == STATE_MFC_DUMP_SELECT ||
+      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
       _state == STATE_EXP_MENU || _state == STATE_EXP_TAG_MENU || _state == STATE_EXP_ADVANCED_MENU ||
       _state == STATE_EXP_SUB1_MENU || _state == STATE_EXP_SUB2_MENU || _state == STATE_EXP_NDEF_MENU ||
       _state == STATE_EXP_NDEF_WRITE_MENU || _state == STATE_EXP_NDEF_FILE_SELECT) {
@@ -512,6 +512,10 @@ void ST25R3916Screen::onUpdate() {
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
     _writeMfcDumpToTag();
+    return;
+  }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_UID_WRITE_PREVIEW) {
+    _writeMfcUidToTag();
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_DETAILS) {
@@ -566,7 +570,7 @@ void ST25R3916Screen::onRender() {
       _state == STATE_MFU_NDEF_WRITE_MENU || _state == STATE_MFU_NDEF_FILE_SELECT ||
       _state == STATE_MFC_NDEF_MENU ||
       _state == STATE_MFC_NDEF_WRITE_MENU || _state == STATE_MFC_NDEF_FILE_SELECT ||
-      _state == STATE_MFC_DUMP_SELECT ||
+      _state == STATE_MFC_DUMP_SELECT || _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT ||
       _state == STATE_EXP_MENU || _state == STATE_EXP_TAG_MENU || _state == STATE_EXP_ADVANCED_MENU ||
       _state == STATE_EXP_SUB1_MENU || _state == STATE_EXP_SUB2_MENU || _state == STATE_EXP_NDEF_MENU ||
       _state == STATE_EXP_NDEF_WRITE_MENU || _state == STATE_EXP_NDEF_FILE_SELECT) {
@@ -574,7 +578,7 @@ void ST25R3916Screen::onRender() {
     return;
   }
   if (_state == STATE_SCANNING || _state == STATE_SCAN_READER || _state == STATE_MFC_READING || _state == STATE_MFU_READING || _state == STATE_MFC_NDEF_READING ||
-      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING ||
+      _state == STATE_MFC_NDEF_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_UID_WRITING || _state == STATE_MFC_ERASING ||
       _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING || _state == STATE_EXP_WORKING) {
     _renderTagPrompt();
     return;
@@ -636,8 +640,8 @@ void ST25R3916Screen::onBack() {
     _showMfcAdvancedMenu();
     return;
   }
-  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT ||
-      _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
+  if (_state == STATE_MFC_WRITE_PREVIEW || _state == STATE_MFC_UID_WRITE_PREVIEW || _state == STATE_MFC_DUMP_SELECT ||
+      _state == STATE_MFC_UID_FILE_SELECT || _state == STATE_MFC_UID_DUMP_SELECT || _state == STATE_MFC_UID_WRITING || _state == STATE_MFC_WRITING || _state == STATE_MFC_ERASING) {
     _showMfcTagMenu();
     return;
   }
@@ -794,8 +798,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     _selMfcAdvanced = index;
     if (index == 0) _readMfcMemory();
     else if (index == 1) _editMfcMemory();
-    else if (index == 2) _editMfcUid();
-    else if (index == 3) _lockMfcUidGen3();
+    else if (index == 2) _lockMfcUidGen3();
     return;
   }
   if (_state == STATE_MFC_NDEF_MENU) {
@@ -817,16 +820,16 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     _selMfcTag = index;
     if (index == 0) _detectMagic();
     else if (index == 1) _readMfcTag();
-    else if (index == 2) _openMfcDumpPicker();
-    else if (index == 3) _eraseMfcTag();
-    else if (index == 4) _emulateMfcTag();
-    else if (index == 5) _showMfcAdvancedMenu();
+    else if (index == 2) _chooseMfcUidSource();
+    else if (index == 3) _openMfcDumpPicker();
+    else if (index == 4) _eraseMfcTag();
+    else if (index == 5) _emulateMfcTag();
+    else if (index == 6) _showMfcAdvancedMenu();
     return;
   }
-  if (_state == STATE_MFC_DUMP_SELECT) {
-    _openMfcDumpFile(index);
-    return;
-  }
+  if (_state == STATE_MFC_DUMP_SELECT) { _openMfcDumpFile(index); return; }
+  if (_state == STATE_MFC_UID_FILE_SELECT) { _openMfcUidFile(index); return; }
+  if (_state == STATE_MFC_UID_DUMP_SELECT) { _openMfcUidDumpFile(index); return; }
 
   _selMain = index;
   switch (index) {
@@ -939,13 +942,13 @@ void ST25R3916Screen::_showMfcMenu() {
 
 void ST25R3916Screen::_showMfcTagMenu() {
   _state = STATE_MFC_TAG_MENU;
-  setItems(_mfcTagItems, 6, _selMfcTag);
+  setItems(_mfcTagItems, 7, _selMfcTag);
   render();
 }
 
 void ST25R3916Screen::_showMfcAdvancedMenu() {
   _state = STATE_MFC_ADVANCED_MENU;
-  setItems(_mfcAdvancedItems, 4, _selMfcAdvanced);
+  setItems(_mfcAdvancedItems, 3, _selMfcAdvanced);
   render();
 }
 
@@ -1415,10 +1418,11 @@ void ST25R3916Screen::_showMfcDumpActions() {
     {"View Dump", "view"},
     {"Save UID", "uid"},
     {"Save Dump", "save"},
-    {"Write to Tag", "write"},
+    {"Write UID to Tag", "writeuid"},
+    {"Write Dump to Tag", "write"},
     {"Emulate UID", "emulate"},
   };
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 6, nullptr);
   if (!r) { render(); return; }
 
   render();
@@ -1430,6 +1434,9 @@ void ST25R3916Screen::_showMfcDumpActions() {
     _saveMfcUid();
   } else if (strcmp(r, "save") == 0) {
     _saveMfcDump();
+  } else if (strcmp(r, "writeuid") == 0) {
+    if (_mfcUidLen == 4 || _mfcUidLen == 7) _showMfcUidWritePreview(_mfcUid, _mfcUidLen, "Read Tag");
+    else ShowStatusAction::show("UID not supported", 1600);
   } else if (strcmp(r, "write") == 0) {
     _showMfcWritePreview(_mfcDump, _mfcDumpLen, false);
   } else if (strcmp(r, "emulate") == 0) {
@@ -1532,6 +1539,60 @@ void ST25R3916Screen::_stopEmulation() {
 #endif
 }
 
+void ST25R3916Screen::_chooseMfcUidSource() {
+  static const InputSelectAction::Option sources[] = {
+    {"Manual", "manual"}, {"UID File", "uid"}, {"Dump", "dump"},
+  };
+  const char* choice = InputSelectAction::popup("UID Source", sources, 3, nullptr);
+  if (!choice) { _showMfcTagMenu(); return; }
+  if (strcmp(choice, "uid") == 0) { _openMfcUidPicker(); return; }
+  if (strcmp(choice, "dump") == 0) { _openMfcUidDumpPicker(); return; }
+  String hex = InputTextAction::popup("UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
+  if (InputTextAction::wasCancelled()) { _showMfcTagMenu(); return; }
+  hex.replace(" ", ""); hex.replace(":", "");
+  if (hex.length() != 8 && hex.length() != 14) { ShowStatusAction::show("UID must be 4 or 7 bytes",1600); _showMfcTagMenu(); return; }
+  uint8_t uid[7] = {}; const uint8_t n = (uint8_t)(hex.length()/2);
+  for (uint8_t i=0;i<n;++i) { char b[3]={hex[i*2],hex[i*2+1],0}; char* e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){ShowStatusAction::show("Bad hex",1600);_showMfcTagMenu();return;} uid[i]=(uint8_t)v; }
+  _showMfcUidWritePreview(uid,n,"Manual");
+}
+
+void ST25R3916Screen::_openMfcUidPicker() {
+  _state=STATE_MFC_UID_FILE_SELECT; _browser.root="/unigeek/nfc/uids";
+  if(!_uidPickDir.startsWith(_browser.root)) _uidPickDir=_browser.root;
+  uint8_t n=_browser.load(this,_uidPickDir,BrowseFileView::Mode(".uid"));
+  if(n==0&&_uidPickDir==_browser.root){ShowStatusAction::show("No saved UIDs",1600);_showMfcTagMenu();return;} setItems(_browser.items(),n);
+}
+void ST25R3916Screen::_openMfcUidDumpPicker() {
+  _state=STATE_MFC_UID_DUMP_SELECT; _browser.root="/unigeek/nfc/dumps";
+  if(!_uidDumpPickDir.startsWith(_browser.root)) _uidDumpPickDir=_browser.root;
+  uint8_t n=_browser.load(this,_uidDumpPickDir,BrowseFileView::Mode(".bin"));
+  if(n==0&&_uidDumpPickDir==_browser.root){ShowStatusAction::show("No saved dumps",1600);_showMfcTagMenu();return;} setItems(_browser.items(),n);
+}
+void ST25R3916Screen::_openMfcUidFile(uint8_t index) {
+  if(index>=_browser.count())return; const auto&e=_browser.entry(index); if(e.isDir){_uidPickDir=e.path;_openMfcUidPicker();return;}
+  uint8_t uid[7]={};size_t n=0;if(!IdentityFile::loadNfcUid(e.path,uid,sizeof(uid),n)||(n!=4&&n!=7)){ShowStatusAction::show("Invalid UID file",1600);return;}_showMfcUidWritePreview(uid,(uint8_t)n,"UID File");
+}
+void ST25R3916Screen::_openMfcUidDumpFile(uint8_t index) {
+  if(index>=_browser.count())return;const auto&e=_browser.entry(index);if(e.isDir){_uidDumpPickDir=e.path;_openMfcUidDumpPicker();return;}
+  if(!Uni.Storage||!Uni.Storage->isAvailable()){ShowStatusAction::show("Storage unavailable",1600);return;}fs::File f=Uni.Storage->open(e.path.c_str(),"r");if(!f){ShowStatusAction::show("Failed to open file",1600);return;}size_t n=f.size();if(n==0||n>kMfcMaxDumpLen){f.close();ShowStatusAction::show("Invalid dump",1600);return;}uint8_t*d=new uint8_t[n];if(!d){f.close();ShowStatusAction::show("Out of memory",1600);return;}size_t got=f.read(d,n);f.close();if(got!=n){delete[]d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=HfDumpParser::inspect(d,n);delete[]d;if(!HfDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}_showMfcUidWritePreview(info.uid,info.uidLen,"Dump");
+}
+void ST25R3916Screen::_showMfcUidWritePreview(const uint8_t* uid,uint8_t uidLen,const char* source) {
+  if(!uid||(uidLen!=4&&uidLen!=7)){ShowStatusAction::show("UID not supported",1600);_showMfcTagMenu();return;}memcpy(_uidWriteValue,uid,uidLen);_uidWriteLen=uidLen;
+  _rowCount=0;auto add=[&](const char*l,const String&v){if(_rowCount>=kMaxRows)return;_rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;};
+  String t;for(uint8_t i=0;i<uidLen;++i){char b[4];snprintf(b,sizeof(b),"%s%02X",i?":":"",uid[i]);t+=b;}add("Source",source?source:"-");add("UID",t);add("Target","Magic Gen1A/Gen3");add("[Press]","Write to Tag");_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);_state=STATE_MFC_UID_WRITE_PREVIEW;render();
+}
+bool ST25R3916Screen::_writeMfcUidToTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  if(_uidWriteLen!=4&&_uidWriteLen!=7)return false;_state=STATE_MFC_UID_WRITING;render();ST25R3916Backend dev;if(!st25Begin(dev,_interface)){ShowStatusAction::show("ST25R3916 not detected",1600);_showMfcTagMenu();return false;}
+  ST25R3916Backend::ScanResult presented;bool found=false;uint32_t start=millis();while(millis()-start<5000){Uni.update();if(Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){dev.deactivate();_showMfcTagMenu();return false;}if(dev.scan(ST25R3916Backend::TECH_A,presented,200,true)){found=true;break;}delay(50);}if(!found){ShowStatusAction::show("Tag not detected",1600);_showMfcTagMenu();return false;}dev.deactivate();
+  MagicCardType magic=_detectMagicType(dev);if(magic!=MagicCardType::GEN1A&&magic!=MagicCardType::GEN3){ShowStatusAction::show("Tag not Gen1A/Gen3",1800);_showMfcTagMenu();return false;}if(magic==MagicCardType::GEN1A&&_uidWriteLen!=4){ShowStatusAction::show("Gen1A UID must be 4 bytes",1600);_showMfcTagMenu();return false;}
+  uint8_t block0[16]={};if(magic==MagicCardType::GEN1A){ST25R3916Backend::ScanResult tag;if(!dev.scan(ST25R3916Backend::TECH_A,tag,1000,true)){ShowStatusAction::show("Tag not detected",1600);_showMfcTagMenu();return false;}const uint8_t halt[2]={0x50,0};uint8_t tmp[4]={};size_t tmpLen=0;(void)dev.nfcATransceive(halt,2,tmp,4,tmpLen,80);uint8_t ack[2]={};uint8_t wake=0x40;size_t bits=0;bool ok=dev.nfcATransceiveBits(&wake,7,ack,4,bits,250)&&bits>=4&&(ack[0]&0x0F)==0x0A;uint8_t unlock=0x43;if(ok){bits=0;ok=dev.nfcATransceiveBits(&unlock,8,ack,4,bits,250)&&bits>=4&&(ack[0]&0x0F)==0x0A;}if(ok){const uint8_t rd[2]={0x30,0};size_t len=0;ok=dev.nfcATransceive(rd,2,block0,16,len,500)&&len>=16;}dev.deactivate();if(!ok){ShowStatusAction::show("Failed",1600);_showMfcTagMenu();return false;}}
+  bool ok=_writeMagicUid(dev,magic,_uidWriteValue,_uidWriteLen,magic==MagicCardType::GEN1A?block0:nullptr);ShowStatusAction::show(ok?"UID written":"Failed",1600);_showMfcTagMenu();return ok;
+#else
+  return false;
+#endif
+}
+
 void ST25R3916Screen::_openMfcDumpPicker() {
   _state = STATE_MFC_DUMP_SELECT;
   if (_dumpPickDir.length() == 0) _dumpPickDir = "/unigeek/nfc/dumps";
@@ -1614,7 +1675,7 @@ void ST25R3916Screen::_showMfcWritePreview(const uint8_t* dump, size_t len, bool
   addRow("UID Action", "Preserved");
   addRow("Blocks", String((unsigned)(len / 16U)));
   addRow("Dump", String((unsigned)len) + " bytes");
-  addRow("[Press]", "Write to Tag");
+  addRow("[Press]", "Write Dump to Tag");
   _scrollView.resetScroll();
   _scrollView.setRows(_rows, _rowCount);
   _state = STATE_MFC_WRITE_PREVIEW;
@@ -4354,218 +4415,6 @@ void ST25R3916Screen::_editMfcMemory() {
   }
 
   ShowStatusAction::show(ok ? "Block written" : "Failed: missing key", 1600);
-#endif
-  _showMfcAdvancedMenu();
-}
-
-void ST25R3916Screen::_editMfcUid() {
-#if defined(DEVICE_HAS_ST25R3916)
-  Header header;
-  header.render("Edit UID");
-  _renderTagPrompt();
-
-  ST25R3916Backend dev;
-  if (!st25Begin(dev, _interface)) {
-    ShowStatusAction::show("ST25R3916 not detected");
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  ST25R3916Backend::ScanResult presented;
-  bool found = false;
-  const uint32_t start = millis();
-  while (millis() - start < 5000) {
-    Uni.update();
-    if (Uni.Nav->wasPressed() &&
-        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
-      dev.deactivate();
-      _showMfcAdvancedMenu();
-      return;
-    }
-    if (dev.scan(ST25R3916Backend::TECH_A, presented, 200, true)) {
-      found = true;
-      break;
-    }
-    delay(50);
-  }
-  if (!found) {
-    ShowStatusAction::show("Tag not detected");
-    _showMfcAdvancedMenu();
-    return;
-  }
-  dev.deactivate();
-
-  const MagicCardType magic = _detectMagicType(dev);
-  if (magic != MagicCardType::GEN1A && magic != MagicCardType::GEN3) {
-    ShowStatusAction::show("Failed: Tag is not Gen1A/Gen3", 1800);
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  // Detect Magic performs fresh activations. Read the presented UID again so
-  // the editor and preview always refer to the tag that will actually be edited.
-  ST25R3916Backend::ScanResult tag;
-  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 1200, true) ||
-      (tag.nfcidLen != 4 && tag.nfcidLen != 7)) {
-    dev.deactivate();
-    ShowStatusAction::show("Failed");
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  uint8_t currentUid[7] = {};
-  const uint8_t currentLen = tag.nfcidLen;
-  memcpy(currentUid, tag.nfcid, currentLen);
-
-  uint8_t block0[16] = {};
-  if (magic == MagicCardType::GEN1A) {
-    if (currentLen != 4) {
-      dev.deactivate();
-      ShowStatusAction::show("Failed");
-      _showMfcAdvancedMenu();
-      return;
-    }
-
-    const uint8_t halt[2] = {0x50, 0x00};
-    uint8_t tmp[4] = {};
-    size_t tmpLen = 0;
-    (void)dev.nfcATransceive(halt, sizeof(halt), tmp, sizeof(tmp), tmpLen, 80);
-
-    uint8_t ack[2] = {};
-    uint8_t wake = 0x40;
-    size_t bits = 0;
-    bool ok = dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) &&
-              bits >= 4 && (ack[0] & 0x0F) == 0x0A;
-    uint8_t unlock = 0x43;
-    if (ok) {
-      memset(ack, 0, sizeof(ack));
-      bits = 0;
-      ok = dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) &&
-           bits >= 4 && (ack[0] & 0x0F) == 0x0A;
-    }
-    if (ok) {
-      const uint8_t read0[2] = {0x30, 0x00};
-      size_t len = 0;
-      ok = dev.nfcATransceive(read0, sizeof(read0), block0, sizeof(block0), len, 500) &&
-           len >= sizeof(block0);
-    }
-    dev.deactivate();
-    if (!ok) {
-      ShowStatusAction::show("Failed");
-      _showMfcAdvancedMenu();
-      return;
-    }
-  } else {
-    dev.deactivate();
-  }
-
-  String initial;
-  for (uint8_t i = 0; i < currentLen; ++i) {
-    char h[3];
-    snprintf(h, sizeof(h), "%02X", currentUid[i]);
-    initial += h;
-  }
-
-  String hex = InputTextAction::popup("New UID (8 or 14 hex)", initial.c_str(),
-                                      InputTextAction::INPUT_HEX);
-  if (InputTextAction::wasCancelled()) {
-    _showMfcAdvancedMenu();
-    return;
-  }
-  hex.replace(" ", "");
-  hex.replace(":", "");
-  if (hex.length() != 8 && hex.length() != 14) {
-    ShowStatusAction::show("UID must be 4 or 7 bytes");
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  const uint8_t newLen = (uint8_t)(hex.length() / 2);
-  if (magic == MagicCardType::GEN1A && newLen != 4) {
-    ShowStatusAction::show("Gen1A UID must be 4 bytes", 1600);
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  uint8_t newUid[7] = {};
-  for (uint8_t i = 0; i < newLen; ++i) {
-    char b[3] = {hex[i * 2], hex[i * 2 + 1], 0};
-    char* end = nullptr;
-    const unsigned long value = strtoul(b, &end, 16);
-    if (!end || *end) {
-      ShowStatusAction::show("Bad hex");
-      _showMfcAdvancedMenu();
-      return;
-    }
-    newUid[i] = (uint8_t)value;
-  }
-
-  auto uidText = [](const uint8_t* uid, uint8_t len) {
-    String out;
-    for (uint8_t i = 0; i < len; ++i) {
-      if (i) out += ':';
-      char h[3];
-      snprintf(h, sizeof(h), "%02X", uid[i]);
-      out += h;
-    }
-    return out;
-  };
-
-  // Match PN532/CU: show the old and new UIDs before any RF write occurs.
-  auto& lcd = Uni.Lcd;
-  const int bx = bodyX(), by = bodyY(), bh = bodyH();
-  lcd.fillRect(bodyX(), 0, lcd.width() - bodyX(), lcd.height(), TFT_BLACK);
-  header.render("Edit UID");
-  StatusBar::refresh();
-  lcd.setTextDatum(TL_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-  lcd.drawString("Current UID", bx + 4, by + 8);
-  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString(uidText(currentUid, currentLen), bx + 4, by + 24);
-  lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-  lcd.drawString("New UID", bx + 4, by + 48);
-  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString(uidText(newUid, newLen), bx + 4, by + 64);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("[Press] Write", bx + 4, by + bh - 18);
-
-  while (true) {
-    Uni.update();
-    if (!Uni.Nav->wasPressed()) {
-      delay(10);
-      continue;
-    }
-    const auto dir = Uni.Nav->readDirection();
-    if (dir == INavigation::DIR_BACK) {
-      _showMfcAdvancedMenu();
-      return;
-    }
-    if (dir == INavigation::DIR_PRESS) break;
-  }
-
-  // Revalidate the physical tag immediately before writing. In particular,
-  // never reuse Gen1A block 0 if the user swapped cards in the editor/preview.
-  ST25R3916Backend::ScanResult verify;
-  if (!dev.scan(ST25R3916Backend::TECH_A, verify, 700, true) ||
-      verify.nfcidLen != currentLen ||
-      memcmp(verify.nfcid, currentUid, currentLen) != 0) {
-    dev.deactivate();
-    ShowStatusAction::show("Failed", 1600);
-    _showMfcAdvancedMenu();
-    return;
-  }
-  dev.deactivate();
-
-  if (_detectMagicType(dev) != magic) {
-    ShowStatusAction::show("Failed", 1600);
-    _showMfcAdvancedMenu();
-    return;
-  }
-
-  const bool ok = _writeMagicUid(dev, magic, newUid, newLen,
-                                 magic == MagicCardType::GEN1A ? block0 : nullptr);
-  ShowStatusAction::show(ok ? "UID edited" : "Failed", 1600);
 #endif
   _showMfcAdvancedMenu();
 }

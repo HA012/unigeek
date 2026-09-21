@@ -71,9 +71,13 @@ public:
       case STATE_MFC_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_READING: return "Read Tag";
       case STATE_MFC_DUMP_HEX: return "Memory Dump";
-      case STATE_MFC_DUMP_SELECT: return "Write to Tag";
-      case STATE_MFC_WRITE_PREVIEW: return "Write to Tag";
-      case STATE_MFC_WRITING: return "Write to Tag";
+      case STATE_MFC_DUMP_SELECT: return "Write Dump to Tag";
+      case STATE_MFC_WRITE_PREVIEW: return "Write Dump to Tag";
+      case STATE_MFC_WRITING: return "Write Dump to Tag";
+      case STATE_MFC_UID_FILE_SELECT: return "Saved UIDs";
+      case STATE_MFC_UID_DUMP_SELECT: return "Saved Dumps";
+      case STATE_MFC_UID_WRITE_PREVIEW: return "Write UID to Tag";
+      case STATE_MFC_UID_WRITING: return "Write UID to Tag";
       case STATE_MFC_ERASING: return "Erase Tag";
       default: return "ST25R3916";
     }
@@ -116,6 +120,10 @@ private:
     STATE_MFC_DUMP_HEX,
     STATE_MFC_DUMP_SELECT,
     STATE_MFC_WRITE_PREVIEW,
+    STATE_MFC_UID_FILE_SELECT,
+    STATE_MFC_UID_DUMP_SELECT,
+    STATE_MFC_UID_WRITE_PREVIEW,
+    STATE_MFC_UID_WRITING,
     STATE_MFC_WRITING,
     STATE_MFC_ERASING,
     STATE_MFU_MENU,
@@ -190,18 +198,18 @@ private:
     {"Check Known Keys"},
     {"Dictionaries"},
   };
-  ListItem _mfcTagItems[6] = {
+  ListItem _mfcTagItems[7] = {
     {"Detect Magic"},
     {"Read Tag"},
-    {"Write to Tag"},
+    {"Write UID to Tag"},
+    {"Write Dump to Tag"},
     {"Erase Tag"},
     {"Emulate UID"},
     {"Advanced"},
   };
-  ListItem _mfcAdvancedItems[4] = {
+  ListItem _mfcAdvancedItems[3] = {
     {"Read Memory"},
     {"Edit Memory"},
-    {"Edit UID (Gen1A/Gen3)"},
     {"Lock UID (Gen3)"},
   };
   ListItem _mfcNdefItems[4] = {
@@ -294,6 +302,10 @@ private:
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
   String _dumpPickDir;
+  String _uidPickDir;
+  String _uidDumpPickDir;
+  uint8_t _uidWriteValue[7] = {};
+  uint8_t _uidWriteLen = 0;
   String _ndefPickDir;
   String _dictPickDir;
   String _dictViewTitle;
@@ -311,6 +323,13 @@ private:
   void _openMfcDumpPicker();
   void _openMfcDumpFile(uint8_t index);
   void _showMfcWritePreview(const uint8_t* dump, size_t len, bool fromFile);
+  void _chooseMfcUidSource();
+  void _openMfcUidPicker();
+  void _openMfcUidDumpPicker();
+  void _openMfcUidFile(uint8_t index);
+  void _openMfcUidDumpFile(uint8_t index);
+  void _showMfcUidWritePreview(const uint8_t* uid, uint8_t uidLen, const char* source);
+  bool _writeMfcUidToTag();
   bool _writeMfcDumpToTag();
   void _eraseMfcTag();
   void _saveMfcUid();
@@ -325,7 +344,6 @@ private:
   void _showMfcAdvancedMenu();
   void _readMfcMemory();
   void _editMfcMemory();
-  void _editMfcUid();
   void _lockMfcUidGen3();
   void _showMfcNdefMenu();
   void _showMfcNdefWriteMenu();
