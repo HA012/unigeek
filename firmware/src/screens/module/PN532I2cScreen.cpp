@@ -5336,7 +5336,7 @@ void PN532I2cScreen::_doWriteUidFromDumpPicker() {
 void PN532I2cScreen::_doWriteUidDumpSelected(uint8_t i) {
   if(i>=_browser.count())return;const auto&e=_browser.entry(i);if(e.isDir){_dumpPickDir=e.path;_doWriteUidFromDumpPicker();return;}
   fs::File f=Uni.Storage->open(e.path.c_str(),"r");if(!f||f.size()==0||f.size()>4096){if(f)f.close();ShowStatusAction::show("Invalid dump",1600);return;}size_t len=f.size();uint8_t* d=new uint8_t[len];if(!d){f.close();ShowStatusAction::show("Out of memory",1600);return;}size_t got=f.read(d,len);f.close();
-  if(got!=len){delete[] d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=NfcDumpParser::inspect(d,len);delete[] d;if(!NfcDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}memcpy(_uidWriteSource,info.uid,info.uidLen);_uidWriteSourceLen=info.uidLen;_uidWriteDumpPath=e.path;_rebuildWriteUidForm(1);
+  if(got!=len){delete[] d;ShowStatusAction::show("Invalid dump",1600);return;}auto info=HfDumpParser::inspect(d,len);delete[] d;if(!HfDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){ShowStatusAction::show("Dump UID not supported",1600);return;}memcpy(_uidWriteSource,info.uid,info.uidLen);_uidWriteSourceLen=info.uidLen;_uidWriteDumpPath=e.path;_rebuildWriteUidForm(1);
 }
 
 void PN532I2cScreen::_showWriteUidPreview(const uint8_t* uid,uint8_t n) {

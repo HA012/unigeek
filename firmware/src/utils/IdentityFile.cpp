@@ -88,29 +88,6 @@ bool saveNfcUid(const String& path, const uint8_t* uid, size_t uidLen) {
   return writeTextFile(path, content);
 }
 
-bool loadNfcUid(const String& path, uint8_t* uid, size_t capacity, size_t& uidLen) {
-  uidLen = 0;
-  if (!uid || capacity < 4 || !Uni.Storage || !Uni.Storage->isAvailable()) return false;
-  fs::File f = Uni.Storage->open(path.c_str(), "r");
-  if (!f) return false;
-  String text;
-  while (f.available()) text += (char)f.read();
-  f.close();
-  const int pos = text.indexOf("UID:");
-  if (pos < 0) return false;
-  int end = text.indexOf('\n', pos);
-  String hex = text.substring(pos + 4, end < 0 ? text.length() : end);
-  hex.trim(); hex.replace(" ", ""); hex.replace(":", "");
-  if (hex.length() != 8 && hex.length() != 14) return false;
-  const size_t n = hex.length() / 2u;
-  if (n > capacity) return false;
-  for (size_t i = 0; i < n; ++i) {
-    char b[3] = {hex[i*2], hex[i*2+1], 0}; char* e = nullptr;
-    unsigned long v = strtoul(b, &e, 16); if (!e || *e) return false; uid[i] = (uint8_t)v;
-  }
-  uidLen = n; return true;
-}
-
 bool saveLfId(const String& path, LFCodec::Protocol protocol,
               const uint8_t* data, size_t dataLen) {
   if (!data || !dataLen || !Uni.Storage || !Uni.Storage->isAvailable()) return false;

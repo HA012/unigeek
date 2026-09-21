@@ -9,7 +9,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
-#include "utils/nfc/NfcDumpParser.h"
+#include "utils/nfc/HfDumpParser.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/views/ProgressView.h"
@@ -310,8 +310,8 @@ void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
     if (!dump) { f.close(); ShowStatusAction::show("Out of memory", 1600); return; }
     const size_t got = f.read(dump, len); f.close();
     if (got != len) { delete[] dump; ShowStatusAction::show("Invalid dump", 1600); return; }
-    const auto info = NfcDumpParser::inspect(dump, len); delete[] dump;
-    if (!NfcDumpParser::isMifareClassic(info.type) || !info.uidValid ||
+    const auto info = HfDumpParser::inspect(dump, len); delete[] dump;
+    if (!HfDumpParser::isMifareClassic(info.type) || !info.uidValid ||
         (info.uidLen != 4 && info.uidLen != 7)) {
       ShowStatusAction::show("Dump UID not supported", 1600);
       return;
