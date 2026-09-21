@@ -55,6 +55,7 @@ static bool _mfcWriteWithKnownKey(
 }
 
 void ChameleonMfcToolsScreen::onInit() {
+  _state = MENU;
   _items[0] = {"Detect Magic"};
   _items[1] = {"Read Tag"};
   _items[2] = {"Write UID to Tag"};
@@ -66,70 +67,66 @@ void ChameleonMfcToolsScreen::onInit() {
 
 
 void ChameleonMfcToolsScreen::_writeUid() {
-  static const InputSelectAction::Option sources[] = {
-    {"Manual", "manual"}, {"UID File", "uid"}, {"Dump", "dump"},
-  };
-  const char* r = InputSelectAction::popup("UID Source", sources, 3, nullptr);
-  if (!r) { render(); return; }
-  if (strcmp(r, "manual") == 0) {
-    String hex = InputTextAction::popup("UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
-    if (InputTextAction::wasCancelled()) { render(); return; }
-    hex.replace(" ", ""); hex.replace(":", "");
-    if (hex.length() != 8 && hex.length() != 14) { render(); ShowStatusAction::show("UID must be 4 or 7 bytes", 1600); return; }
-    uint8_t uid[7] = {}; const uint8_t len = (uint8_t)(hex.length() / 2u);
-    for (uint8_t i=0;i<len;++i) { char b[3]={hex[i*2],hex[i*2+1],0}; char* e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){render();ShowStatusAction::show("Bad hex",1200);return;} uid[i]=(uint8_t)v; }
-    Screen.push(new ChameleonMfcUidWriteScreen(uid, len));
-    return;
-  }
-  if (strcmp(r, "uid") == 0) { _writeUidFromFile(); return; }
-  _writeUidFromDump();
+  _uidSource=UID_MANUAL; _uidLen=0; _uidFile=""; _uidDumpFile=""; _rebuildUidForm(0);
 }
 
+void ChameleonMfcToolsScreen::_rebuildUidForm(uint8_t selected) {
+  _state=UID_FORM; _uidCount=0;
+  _uidValues[_uidCount]=_uidSource==UID_MANUAL?"Manual":_uidSource==UID_FILE?"UID File":"Dump";
+  _uidItems[_uidCount]={"UID",_uidValues[_uidCount].c_str()}; ++_uidCount;
+  if(_uidSource==UID_MANUAL){
+    String v="-"; if(_uidLen){v="";char b[4];for(uint8_t i=0;i<_uidLen;++i){snprintf(b,sizeof(b),"%s%02X",i?":":"",_uid[i]);v+=b;}}
+    _uidValues[_uidCount]=v; _uidItems[_uidCount]={"Value",_uidValues[_uidCount].c_str()}; ++_uidCount;
+  } else if(_uidSource==UID_FILE){
+    _uidValues[_uidCount]=_uidFile.length()?_uidFile.substring(_uidFile.lastIndexOf('/')+1):"-"; _uidItems[_uidCount]={"UID File",_uidValues[_uidCount].c_str()}; ++_uidCount;
+  } else {
+    _uidValues[_uidCount]=_uidDumpFile.length()?_uidDumpFile.substring(_uidDumpFile.lastIndexOf('/')+1):"-"; _uidItems[_uidCount]={"Dump File",_uidValues[_uidCount].c_str()}; ++_uidCount;
+  }
+  _uidItems[_uidCount++]={"Write"}; setItems(_uidItems,_uidCount,min<uint8_t>(selected,_uidCount-1));
+}
+
+void ChameleonMfcToolsScreen::_editUidManual(){
+  String initial;char b[4];for(uint8_t i=0;i<_uidLen;++i){snprintf(b,sizeof(b),"%s%02X",i?":":"",_uid[i]);initial+=b;}
+  String hex=InputTextAction::popup("UID (8 or 14 hex)",initial,InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_rebuildUidForm(1);return;}hex.replace(" ","");hex.replace(":","");
+  if(hex.length()!=8&&hex.length()!=14){_rebuildUidForm(1);ShowStatusAction::show("UID must be 4 or 7 bytes",1600);return;}_uidLen=(uint8_t)(hex.length()/2u);
+  for(uint8_t i=0;i<_uidLen;++i){char x[3]={hex[i*2],hex[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(x,&e,16);if(!e||*e){_uidLen=0;_rebuildUidForm(1);ShowStatusAction::show("Bad hex",1200);return;}_uid[i]=(uint8_t)v;}_rebuildUidForm(1);
+}
+
+void ChameleonMfcToolsScreen::_startUidWrite(){if(_uidLen!=4&&_uidLen!=7){ShowStatusAction::show(_uidSource==UID_MANUAL?"Enter UID":"Select source file",1600);render();return;}Screen.push(new ChameleonMfcUidWriteScreen(_uid,_uidLen));}
+
 void ChameleonMfcToolsScreen::_writeUidFromFile() {
-  uint8_t n = _browser.load(this, "/unigeek/nfc/uids", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".uid"));
-  if (!n) { render(); ShowStatusAction::show("No saved UIDs", 1600); render(); return; }
-  static constexpr uint8_t kMax=10; const uint8_t count=n<kMax?n:kMax; InputSelectAction::Option opts[kMax]; String vals[kMax];
-  for(uint8_t i=0;i<count;++i){vals[i]=String(i);opts[i]={_browser.entry(i).name.c_str(),vals[i].c_str()};}
-  const char* r=InputSelectAction::popup("Saved UIDs",opts,count,nullptr); if(!r){render();return;} uint8_t i=(uint8_t)atoi(r); if(i>=count){render();return;}
-  Screen.push(new ChameleonMfcUidWriteScreen(_browser.entry(i).path));
+  _state = UID_FILE_PICKER;
+  _browser.root = "/unigeek/nfc/uids";
+  if (!_uidPickDir.startsWith(_browser.root)) _uidPickDir = _browser.root;
+  const uint8_t n = _browser.load(this, _uidPickDir, BrowseFileView::Mode(".uid"));
+  if (!n && _uidPickDir == _browser.root) {
+    _rebuildUidForm(1);
+    ShowStatusAction::show("No saved UIDs", 1600);
+    render();
+    return;
+  }
+  setItems(_browser.items(), n);
 }
 
 void ChameleonMfcToolsScreen::_writeUidFromDump() {
-  uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin"));
-  if (!n) { render(); ShowStatusAction::show("No saved dumps", 1600); render(); return; }
-  static constexpr uint8_t kMax=10; const uint8_t count=n<kMax?n:kMax; InputSelectAction::Option opts[kMax]; String vals[kMax];
-  for(uint8_t i=0;i<count;++i){vals[i]=String(i);opts[i]={_browser.entry(i).name.c_str(),vals[i].c_str()};}
-  const char* r=InputSelectAction::popup("Saved Dumps",opts,count,nullptr); if(!r){render();return;} uint8_t i=(uint8_t)atoi(r); if(i>=count){render();return;}
-  fs::File f=Uni.Storage->open(_browser.entry(i).path.c_str(),"r"); if(!f||f.size()==0||f.size()>4096){if(f)f.close();render();ShowStatusAction::show("Invalid dump",1600);return;}
-  const size_t len=f.size(); uint8_t* dump=new uint8_t[len]; if(!dump){f.close();render();ShowStatusAction::show("Failed",1600);return;} const size_t got=f.read(dump,len); f.close();
-  if(got!=len){delete[] dump;render();ShowStatusAction::show("Invalid dump",1600);return;} const auto info=NfcDumpParser::inspect(dump,len); delete[] dump;
-  if(!NfcDumpParser::isMifareClassic(info.type)||!info.uidValid||(info.uidLen!=4&&info.uidLen!=7)){render();ShowStatusAction::show("Dump UID not supported",1600);return;}
-  Screen.push(new ChameleonMfcUidWriteScreen(info.uid, info.uidLen));
-}
-
-void ChameleonMfcToolsScreen::_writeFromFile() {
-  static constexpr uint8_t kMax = 10;
-  uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin", 1024));
-  if (!n) {
-    render();
-    ShowStatusAction::show("No Classic 1K .bin", 1600);
+  _state = UID_DUMP_PICKER;
+  _browser.root = "/unigeek/nfc/dumps";
+  if (!_dumpPickDir.startsWith(_browser.root)) _dumpPickDir = _browser.root;
+  const uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(".bin"));
+  if (!n && _dumpPickDir == _browser.root) {
+    _rebuildUidForm(1);
+    ShowStatusAction::show("No saved dumps", 1600);
     render();
     return;
   }
-  const uint8_t count = n < kMax ? n : kMax;
-  InputSelectAction::Option opts[kMax];
-  String vals[kMax];
-  for (uint8_t i = 0; i < count; ++i) {
-    vals[i] = String(i);
-    opts[i] = {_browser.entry(i).name.c_str(), vals[i].c_str()};
-  }
-  const char* r = InputSelectAction::popup("Classic 1K dump", opts, count, nullptr);
-  if (!r) { render(); return; }
-  const uint8_t idx = (uint8_t)atoi(r);
-  if (idx >= count) { render(); return; }
-  String path = _browser.entry(idx).path;
-  render();
-  Screen.push(new ChameleonMfcWriteScreen(path));
+  setItems(_browser.items(), n);
+}
+
+void ChameleonMfcToolsScreen::_writeFromFile() { _openDumpFileBrowser(); }
+void ChameleonMfcToolsScreen::_openDumpFileBrowser(){
+  _state=DUMP_FILE_PICKER; _browser.root="/unigeek/nfc/dumps"; if(!_dumpPickDir.startsWith(_browser.root))_dumpPickDir=_browser.root;
+  const uint8_t n=_browser.load(this,_dumpPickDir,BrowseFileView::Mode(".bin",1024));
+  if(!n&&_dumpPickDir==_browser.root){_state=MENU;render();ShowStatusAction::show("No Classic 1K .bin",1600);render();return;}setItems(_browser.items(),n);
 }
 
 void ChameleonMfcToolsScreen::_writeFromSlot() {
@@ -283,6 +280,44 @@ void ChameleonMfcToolsScreen::_eraseTag() {
 }
 
 void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
+  if (_state == UID_FORM) {
+    if(index==0){static const InputSelectAction::Option src[]={{"Manual","manual"},{"UID File","uid"},{"Dump","dump"}};const char*r=InputSelectAction::popup("UID",src,3,_uidSource==UID_MANUAL?"manual":_uidSource==UID_FILE?"uid":"dump");if(r){_uidSource=strcmp(r,"manual")==0?UID_MANUAL:strcmp(r,"uid")==0?UID_FILE:UID_DUMP;_uidLen=0;_rebuildUidForm(0);}else render();}
+    else if(index==1){if(_uidSource==UID_MANUAL)_editUidManual();else if(_uidSource==UID_FILE)_writeUidFromFile();else _writeUidFromDump();}
+    else if(index==2)_startUidWrite(); return;
+  }
+  if (_state == UID_FILE_PICKER || _state == UID_DUMP_PICKER || _state == DUMP_FILE_PICKER) {
+    if (index >= _browser.count()) return;
+    const auto entry = _browser.entry(index);
+    if (entry.isDir) {
+      if (_state == UID_FILE_PICKER) { _uidPickDir = entry.path; _writeUidFromFile(); }
+      else if(_state==UID_DUMP_PICKER){ _dumpPickDir = entry.path; _writeUidFromDump(); }
+      else {_dumpPickDir=entry.path;_openDumpFileBrowser();}
+      return;
+    }
+    if(_state==DUMP_FILE_PICKER){Screen.push(new ChameleonMfcWriteScreen(entry.path));return;}
+    if (_state == UID_FILE_PICKER) {
+      size_t n=0;uint8_t uid[7]={};if(!IdentityFile::loadNfcUid(entry.path,uid,sizeof(uid),n)||(n!=4&&n!=7)){ShowStatusAction::show("Invalid UID file",1600);return;}memcpy(_uid,uid,n);_uidLen=(uint8_t)n;_uidFile=entry.path;_rebuildUidForm(1);return;
+    }
+    fs::File f = Uni.Storage->open(entry.path.c_str(), "r");
+    if (!f || f.size() == 0 || f.size() > 4096) {
+      if (f) f.close();
+      ShowStatusAction::show("Invalid dump", 1600);
+      return;
+    }
+    const size_t len = f.size();
+    uint8_t* dump = new uint8_t[len];
+    if (!dump) { f.close(); ShowStatusAction::show("Failed", 1600); return; }
+    const size_t got = f.read(dump, len); f.close();
+    if (got != len) { delete[] dump; ShowStatusAction::show("Invalid dump", 1600); return; }
+    const auto info = NfcDumpParser::inspect(dump, len); delete[] dump;
+    if (!NfcDumpParser::isMifareClassic(info.type) || !info.uidValid ||
+        (info.uidLen != 4 && info.uidLen != 7)) {
+      ShowStatusAction::show("Dump UID not supported", 1600);
+      return;
+    }
+    memcpy(_uid,info.uid,info.uidLen);_uidLen=info.uidLen;_uidDumpFile=entry.path;_rebuildUidForm(1);
+    return;
+  }
   if (index == 0) Screen.push(new ChameleonMagicScreen());
   else if (index == 1) Screen.push(new ChameleonMfcScreen());
   else if (index == 2) _writeUid();
@@ -291,4 +326,11 @@ void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
   else if (index == 5) Screen.push(new ChameleonMfcAdvancedScreen());
 }
 
-void ChameleonMfcToolsScreen::onBack() { Screen.goBack(); }
+void ChameleonMfcToolsScreen::onBack() {
+  if(_state==UID_FORM){onInit();return;}
+  if(_state==UID_FILE_PICKER){if(_uidPickDir=="/unigeek/nfc/uids"){_rebuildUidForm(1);return;}int slash=_uidPickDir.lastIndexOf('/');_uidPickDir=slash>0?_uidPickDir.substring(0,slash):String("/unigeek/nfc/uids");_writeUidFromFile();return;}
+  if(_state==UID_DUMP_PICKER){if(_dumpPickDir=="/unigeek/nfc/dumps"){_rebuildUidForm(1);return;}int slash=_dumpPickDir.lastIndexOf('/');_dumpPickDir=slash>0?_dumpPickDir.substring(0,slash):String("/unigeek/nfc/dumps");_writeUidFromDump();return;}
+  if(_state==DUMP_FILE_PICKER){if(_dumpPickDir=="/unigeek/nfc/dumps"){onInit();return;}int slash=_dumpPickDir.lastIndexOf('/');_dumpPickDir=slash>0?_dumpPickDir.substring(0,slash):String("/unigeek/nfc/dumps");_openDumpFileBrowser();return;}
+  if (_state != MENU) { onInit(); return; }
+  Screen.goBack();
+}

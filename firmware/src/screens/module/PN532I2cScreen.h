@@ -39,6 +39,7 @@ private:
     STATE_MIFARE_DUMP_HEX,
     STATE_MIFARE_KEYS,
     STATE_MIFARE_DUMP_SELECT,
+    STATE_MIFARE_UID_SOURCE_FORM,
     STATE_MIFARE_UID_SELECT,
     STATE_MIFARE_UID_DUMP_SELECT,
     STATE_MIFARE_WRITE_PREVIEW,
@@ -235,7 +236,11 @@ private:
   String   _uidPickDir;
   uint8_t  _uidWriteSource[7] = {};
   uint8_t  _uidWriteSourceLen = 0;
-  bool     _uidWriteReturnToDetails = false;
+  enum UidWriteSource_e { UID_WRITE_MANUAL, UID_WRITE_FILE, UID_WRITE_DUMP };
+  UidWriteSource_e _uidWriteSourceMode = UID_WRITE_MANUAL;
+  String   _uidWriteFilePath;
+  String   _uidWriteDumpPath;
+  ListItem _uidWriteItems[3];
   bool     _writePreviewFromFile = false;
   bool     _writePreviewSourceUidKnown = false;
   uint8_t  _writePreviewSourceUid[7] = {};
@@ -319,11 +324,14 @@ private:
                             const uint8_t key[6], bool useKeyB);
   void _doWriteDumpFromFilePicker();
   void _doWriteUidSource();
+  void _rebuildWriteUidForm(uint8_t selected = 0);
+  void _editWriteUidManual();
+  void _startWriteUidFromForm();
   void _doWriteUidFromFilePicker();
   void _doWriteUidFromDumpPicker();
   void _doWriteUidFileSelected(uint8_t fileIndex);
   void _doWriteUidDumpSelected(uint8_t fileIndex);
-  void _showWriteUidPreview(const uint8_t* uid, uint8_t uidLen, bool returnToDetails);
+  void _showWriteUidPreview(const uint8_t* uid, uint8_t uidLen);
   bool _doWriteUidToTag();
   bool _readGen1aBlock0(uint8_t block0[16]);
   void _doWriteDumpFileSelected(uint8_t fileIndex);
@@ -385,7 +393,6 @@ private:
                       uint8_t sourceUidLen, const uint8_t block0[16]);
   bool _resetAndReselect();
   void _doDetectMagic();
-  void _doEditUid();
   void _doGen3LockUid();
   void _doSaveDump();
 
