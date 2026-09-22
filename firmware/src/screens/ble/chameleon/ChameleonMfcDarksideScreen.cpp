@@ -213,7 +213,66 @@ void ChameleonMfcDarksideScreen::_saveKey() {
   MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, line);
 }
 
-bool ChameleonMfcDarksideScreen::_runAttack() {
+ChameleonMfcDarksideScreen::AttackResult
+ChameleonMfcDarksideScreen::_attackCurrentTarget(ChameleonClient& c) {
+  const uint8_t keyType = _target.keyB ? 0x61 : 0x60;
+  const uint8_t block   = _target.block;
+
+  ChameleonClient::DarksideSample sample;
+  const uint8_t kMaxAttempts = 3;
+  const uint8_t kSyncMax = 8;
+  bool acquired = false;
+
+  for (uint8_t attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    _statusText = String("S") + String(_target.sector)
+                + (_target.keyB ? "B" : "A")
+                + " acq " + String(attempt + 1) + "/" + String(kMaxAttempts);
+    _buildPreview();
+    render();
+
+    if (!c.mf1DarksideAcquire(keyType, block, attempt == 0, kSyncMax, &sample)) {
+      _statusText = "Acquire failed";
+      return ATTACK_TAG_ABORT;
+    }
+
+    if (sample.status == ChameleonClient::DARKSIDE_OK ||
+        sample.status == ChameleonClient::DARKSIDE_LUCKY_AUTH_OK) {
+      acquired = true;
+      break;
+    }
+    if (sample.status == ChameleonClient::DARKSIDE_CANT_FIX_NT ||
+        sample.status == ChameleonClient::DARKSIDE_NO_NAK_SENT ||
+        sample.status == ChameleonClient::DARKSIDE_TAG_CHANGED) {
+      _statusText = _statusName(sample.status);
+      return ATTACK_TAG_ABORT;
+    }
+  }
+
+  if (!acquired) {
+    _statusText = String("S") + String(_target.sector)
+                + (_target.keyB ? "B" : "A") + " no acquire";
+    return ATTACK_NO_KEY;
+  }
+
+  _keyFound = false;
+  if (_tryCommonKeys(c, keyType, block)) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X",
+             _recoveredKey[0], _recoveredKey[1], _recoveredKey[2],
+             _recoveredKey[3], _recoveredKey[4], _recoveredKey[5]);
+    _keyHex = buf;
+    _statusText = String("S") + String(_target.sector)
+                + (_target.keyB ? "B" : "A") + " matched";
+    _saveKey();
+    return ATTACK_KEY_FOUND;
+  }
+
+  _statusText = String("S") + String(_target.sector)
+              + (_target.keyB ? "B" : "A") + " no default";
+  return ATTACK_NO_KEY;
+}
+
+bool ChameleonMfcDarksideScreen::_runSweep() {
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
   const bool restore = c.getMode(&previousMode);
@@ -232,68 +291,47 @@ bool ChameleonMfcDarksideScreen::_runAttack() {
     _statusText = "Unable to read PRNG type";
     return finish(false);
   }
-  // 1 = static, 2 = weak, 3 = hard. Darkside needs weak.
   if (ntLevel != 2) {
-    if (ntLevel == 1) _statusText = "Static PRNG — use Static Nested";
-    else if (ntLevel == 3) _statusText = "Hard PRNG — Darkside not applicable";
-    else _statusText = "Unknown PRNG type";
+    if (ntLevel == 1) _statusText = "Use Static Nested";
+    else if (ntLevel == 3) _statusText = "Hard PRNG";
+    else _statusText = "Unknown PRNG";
     return finish(false);
   }
 
-  const uint8_t keyType = _target.keyB ? 0x61 : 0x60;
-  const uint8_t block   = _target.block;
-
-  ChameleonClient::DarksideSample sample;
-  const uint8_t kMaxAttempts = 3;
-  const uint8_t kSyncMax = 8;  // keeps BLE timeout bounded (~80s/try)
-  bool acquired = false;
-
-  for (uint8_t attempt = 0; attempt < kMaxAttempts; ++attempt) {
-    _statusText = String("Acquire ") + String(attempt + 1) + "/" + String(kMaxAttempts);
-    _buildPreview();
-    render();
-
-    if (!c.mf1DarksideAcquire(keyType, block, attempt == 0, kSyncMax, &sample)) {
-      _statusText = "Acquire failed";
-      return finish(false);
-    }
-
-    if (sample.status == ChameleonClient::DARKSIDE_OK ||
-        sample.status == ChameleonClient::DARKSIDE_LUCKY_AUTH_OK) {
-      acquired = true;
-      break;
-    }
-    if (sample.status == ChameleonClient::DARKSIDE_CANT_FIX_NT ||
-        sample.status == ChameleonClient::DARKSIDE_NO_NAK_SENT ||
-        sample.status == ChameleonClient::DARKSIDE_TAG_CHANGED) {
-      _statusText = _statusName(sample.status);
-      return finish(false);
-    }
-  }
-
-  if (!acquired) {
-    _statusText = String("Status: ") + _statusName(sample.status);
+  if (!_hasTarget && !_selectFirstMissing()) {
+    _statusText = "No missing key";
     return finish(false);
   }
 
-  _statusText = String("Status: ") + _statusName(sample.status);
+  const int startIdx = (int)_target.sector * 2 + (_target.keyB ? 1 : 0);
+  int found = 0;
+  int tried = 0;
+  const int maxTries = (int)_sectors * 2;
 
-  if (_tryCommonKeys(c, keyType, block)) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X",
-             _recoveredKey[0], _recoveredKey[1], _recoveredKey[2],
-             _recoveredKey[3], _recoveredKey[4], _recoveredKey[5]);
-    _keyHex = buf;
-    _statusText = "Default key matched";
-    _saveKey();
+  for (int n = 0; n < maxTries; ++n) {
+    if (!_validateTarget()) {
+      if (!_selectNextMissing(1)) break;
+      continue;
+    }
+
+    ++tried;
+    const AttackResult r = _attackCurrentTarget(c);
+    if (r == ATTACK_KEY_FOUND) ++found;
+    else if (r == ATTACK_TAG_ABORT) return finish(found > 0);
+
+    const int cur = (int)_target.sector * 2 + (_target.keyB ? 1 : 0);
+    if (!_selectNextMissing(1)) break;
+    const int nxt = (int)_target.sector * 2 + (_target.keyB ? 1 : 0);
+    if (nxt == startIdx) break;
+    (void)cur;
+  }
+
+  if (found > 0) {
+    _statusText = String("Found ") + String(found) + " key(s)";
+    _keyFound = true;
     return finish(true);
   }
-
-  if (sample.status == ChameleonClient::DARKSIDE_OK) {
-    _statusText = "Acquired; not a default key";
-  } else {
-    _statusText = "Lucky auth; not a default key";
-  }
+  if (!_statusText.length()) _statusText = "No default key";
   return finish(false);
 }
 
@@ -313,15 +351,6 @@ void ChameleonMfcDarksideScreen::_buildPreview() {
   }
   if (_sectors) _addRow("Sectors", String(_sectors));
 
-  if (_hasTarget) {
-    String target = "S" + String(_target.sector);
-    target += " blk " + String(_target.block);
-    target += _target.keyB ? " / Key B" : " / Key A";
-    _addRow("Target", target);
-  } else {
-    _addRow("Target", "No missing key");
-  }
-
   _addRow("State", _stateText());
   _addRow("Status", _statusText.length() ? _statusText : "Idle");
   if (_keyFound) _addRow("Key", _keyHex);
@@ -330,8 +359,11 @@ void ChameleonMfcDarksideScreen::_buildPreview() {
 }
 
 void ChameleonMfcDarksideScreen::onInit() {
-  _statusText = "";
+  _statusText = "Init...";
   _keyFound = false;
+  _buildPreview();
+  render();
+
   if (!_hasReadContext) {
     if (!_ensureTagContext()) {
       _state = ERROR;
@@ -343,6 +375,7 @@ void ChameleonMfcDarksideScreen::onInit() {
   _selectFirstMissing();
   _state = _hasTarget ? READY : ERROR;
   if (!_hasTarget) _statusText = "No missing key";
+  else _statusText = "Idle";
   _buildPreview();
 }
 
@@ -384,7 +417,7 @@ void ChameleonMfcDarksideScreen::onUpdate() {
     _buildPreview();
     render();
 
-    const bool ok = _runAttack();
+    const bool ok = _runSweep();
     _busy = false;
     _state = ok ? SUCCESS : FAILED;
     ShowStatusAction::show(ok ? "Darkside: key found" : _statusText.c_str(), 1800);

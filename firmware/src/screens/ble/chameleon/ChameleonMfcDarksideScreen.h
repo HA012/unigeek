@@ -68,7 +68,9 @@ private:
   bool _validateTarget() const;
   bool _ensureTagContext();
   bool _tryCommonKeys(ChameleonClient& c, uint8_t keyType, uint8_t block);
-  bool _runAttack();
+  enum AttackResult { ATTACK_KEY_FOUND, ATTACK_NO_KEY, ATTACK_TAG_ABORT };
+  AttackResult _attackCurrentTarget(ChameleonClient& c);
+  bool _runSweep();
   void _saveKey();
   const char* _stateText() const;
   static const char* _statusName(uint8_t st);

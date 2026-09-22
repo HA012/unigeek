@@ -256,6 +256,7 @@ void ChameleonMfcScreen::_dispatchStartAction() {
     case ACTION_STATIC_NESTED: _callStaticNested(); break;
     case ACTION_NESTED:        _callNestedAttack(); break;
     case ACTION_DARKSIDE:
+      _enterMfMenu();
       Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
       break;
   }
@@ -280,6 +281,7 @@ void ChameleonMfcScreen::_continueRead() {
     if (!r) { Screen.goBack(); return; }
     if (strcmp(r, "partial") == 0) { _callDump(); return; }
     if (strcmp(r, "darkside") == 0) {
+      _enterMfMenu();
       Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
       return;
     }
@@ -300,11 +302,17 @@ void ChameleonMfcScreen::_continueRead() {
   if (!r) { Screen.goBack(); return; }
   if (strcmp(r, "partial") == 0) { _callDump(); return; }
   if (strcmp(r, "darkside") == 0) {
+    _enterMfMenu();
     Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
     return;
   }
   _resumeReadAfterAttack = true;
   _loadDictPicker();
+}
+
+void ChameleonMfcScreen::_enterMfMenu() {
+  _state = STATE_MF_MENU;
+  setItems(_mfItems, 6);
 }
 
 // ── Known Keys ──

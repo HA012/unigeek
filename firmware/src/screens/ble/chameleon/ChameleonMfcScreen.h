@@ -110,6 +110,7 @@ private:
   uint16_t _totalBlocks();
   void _dispatchStartAction();
   void _continueRead();
+  void _enterMfMenu();
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();
