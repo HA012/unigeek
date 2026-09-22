@@ -318,6 +318,8 @@ private:
   String _dictViewTitle;
   ST25R3916Backend* _emuDev = nullptr;
   bool _emuReturnMfc = false;
+  bool _resumeMfcReadAfterDict = false;
+  bool _mfcReadAfterDict = false;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
   void _scanReader();

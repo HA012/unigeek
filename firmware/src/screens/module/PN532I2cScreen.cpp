@@ -2260,7 +2260,7 @@ void PN532I2cScreen::_doReadTag() {
   if (!_hasReadableKeyForEverySector()) {
     static const InputSelectAction::Option opts[] = {
       {"Dictionary Attack", "dict"},
-      {"Read Partial",      "partial"},
+      {"Partial Read",      "partial"},
     };
     const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
     if (!r) { _goMifareTag(); return; }

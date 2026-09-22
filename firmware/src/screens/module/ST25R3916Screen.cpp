@@ -676,7 +676,11 @@ void ST25R3916Screen::onBack() {
   if (_state == STATE_MFC_ADVANCED_MENU) { _showMfcTagMenu(); return; }
   if (_state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU) { _showMfcMenu(); return; }
   if (_state == STATE_MFC_KEYS_VIEW || _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_VIEW) { _showMfcKeysMenu(); return; }
-  if (_state == STATE_MFC_DICT_ATTACK_SELECT) { _showMfcAttacksMenu(); return; }
+  if (_state == STATE_MFC_DICT_ATTACK_SELECT) {
+    if (_resumeMfcReadAfterDict) { _resumeMfcReadAfterDict = false; _showMfcTagMenu(); }
+    else _showMfcAttacksMenu();
+    return;
+  }
   if (_state == STATE_MFU_MEMORY) { _showMfuAdvancedMenu(); return; }
   if (_state == STATE_MFU_ADVANCED_MENU) { _showMfuTagMenu(); return; }
   if (_state == STATE_MAGIC_DETECT) { _showMfcTagMenu(); return; }
@@ -774,7 +778,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   }
   if (_state == STATE_MFC_ATTACKS_MENU) {
     _selMfcAttacks = index;
-    if (index == 0) _openMfcDictionaries(true);
+    if (index == 0) { _resumeMfcReadAfterDict = false; _openMfcDictionaries(true); }
     else if (index == 1) ShowStatusAction::show("Static Nested not available on ST25 yet");
     else if (index == 2) ShowStatusAction::show("Nested Attack not available on ST25 yet");
     return;
@@ -1153,6 +1157,8 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
 
 void ST25R3916Screen::_readMfcTag() {
 #if defined(DEVICE_HAS_ST25R3916)
+  const bool resumedAfterDict = _mfcReadAfterDict;
+  _mfcReadAfterDict = false;
   _state = STATE_MFC_READING;
   render();
 
@@ -1352,6 +1358,22 @@ void ST25R3916Screen::_readMfcTag() {
       Uni.Storage->makeDir("/unigeek/nfc/keys");
       Uni.Storage->writeFile((String("/unigeek/nfc/keys/") + uidFile + ".txt").c_str(), persisted.c_str());
       MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, persisted);
+    }
+  }
+
+  if (blocksRead != blocks && !resumedAfterDict) {
+    render();
+    static const InputSelectAction::Option opts[] = {
+      {"Dictionary Attack", "dict"},
+      {"Partial Read",      "partial"},
+    };
+    const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
+    render();
+    if (!r) { _showMfcTagMenu(); return; }
+    if (strcmp(r, "dict") == 0) {
+      _resumeMfcReadAfterDict = true;
+      _openMfcDictionaries(true);
+      return;
     }
   }
 
@@ -4203,7 +4225,13 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   else
     snprintf(msg, sizeof(msg), "No new keys found");
   ShowStatusAction::show(msg, 1600);
-  _showMfcAttacksMenu();
+  if (_resumeMfcReadAfterDict) {
+    _resumeMfcReadAfterDict = false;
+    _mfcReadAfterDict = true;
+    _readMfcTag();
+  } else {
+    _showMfcAttacksMenu();
+  }
 #endif
 }
 

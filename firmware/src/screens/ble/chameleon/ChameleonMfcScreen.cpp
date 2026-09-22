@@ -268,7 +268,7 @@ void ChameleonMfcScreen::_continueRead() {
       {"Dictionary Attack", "dict"},
       {"Static Nested",     "static"},
       {"Nested Attack",     "nested"},
-      {"Read Partial",      "partial"},
+      {"Partial Read",      "partial"},
     };
     const char* r = InputSelectAction::popup("Missing sector keys", opts, 4, nullptr);
     render();
@@ -283,7 +283,7 @@ void ChameleonMfcScreen::_continueRead() {
 
   static const InputSelectAction::Option opts[] = {
     {"Dictionary Attack", "dict"},
-    {"Read Partial",      "partial"},
+    {"Partial Read",      "partial"},
   };
   const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
   render();
