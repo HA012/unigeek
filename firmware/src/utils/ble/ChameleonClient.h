@@ -47,6 +47,7 @@ public:
   static constexpr uint16_t CMD_MF1_SUPPORT      = 2001;
   static constexpr uint16_t CMD_MF1_NT_LEVEL     = 2002;
   static constexpr uint16_t CMD_MF1_STATIC_NESTED_ACQ = 2003;
+  static constexpr uint16_t CMD_MF1_DARKSIDE_ACQ = 2004;
   static constexpr uint16_t CMD_MF1_NT_DISTANCE  = 2005;
   static constexpr uint16_t CMD_MF1_NESTED_ACQ   = 2006;
   static constexpr uint16_t CMD_MF1_CHECK_KEY    = 2007;
@@ -273,6 +274,28 @@ public:
                               uint8_t targetKeyType, uint8_t targetBlock,
                               uint32_t* uidOut,
                               NestedSample* out, int maxOut, int* count);
+
+  enum DarksideStatus : uint8_t {
+    DARKSIDE_OK            = 0,
+    DARKSIDE_CANT_FIX_NT   = 1,
+    DARKSIDE_LUCKY_AUTH_OK = 2,
+    DARKSIDE_NO_NAK_SENT   = 3,
+    DARKSIDE_TAG_CHANGED   = 4,
+  };
+
+  struct DarksideSample {
+    uint8_t  status = 0xFF;
+    uint32_t uid    = 0;
+    uint32_t nt1    = 0;
+    uint64_t par    = 0;
+    uint64_t ks1    = 0;
+    uint32_t nr     = 0;
+    uint32_t ar     = 0;
+  };
+
+  bool mf1DarksideAcquire(uint8_t keyType, uint8_t block,
+                          bool firstRecover, uint8_t syncMax,
+                          DarksideSample* out);
 
   // ── MFKey32 detection log ──
   bool mf1SetDetectEnable(bool on);

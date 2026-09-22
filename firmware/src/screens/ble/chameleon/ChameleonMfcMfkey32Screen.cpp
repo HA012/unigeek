@@ -4,6 +4,7 @@
 #include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/nfc/MfcKeyStore.h"
 #include "utils/crypto/crapto1.h"
 
 static uint32_t readBe32(const uint8_t* p) {
@@ -40,6 +41,7 @@ void ChameleonMfcMfkey32Screen::_showRunning() {
   _addRow("Type", _type);
   _addRow("UID", _uid);
   _addRow("Captured", String(_lastCount >= _baseline ? _lastCount - _baseline : 0));
+  _addRow("Need", "2 different NT");
   _addRow("Status", "Running...");
   _scroll.setRows(_rows, _rowCount);
 }
@@ -53,7 +55,7 @@ void ChameleonMfcMfkey32Screen::_showProcessing() {
   _addRow("Processed", String(_parsedCount));
   if (_pairReady) {
     _addRow("Block", String(_firstRecord.block));
-    _addRow("Pair", "Ready");
+    _addRow("KeyType", _flagsKeyB(_firstRecord.flags) ? "Key B" : "Key A");
   }
   _addRow("Status", "Processing...");
   _scroll.setRows(_rows, _rowCount);
@@ -66,10 +68,12 @@ void ChameleonMfcMfkey32Screen::_showFinished() {
   _addRow("Type", _type);
   _addRow("UID", _uid);
   _addRow("Processed", String(_parsedCount));
-  _addRow("Pair", _pairReady ? "Ready" : "Not ready");
   if (_pairReady) {
     _addRow("Block", String(_firstRecord.block));
+    _addRow("KeyType", _flagsKeyB(_firstRecord.flags) ? "Key B" : "Key A");
     _addRow("Key", _keyFound ? _keyHex : (_keyHex.length() ? _keyHex : "—"));
+  } else {
+    _addRow("Pair", "Not ready");
   }
   _addRow("Status", "Finished");
   _scroll.setRows(_rows, _rowCount);
@@ -153,8 +157,38 @@ bool ChameleonMfcMfkey32Screen::_recoverKey() {
     snprintf(buf, sizeof(buf), "%012llX", (unsigned long long)key);
     _keyHex = buf;
     _keyFound = true;
+    _saveKey();
   }
   return found;
+}
+
+void ChameleonMfcMfkey32Screen::_saveKey() {
+  if (!_keyFound) return;
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) return;
+  Uni.Storage->makeDir("/unigeek/nfc/keys");
+
+  char uidHex[16] = {};
+  snprintf(uidHex, sizeof(uidHex), "%08lX", (unsigned long)_firstRecord.uid);
+
+  uint8_t kb[6] = {};
+  uint64_t tmp = _recoveredKey;
+  for (int i = 5; i >= 0; --i) {
+    kb[i] = (uint8_t)(tmp & 0xFF);
+    tmp >>= 8;
+  }
+
+  const uint8_t sector = _firstRecord.block < 128
+      ? (uint8_t)(_firstRecord.block / 4)
+      : (uint8_t)(32 + (_firstRecord.block - 128) / 16);
+
+  char line[48];
+  snprintf(line, sizeof(line), "S%02d %c %02X%02X%02X%02X%02X%02X\n",
+           sector, _flagsKeyB(_firstRecord.flags) ? 'B' : 'A',
+           kb[0], kb[1], kb[2], kb[3], kb[4], kb[5]);
+  String path = String("/unigeek/nfc/keys/") + uidHex + ".txt";
+  String existing = Uni.Storage->readFile(path.c_str());
+  Uni.Storage->writeFile(path.c_str(), (existing + line).c_str());
+  MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, line);
 }
 
 void ChameleonMfcMfkey32Screen::_setError(const char* msg) {

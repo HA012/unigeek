@@ -1,4 +1,5 @@
 #include "ChameleonMfcScreen.h"
+#include "ChameleonMfcDarksideScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -254,6 +255,9 @@ void ChameleonMfcScreen::_dispatchStartAction() {
     case ACTION_DICTIONARY:    _loadDictPicker(); break;
     case ACTION_STATIC_NESTED: _callStaticNested(); break;
     case ACTION_NESTED:        _callNestedAttack(); break;
+    case ACTION_DARKSIDE:
+      Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+      break;
   }
 }
 
@@ -268,12 +272,17 @@ void ChameleonMfcScreen::_continueRead() {
       {"Dictionary Attack", "dict"},
       {"Static Nested",     "static"},
       {"Nested Attack",     "nested"},
+      {"Darkside",          "darkside"},
       {"Read Partial",      "partial"},
     };
-    const char* r = InputSelectAction::popup("Missing sector keys", opts, 4, nullptr);
+    const char* r = InputSelectAction::popup("Missing sector keys", opts, 5, nullptr);
     render();
     if (!r) { Screen.goBack(); return; }
     if (strcmp(r, "partial") == 0) { _callDump(); return; }
+    if (strcmp(r, "darkside") == 0) {
+      Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+      return;
+    }
     _resumeReadAfterAttack = true;
     if (strcmp(r, "dict") == 0) _loadDictPicker();
     else if (strcmp(r, "static") == 0) _callStaticNested();
@@ -283,12 +292,17 @@ void ChameleonMfcScreen::_continueRead() {
 
   static const InputSelectAction::Option opts[] = {
     {"Dictionary Attack", "dict"},
+    {"Darkside",          "darkside"},
     {"Read Partial",      "partial"},
   };
-  const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Missing sector keys", opts, 3, nullptr);
   render();
   if (!r) { Screen.goBack(); return; }
   if (strcmp(r, "partial") == 0) { _callDump(); return; }
+  if (strcmp(r, "darkside") == 0) {
+    Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+    return;
+  }
   _resumeReadAfterAttack = true;
   _loadDictPicker();
 }
@@ -1620,6 +1634,9 @@ void ChameleonMfcScreen::onItemSelected(uint8_t index) {
       case 2: _loadDictPicker();      break;
       case 3: _callStaticNested();    break;
       case 4: _callNestedAttack();    break;
+      case 5:
+        Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+        break;
     }
   } else if (_state == STATE_DICT_SEL) {
     uint8_t baseOffset = (_dictPickDir == _kDictDir) ? 1 : 0;

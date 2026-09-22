@@ -11,6 +11,9 @@ class ChameleonMfcMfkey32Screen : public BaseScreen {
 public:
   explicit ChameleonMfcMfkey32Screen(uint8_t slot) : _slot(slot) {}
   const char* title() override { return "MFKey32"; }
+  bool inhibitPowerOff() override {
+    return _state == RUNNING || _state == PROCESSING;
+  }
   void onInit() override;
   void onUpdate() override;
   void onRender() override;
@@ -68,6 +71,8 @@ private:
   void _showFinished();
   bool _consumeRecord(const uint8_t record[18]);
   bool _recoverKey();                 // classic mfkey32v2
+  void _saveKey();
+  static bool _flagsKeyB(uint8_t flags) { return (flags & 0x01) != 0; }
   void _setError(const char* msg);
   void _restore();
   void _start();

@@ -1,6 +1,7 @@
 #include "ChameleonMfcAttacksScreen.h"
 #include "ChameleonMfcScreen.h"
 #include "ChameleonMfcMfkey32Screen.h"
+#include "ChameleonMfcDarksideScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
@@ -9,7 +10,8 @@ void ChameleonMfcAttacksScreen::onInit() {
   _items[0] = {"Dictionary Attack"};
   _items[1] = {"Static Nested"};
   _items[2] = {"Nested Attack"};
-  _items[3] = {"MFKey32"};
+  _items[3] = {"Darkside"};
+  _items[4] = {"MFKey32"};
   setItems(_items);
 }
 
@@ -18,7 +20,11 @@ void ChameleonMfcAttacksScreen::onItemSelected(uint8_t index) {
     case 0: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_DICTIONARY));     break;
     case 1: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_STATIC_NESTED));  break;
     case 2: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_NESTED));         break;
-    case 3: {
+    case 3:
+      // Standalone: the Darkside screen scans the tag itself.
+      Screen.push(new ChameleonMfcDarksideScreen());
+      break;
+    case 4: {
       auto& c = ChameleonClient::get();
       ChameleonClient::SlotTypes types[8] = {};
       if (!c.getSlotTypes(types)) {
