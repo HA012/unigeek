@@ -130,12 +130,25 @@ void ChameleonMfuToolsScreen::_eraseTag() {
   lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
 
   ChameleonClient::MfuTagInfo info = {};
-  if (!c.mfuDetect(&info) ||
-      info.type != ChameleonClient::MFU_NTAG215 ||
-      info.pages != 135) {
+  uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      if (restoreMode) c.setMode(previousMode);
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  const bool supported = found && sak == 0x00 && c.mfuDetect(&info) &&
+                         info.type == ChameleonClient::MFU_NTAG215 && info.pages == 135;
+  if (!supported) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Tag must be NTAG215", 1600);
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
     render();
     return;
   }

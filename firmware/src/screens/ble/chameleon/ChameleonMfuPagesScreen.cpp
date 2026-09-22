@@ -129,6 +129,7 @@ void ChameleonMfuPagesScreen::_read() {
 
   if (!ok) {
     _freeDump();
+    render();
     ShowStatusAction::show("Failed", 1200);
     Screen.goBack();
     return;

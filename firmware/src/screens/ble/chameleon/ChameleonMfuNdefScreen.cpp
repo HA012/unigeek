@@ -181,6 +181,8 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   if (!ok) {
     free(img);
     img = nullptr;
+    Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+    operationTitle("Read NDEF");
     ShowStatusAction::show("Failed", 1200);
     return false;
   }
@@ -349,6 +351,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   free(payload);
   if (restoreMode) c.setMode(previousMode);
 
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
   operationTitle(opTitle);
   if (strcmp(opTitle, "Erase NDEF") == 0)
     ShowStatusAction::show(ok ? "NDEF erased" : "Failed", 1600);

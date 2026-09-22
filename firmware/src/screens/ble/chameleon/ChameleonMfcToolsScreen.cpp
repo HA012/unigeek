@@ -204,10 +204,22 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
-  if (!c.scan14A(uid, &uidLen, atqa, &sak) || sak != 0x08) {
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      if (restoreMode) c.setMode(previousMode);
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  if (!found || sak != 0x08 || !c.mf1Support()) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Tag must be MFC1K", 1600);
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
     render();
     return;
   }

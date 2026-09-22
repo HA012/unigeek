@@ -242,15 +242,29 @@ void ChameleonMfuWriteScreen::_detectTarget() {
   c.setMode(1);
 
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
-  bool ok = c.mfuDetect(&_targetInfo) &&
-            _targetInfo.type == ChameleonClient::MFU_NTAG215 &&
-            _targetInfo.pages == 135;
+  uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _busy = false;
+      _restoreContext();
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  const bool ok = found && sak == 0x00 && c.mfuDetect(&_targetInfo) &&
+                  _targetInfo.type == ChameleonClient::MFU_NTAG215 &&
+                  _targetInfo.pages == 135;
   _busy = false;
 
   if (!ok) {
     _restoreContext();
     render();
-    ShowStatusAction::show("Tag must be NTAG215", 1600);
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
     render();
     return;
   }

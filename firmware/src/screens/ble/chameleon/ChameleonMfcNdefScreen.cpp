@@ -525,6 +525,8 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  renderOperationTitle("Format NDEF");
   ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   return ok;
 }
@@ -606,6 +608,8 @@ bool ChameleonMfcNdefScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLe
   ProgressView::finish();
   free(payload);
   c.setMode(0); _running = false;
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  renderOperationTitle("Write NDEF");
   ShowStatusAction::show(ok ? "NDEF written" : "Failed", 1600);
   return ok;
 }
