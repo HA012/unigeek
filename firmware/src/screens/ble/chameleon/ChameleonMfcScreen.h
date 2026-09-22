@@ -12,6 +12,7 @@ public:
     ACTION_DICTIONARY,
     ACTION_STATIC_NESTED,
     ACTION_NESTED,
+    ACTION_DARKSIDE,
   };
 
   explicit ChameleonMfcScreen(StartAction action = ACTION_READ_TAG) : _startAction(action) {}
@@ -66,12 +67,13 @@ private:
   int     _recovered    = 0;
 
   // MF submenu
-  ListItem _mfItems[5] = {
+  ListItem _mfItems[6] = {
     {"Check Known Keys"},
     {"Dump Memory"},
     {"Dictionary Attack"},
     {"Static Nested"},
     {"Nested Attack"},
+    {"Darkside"},
   };
 
   // Auth log
@@ -108,6 +110,7 @@ private:
   uint16_t _totalBlocks();
   void _dispatchStartAction();
   void _continueRead();
+  void _enterMfMenu();
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();

@@ -385,7 +385,28 @@ void ChameleonMfcWriteScreen::_write() {
   renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
-  bool targetOk = c.scan14A(uid, &uidLen, atqa, &sak) && sak == 0x08 && c.mf1Support();
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _busy = false;
+      _restoreContext();
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  const bool targetOk = found && sak == 0x08 && c.mf1Support();
+  if (!targetOk) {
+    _busy = false;
+    _restoreContext();
+    render();
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
+    render();
+    return;
+  }
   MagicCardType magic = MagicCardType::NONE;
   bool restoreUid = false;
   bool uidDiffers = false;

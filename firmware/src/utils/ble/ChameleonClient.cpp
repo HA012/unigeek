@@ -1400,6 +1400,45 @@ bool ChameleonClient::mf1StaticNestedAcquire(uint8_t keyType, uint8_t block,
   return n > 0;
 }
 
+bool ChameleonClient::mf1DarksideAcquire(uint8_t keyType, uint8_t block,
+                                          bool firstRecover, uint8_t syncMax,
+                                          DarksideSample* out) {
+  if (!out) return false;
+  *out = DarksideSample{};
+
+  if (!syncMax) syncMax = 30;
+  uint8_t p[4] = { keyType, block, (uint8_t)(firstRecover ? 1 : 0), syncMax };
+
+  uint8_t buf[40] = {};
+  uint16_t len = 0, st = 0;
+  const uint32_t timeoutMs = (uint32_t)p[3] * 10000u;
+  if (!sendCommand(CMD_MF1_DARKSIDE_ACQ, p, 4, buf, &len, &st,
+                   timeoutMs < 15000 ? 15000 : timeoutMs, sizeof(buf)))
+    return false;
+
+  if (st != 0 && st != 0x0200) return false;
+  if (len < 1) return false;
+
+  out->status = buf[0];
+  if (out->status != DARKSIDE_OK || len < 33) return true;
+
+  out->uid = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16)
+           | ((uint32_t)buf[3] <<  8) |  (uint32_t)buf[4];
+  out->nt1 = ((uint32_t)buf[5] << 24) | ((uint32_t)buf[6] << 16)
+           | ((uint32_t)buf[7] <<  8) |  (uint32_t)buf[8];
+  out->par = 0;
+  out->ks1 = 0;
+  for (int i = 0; i < 8; ++i) {
+    out->par = (out->par << 8) | buf[9 + i];
+    out->ks1 = (out->ks1 << 8) | buf[17 + i];
+  }
+  out->nr = ((uint32_t)buf[25] << 24) | ((uint32_t)buf[26] << 16)
+          | ((uint32_t)buf[27] <<  8) |  (uint32_t)buf[28];
+  out->ar = ((uint32_t)buf[29] << 24) | ((uint32_t)buf[30] << 16)
+          | ((uint32_t)buf[31] <<  8) |  (uint32_t)buf[32];
+  return true;
+}
+
 // ── MFKey32 log ──────────────────────────────────────────────────────────────
 bool ChameleonClient::mf1SetDetectEnable(bool on) {
   uint8_t v = on ? 1 : 0;
@@ -1418,10 +1457,11 @@ bool ChameleonClient::mf1GetDetectEnable(bool* on) {
 }
 
 bool ChameleonClient::mf1GetDetectCount(uint32_t* count) {
+  if (!count) return false;
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
-  if (len < 4) return false;
+  if (st != 0 || len < 4) return false;
   *count = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
          | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
   return true;
