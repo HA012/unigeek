@@ -11,5 +11,5 @@ public:
   void onBack()                      override { Screen.goBack(); }
 
 private:
-  ListItem _items[3];
+  ListItem _items[4];
 };

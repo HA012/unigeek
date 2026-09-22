@@ -1418,10 +1418,11 @@ bool ChameleonClient::mf1GetDetectEnable(bool* on) {
 }
 
 bool ChameleonClient::mf1GetDetectCount(uint32_t* count) {
+  if (!count) return false;
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
-  if (len < 4) return false;
+  if (st != 0 || len < 4) return false;
   *count = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
          | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
   return true;
