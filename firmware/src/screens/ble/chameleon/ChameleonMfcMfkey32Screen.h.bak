@@ -4,9 +4,9 @@
 
 // MFKey32 orchestration for a selected MIFARE Classic emulator slot.
 //
-// This screen owns the preview, the reversible Chameleon state changes needed
-// while detection is running, and (once a usable pair is captured) classic
-// mfkey32v2 key recovery.
+// This screen owns the preview and the reversible Chameleon state changes
+// needed while detection is running.  Processing detection records into key
+// material remains deliberately outside this UI layer.
 class ChameleonMfcMfkey32Screen : public BaseScreen {
 public:
   explicit ChameleonMfcMfkey32Screen(uint8_t slot) : _slot(slot) {}
@@ -35,7 +35,9 @@ private:
   uint32_t _lastPoll = 0;
   uint32_t _parsedCount = 0;
 
-  // Complete decoded detection record.
+  // Complete decoded detection record. Keep protocol parsing out of the UI
+  // logic so a processor can later consume the same representation without
+  // reparsing Chameleon BLE payloads.
   struct Mfkey32Record {
     bool valid = false;
     uint8_t block = 0;
@@ -48,12 +50,6 @@ private:
   Mfkey32Record _firstRecord;
   Mfkey32Record _secondRecord;
   bool _pairReady = false;
-
-  // Key recovery result (mfkey32v2)
-  bool     _keyFound = false;
-  uint64_t _recoveredKey = 0;
-  String   _keyHex;
-
   String _type;
   String _uid;
   ScrollListView _scroll;
@@ -64,10 +60,8 @@ private:
   void _addRow(const char* label, const String& value);
   void _showPreview();
   void _showRunning();
-  void _showProcessing();
   void _showFinished();
   bool _consumeRecord(const uint8_t record[18]);
-  bool _recoverKey();                 // classic mfkey32v2
   void _setError(const char* msg);
   void _restore();
   void _start();
