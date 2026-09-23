@@ -135,7 +135,14 @@ void ChameleonMfcScreen::_callAuth() {
   _authLog.clear();
   _authPct = 0;
   strncpy(_authStatus, "Place tag on reader...", sizeof(_authStatus) - 1);
-  render();
+
+  // STATE_AUTH renders the LogView, including its progress/status strip.
+  // Drawing that intermediate state before the initial tag prompt can leave
+  // a small remnant outside the body rectangle. Restore only the owning
+  // screen chrome here; the LogView takes over once authentication starts.
+  Header header;
+  header.render(title());
+  StatusBar::refresh();
 
   auto& c = ChameleonClient::get();
   c.setMode(1);
