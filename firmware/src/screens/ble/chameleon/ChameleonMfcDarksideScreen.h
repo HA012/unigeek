@@ -21,6 +21,7 @@ public:
     uint8_t key[6] = {};
   };
   static RecoveredKeyInfo takeRecoveredKey();
+  bool runSweep();
 
   const char* title() override { return "Darkside"; }
   bool inhibitPowerOff() override { return _busy; }

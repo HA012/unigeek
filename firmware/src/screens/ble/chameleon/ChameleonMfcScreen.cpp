@@ -1,6 +1,5 @@
 #include "ChameleonMfcScreen.h"
 #include "ChameleonMfcDarksideScreen.h"
-#include "ChameleonMfcHardNestedScreen.h"
 #include "ChameleonMfcBackdoorScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/Device.h"
@@ -432,11 +431,22 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   }
 
   if (!hasKey && ntOk && ntLevel == 2) {
-    ProgressView::progress("Darkside", 100);
-    delay(200);
-    ProgressView::finish();
-    Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
-    return;
+    ProgressView::progress("Darkside", 50);
+    ChameleonMfcDarksideScreen darkside(_uid, _uidLen, _sectors, _foundA, _foundB);
+    darkside.runSweep();
+    auto rec = ChameleonMfcDarksideScreen::takeRecoveredKey();
+    if (rec.valid && rec.uidLen == _uidLen &&
+        memcmp(rec.uid, _uid, _uidLen) == 0 && rec.sector < 40) {
+      if (rec.keyB) {
+        memcpy(_keysB[rec.sector], rec.key, 6);
+        if (!_foundB[rec.sector]) { _foundB[rec.sector] = true; _recovered++; }
+      } else {
+        memcpy(_keysA[rec.sector], rec.key, 6);
+        if (!_foundA[rec.sector]) { _foundA[rec.sector] = true; _recovered++; }
+      }
+      hasKey = true;
+      _saveKeys();
+    }
   }
   if (hasKey && ntOk && ntLevel == 1) {
     ProgressView::progress("Static Nested", 100);
@@ -453,10 +463,9 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     return;
   }
   if (hasKey && ntOk && ntLevel == 3) {
-    ProgressView::progress("Hard Nested", 100);
-    delay(200);
     ProgressView::finish();
-    Screen.push(new ChameleonMfcHardNestedScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+    _showReadPreview();
+    ShowStatusAction::show("Hard PRNG — unsupported", 1800);
     return;
   }
   ProgressView::finish();

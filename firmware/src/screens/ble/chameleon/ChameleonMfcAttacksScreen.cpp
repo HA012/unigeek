@@ -11,7 +11,7 @@ void ChameleonMfcAttacksScreen::onInit() {
   _items[1] = {"Static Nested"};
   _items[2] = {"Nested Attack"};
   _items[3] = {"Darkside"};
-  _items[4] = {"Full Recovery"};
+  _items[4] = {"Attack Chain"};
   _items[5] = {"MFKey32"};
   setItems(_items);
 }

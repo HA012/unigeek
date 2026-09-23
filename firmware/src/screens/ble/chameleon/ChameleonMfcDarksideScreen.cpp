@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/crypto/darkside_recover.h"
 #include <cstring>
 
 static const uint8_t kCommonKeys[][6] = {
@@ -267,9 +268,30 @@ ChameleonMfcDarksideScreen::_attackCurrentTarget(ChameleonClient& c) {
     return ATTACK_KEY_FOUND;
   }
 
+  uint8_t cand[6] = {};
+  if (sample.status == ChameleonClient::DARKSIDE_OK &&
+      darkside_recover_key(sample.uid, sample.nt1, sample.par, sample.ks1,
+                           sample.nr, sample.ar, cand) &&
+      c.mf1CheckKey(block, keyType, cand)) {
+    memcpy(_recoveredKey, cand, 6);
+    _keyFound = true;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02X%02X%02X%02X%02X%02X",
+             cand[0], cand[1], cand[2], cand[3], cand[4], cand[5]);
+    _keyHex = buf;
+    _statusText = String("S") + String(_target.sector)
+                + (_target.keyB ? "B" : "A") + " recovered";
+    _saveKey();
+    return ATTACK_KEY_FOUND;
+  }
+
   _statusText = String("S") + String(_target.sector)
-              + (_target.keyB ? "B" : "A") + " no default";
+              + (_target.keyB ? "B" : "A") + " no key";
   return ATTACK_NO_KEY;
+}
+
+bool ChameleonMfcDarksideScreen::runSweep() {
+  return _runSweep();
 }
 
 bool ChameleonMfcDarksideScreen::_runSweep() {
