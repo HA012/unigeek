@@ -2916,6 +2916,7 @@ void PN532I2cScreen::_saveUltralightDump(const char* typeName) {
   fs::File f = Uni.Storage->open((String(_dumpPath) + "/" + filename).c_str(), "w");
   const bool ok = f && f.write(_dumpImg, _dumpLen) == _dumpLen;
   if (f) f.close();
+  render();
   ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
   render();
 }
@@ -2990,6 +2991,7 @@ void PN532I2cScreen::_saveUid(const char* typeName) {
   const String filename = name + ".uid";
   const String path = String("/unigeek/nfc/uids/") + filename;
   const bool ok = IdentityFile::saveNfcUid(path, _uid, _uidLen);
+  render();
   ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
   render();
 }
