@@ -2093,6 +2093,10 @@ void ST25R3916Screen::_eraseMfcTag() {
   _mfcSak = 0;
   _mfcAtqa[0] = _mfcAtqa[1] = 0;
 
+  // ProgressView only clears its own surface. Restore the Erase Tag screen
+  // before showing the modal status so no completed-progress pixels remain
+  // visible behind it.
+  render();
   ShowStatusAction::show("Tag erased", 1600);
   _showMfcTagMenu();
 #else

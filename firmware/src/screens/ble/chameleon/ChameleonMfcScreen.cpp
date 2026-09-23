@@ -460,11 +460,13 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     return;
   }
   ProgressView::finish();
+  // Restore the result screen before the status overlay. ProgressView::finish()
+  // does not reconstruct the screen that was underneath the progress view.
+  _showReadPreview();
   if (!hasKey) {
     ShowStatusAction::show(ntLevel == 1 ? "Need 1 key for Static Nested" :
                            "No key found", 1800);
   }
-  _showReadPreview();
 }
 
 // ── Known Keys ──

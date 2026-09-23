@@ -52,6 +52,10 @@ void ChameleonMfcBackdoorScreen::_run() {
   if (restore) c.setMode(prev);
   ProgressView::finish();
   _status = mf1 ? "SEN acquire not in client" : "Not MIFARE Classic";
+  // Rebuild the screen after ProgressView before placing the modal status on
+  // top; otherwise remnants of the completed progress view can show through.
+  _build();
+  render();
   ShowStatusAction::show(_status.c_str(), 1800);
   _busy = false;
 }

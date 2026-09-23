@@ -57,6 +57,10 @@ void ChameleonMfcHardNestedScreen::_run() {
   else if (nt == 2) _status = "Weak PRNG — use Nested";
   else if (nt == 3) _status = "Hard PRNG — solver not in client";
   else _status = "Unknown PRNG";
+  // Rebuild the screen after ProgressView before placing the modal status on
+  // top; otherwise remnants of the completed progress view can show through.
+  _build();
+  render();
   ShowStatusAction::show(_status.c_str(), 1800);
   _busy = false;
 }
