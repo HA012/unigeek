@@ -83,6 +83,8 @@ const char* ChameleonMfcScreen::title() {
     case STATE_STATIC_NESTED_LOG:  return "Static Nested";
     case STATE_NESTED:
     case STATE_NESTED_LOG:         return "Nested Attack";
+    case STATE_RECOVER:            return "Recover Keys";
+    case STATE_READ_PREVIEW:       return "Tag Details";
   }
   return "MIFARE Classic";
 }
@@ -259,6 +261,9 @@ void ChameleonMfcScreen::_dispatchStartAction() {
       _enterMfMenu();
       Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
       break;
+    case ACTION_RECOVER:
+      _callRecoverKeys();
+      break;
   }
 }
 
@@ -278,51 +283,159 @@ void ChameleonMfcScreen::_continueRead() {
     return;
   }
 
-  if (_recovered > 0) {
-    static const InputSelectAction::Option opts[] = {
-      {"Dictionary Attack", "dict"},
-      {"Static Nested",     "static"},
-      {"Nested Attack",     "nested"},
-      {"Darkside",          "darkside"},
-      {"Partial Read",      "partial"},
-    };
-    const char* r = InputSelectAction::popup("Missing sector keys", opts, 5, nullptr);
-    render();
-    if (!r) { Screen.goBack(); return; }
-    if (strcmp(r, "partial") == 0) { _callDump(); return; }
-    if (strcmp(r, "darkside") == 0) {
-      _enterMfMenu();
-      Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
-      return;
-    }
-    _resumeReadAfterAttack = true;
-    if (strcmp(r, "dict") == 0) _loadDictPicker();
-    else if (strcmp(r, "static") == 0) _callStaticNested();
-    else _callNestedAttack();
-    return;
-  }
-
-  static const InputSelectAction::Option opts[] = {
-    {"Dictionary Attack", "dict"},
-    {"Darkside",          "darkside"},
-    {"Partial Read",      "partial"},
-  };
-  const char* r = InputSelectAction::popup("Missing sector keys", opts, 3, nullptr);
-  render();
-  if (!r) { Screen.goBack(); return; }
-  if (strcmp(r, "partial") == 0) { _callDump(); return; }
-  if (strcmp(r, "darkside") == 0) {
-    _enterMfMenu();
-    Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
-    return;
-  }
-  _resumeReadAfterAttack = true;
-  _loadDictPicker();
+  _showReadPreview();
 }
 
 void ChameleonMfcScreen::_enterMfMenu() {
   _state = STATE_MF_MENU;
   setItems(_mfItems, 6);
+}
+
+void ChameleonMfcScreen::_showReadPreview() {
+  _state = STATE_READ_PREVIEW;
+  _rowCount = 0;
+
+  auto addRow = [&](const String& label, const String& value) {
+    if (_rowCount >= MAX_ROWS) return;
+    _rowLabels[_rowCount] = label;
+    _rowValues[_rowCount] = value;
+    _rows[_rowCount] = { _rowLabels[_rowCount].c_str(),
+                         _rowValues[_rowCount].c_str() };
+    ++_rowCount;
+  };
+
+  char uid[24] = {};
+  for (uint8_t i = 0; i < _uidLen; ++i) {
+    char b[4];
+    snprintf(b, sizeof(b), "%02X%s", _uid[i], (i + 1 < _uidLen) ? ":" : "");
+    strcat(uid, b);
+  }
+  char atqa[8];
+  snprintf(atqa, sizeof(atqa), "%02X%02X", _atqa[0], _atqa[1]);
+  char sak[6];
+  snprintf(sak, sizeof(sak), "%02X", _sak);
+
+  const char* type = (_sectors == 5) ? "MF Classic Mini"
+                   : (_sectors == 40) ? "MF Classic 4K"
+                                      : "MF Classic 1K";
+  uint8_t sectorsWithKey = 0;
+  for (uint8_t s = 0; s < _sectors; ++s) {
+    if (_foundA[s] || _foundB[s]) ++sectorsWithKey;
+  }
+
+  addRow("Type", type);
+  addRow("UID", uid);
+  addRow("ATQA", atqa);
+  addRow("SAK", sak);
+  addRow("Sectors", String((unsigned)_sectors));
+  addRow("Keys", String((unsigned)sectorsWithKey) + "/" + String((unsigned)_sectors) + " sectors");
+  addRow("Status", "Partial");
+  addRow("[Press]", "Actions");
+  _scrollView.setRows(_rows, _rowCount);
+  render();
+}
+
+void ChameleonMfcScreen::_showReadActions() {
+  static const InputSelectAction::Option opts[] = {
+    {"Recover Keys", "recover"},
+    {"Partial Read", "partial"},
+  };
+  const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
+  render();
+  if (!r) return;
+  if (strcmp(r, "partial") == 0) {
+    _callDump();
+    return;
+  }
+  _resumeReadAfterAttack = true;
+  _callRecoverKeys();
+}
+
+void ChameleonMfcScreen::_callRecoverKeys() {
+  _state = STATE_RECOVER;
+  _running = true;
+  render();
+
+  ProgressView::init();
+  ProgressView::progress("Dictionary...", 0);
+
+  auto& c = ChameleonClient::get();
+  uint8_t previousMode = 0;
+  const bool restore = c.getMode(&previousMode);
+  if (!c.setMode(1)) {
+    _running = false;
+    if (restore) c.setMode(previousMode);
+    ShowStatusAction::show("Unable to enter reader mode", 1600);
+    _showReadPreview();
+    return;
+  }
+
+  const int total = _sectors * 2;
+  int done = 0;
+  for (uint8_t s = 0; s < _sectors; ++s) {
+    const uint8_t block = _trailerBlock(s);
+    for (int kt = 0; kt < 2; ++kt) {
+      ++done;
+      if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
+      const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
+      char msg[40];
+      snprintf(msg, sizeof(msg), "Dictionary S%d %c", s, kt ? 'B' : 'A');
+      ProgressView::progress(msg, (uint8_t)((done * 100) / total));
+      for (uint8_t i = 0; i < kMfcBuiltinCount; ++i) {
+        if (!c.mf1CheckKey(block, keyType, kMfcBuiltinKeys[i])) continue;
+        if (kt == 0) {
+          memcpy(_keysA[s], kMfcBuiltinKeys[i], 6);
+          if (!_foundA[s]) { _foundA[s] = true; _recovered++; }
+        } else {
+          memcpy(_keysB[s], kMfcBuiltinKeys[i], 6);
+          if (!_foundB[s]) { _foundB[s] = true; _recovered++; }
+        }
+        break;
+      }
+    }
+  }
+
+  bool hasKey = false;
+  bool missing = false;
+  for (uint8_t s = 0; s < _sectors; ++s) {
+    if (_foundA[s] || _foundB[s]) hasKey = true;
+    if (!_foundA[s] || !_foundB[s]) missing = true;
+  }
+
+  uint8_t ntLevel = 0;
+  ProgressView::progress("Checking PRNG...", 100);
+  const bool ntOk = c.mf1NTLevel(&ntLevel);
+  if (restore) c.setMode(previousMode);
+  _saveKeys();
+  ProgressView::finish();
+  _running = false;
+
+  bool readableEverySector = true;
+  for (int s = 0; s < _sectors; ++s) {
+    if (!_foundA[s] && !_foundB[s]) { readableEverySector = false; break; }
+  }
+  if (readableEverySector) {
+    _callDump();
+    return;
+  }
+
+  if (!hasKey && ntOk && ntLevel == 2) {
+    Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
+    return;
+  }
+  if (hasKey && ntOk && ntLevel == 1) {
+    _callStaticNested();
+    return;
+  }
+  if (hasKey && ntOk && ntLevel == 2) {
+    _callNestedAttack();
+    return;
+  }
+  if (!hasKey) {
+    ShowStatusAction::show(ntLevel == 1 ? "Need 1 key for Static Nested" :
+                           "No key found", 1800);
+  }
+  _showReadPreview();
 }
 
 // ── Known Keys ──
@@ -1578,6 +1691,19 @@ void ChameleonMfcScreen::onUpdate() {
     return;
   }
 
+  if (_state == STATE_READ_PREVIEW) {
+    if (Uni.Nav->wasPressed()) {
+      auto dir = Uni.Nav->readDirection();
+      if (dir == INavigation::DIR_BACK) { Screen.goBack(); return; }
+      if (dir == INavigation::DIR_PRESS) {
+        _showReadActions();
+        return;
+      }
+      _scrollView.onNav(dir);
+    }
+    return;
+  }
+
   if (_state == STATE_DUMP_RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -1638,7 +1764,8 @@ void ChameleonMfcScreen::onRender() {
     _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
     return;
   }
-  if (_state == STATE_SHOW_KEYS || _state == STATE_DUMP_RESULT || _state == STATE_DUMP_HEX) {
+  if (_state == STATE_SHOW_KEYS || _state == STATE_DUMP_RESULT ||
+      _state == STATE_DUMP_HEX || _state == STATE_READ_PREVIEW) {
     _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
     return;
   }

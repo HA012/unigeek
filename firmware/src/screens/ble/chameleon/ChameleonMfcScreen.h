@@ -13,6 +13,7 @@ public:
     ACTION_STATIC_NESTED,
     ACTION_NESTED,
     ACTION_DARKSIDE,
+    ACTION_RECOVER,
   };
 
   explicit ChameleonMfcScreen(StartAction action = ACTION_READ_TAG) : _startAction(action) {}
@@ -40,6 +41,8 @@ private:
     STATE_STATIC_NESTED_LOG,
     STATE_NESTED,
     STATE_NESTED_LOG,
+    STATE_RECOVER,
+    STATE_READ_PREVIEW,
   };
 
   State _state   = STATE_AUTH;
@@ -112,6 +115,9 @@ private:
   void _dispatchStartAction();
   void _continueRead();
   void _enterMfMenu();
+  void _showReadPreview();
+  void _showReadActions();
+  void _callRecoverKeys();
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();
