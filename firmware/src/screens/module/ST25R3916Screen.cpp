@@ -2009,6 +2009,7 @@ void ST25R3916Screen::_eraseMfcTag() {
   ProgressView::finish();
 
   if (!keysOk) {
+    render();
     ShowStatusAction::show("Failed: missing key", 1700);
     _showMfcTagMenu();
     return;
@@ -2045,6 +2046,7 @@ void ST25R3916Screen::_eraseMfcTag() {
     }
     if (!authenticated) {
       ProgressView::finish();
+      render();
       ShowStatusAction::show("Failed", 1600);
       _showMfcTagMenu();
       return;
@@ -2072,6 +2074,7 @@ void ST25R3916Screen::_eraseMfcTag() {
       if (!ok) {
         dev.deactivate();
         ProgressView::finish();
+        render();
         char err[32]; snprintf(err, sizeof(err), "Failed to erase block %u", (unsigned)block);
         ShowStatusAction::show(err, 1600);
         _showMfcTagMenu();
@@ -2451,7 +2454,9 @@ bool ST25R3916Screen::_writeMfcNdef(const uint8_t* ndef, size_t ndefLen) {
     }
   }
   if(success&&haveFirst){uint8_t sec=firstBlockNo<128?firstBlockNo/4:(uint8_t)(32+(firstBlockNo-128)/16);uint8_t trailer=(uint8_t)(sectorFirstBlock(sec)+sectorBlockCount(sec)-1);if(!dev.hasActiveTag()&&!reactivate())success=false;else if(!dev.mifareClassicAuthenticate(trailer,keyA,false)||!dev.mifareClassicWriteBlock(firstBlockNo,firstFinal))success=false;dev.deactivate();}
-  ProgressView::finish(); delete[] payload; ShowStatusAction::show(success?"NDEF written":"Failed", 1600); return success;
+  ProgressView::finish(); delete[] payload;
+  render();
+  ShowStatusAction::show(success?"NDEF written":"Failed", 1600); return success;
 #else
   return false;
 #endif
@@ -2661,6 +2666,7 @@ bool ST25R3916Screen::_formatMfc1kNdef() {
     }
     if (!sectorKeyValid[sec][0] && !sectorKeyValid[sec][1]) {
       ProgressView::finish();
+      render();
       ShowStatusAction::show("Format: unknown sector key");
       _showMfcNdefMenu();
       return false;
@@ -2741,6 +2747,7 @@ bool ST25R3916Screen::_formatMfc1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
+  render();
   ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   _showMfcNdefMenu();
   return ok;
@@ -3290,11 +3297,13 @@ void ST25R3916Screen::_readMfcNdef() {
 
     if (!dev.hasActiveTag() && !reactivate()) {
       ProgressView::finish(); delete[] area;
+      render();
       ShowStatusAction::show("Failed to read NDEF"); _showMfcNdefMenu(); return;
     }
     if (!dev.mifareClassicAuthenticate(trailer, nfcKeyA, false)) {
       dev.deactivate();
       ProgressView::finish(); delete[] area;
+      render();
       ShowStatusAction::show("Failed to read NDEF"); _showMfcNdefMenu(); return;
     }
 
@@ -3306,6 +3315,7 @@ void ST25R3916Screen::_readMfcNdef() {
       if (!dev.mifareClassicReadBlock((uint8_t)(first + bi), area + out)) {
         dev.deactivate();
         ProgressView::finish(); delete[] area;
+        render();
         ShowStatusAction::show("Failed to read NDEF"); _showMfcNdefMenu(); return;
       }
       out += 16;
@@ -3661,6 +3671,7 @@ void ST25R3916Screen::_readMfuTag() {
 
   if (!complete || _mfuDumpLen != (size_t)pages * 4U) {
     _mfuDumpLen = 0;
+    render();
     ShowStatusAction::show("Failed", 1200);
     _showMfuTagMenu();
     return;
@@ -3771,7 +3782,7 @@ void ST25R3916Screen::_readMfuMemory() {
   }
   ProgressView::finish(); dev.deactivate();
   if (!complete || _mfuDumpLen != (size_t)pages * 4U) {
-    _mfuDumpLen = 0; ShowStatusAction::show("Failed"); _showMfuAdvancedMenu(); return;
+    _mfuDumpLen = 0; render(); ShowStatusAction::show("Failed"); _showMfuAdvancedMenu(); return;
   }
   render();
 #endif

@@ -2950,6 +2950,7 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
     }
   }
   ProgressView::finish();
+  render();
   ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600);
   return ok;
 }
@@ -3118,6 +3119,7 @@ void PN532I2cScreen::_doUltralightEraseTag() {
   }
   ProgressView::finish();
   _hasDump = false; _dumpLen = 0;
+  render();
   ShowStatusAction::show(ok ? "Tag erased" : "Failed", 1600);
   _goUltralightTag();
 }
@@ -3532,6 +3534,7 @@ void PN532I2cScreen::_doReadNdef() {
 
   if (!readOk) {
     delete[] user;
+    render();
     ShowStatusAction::show("Failed");
     _goUltralightNdef();
     return;
@@ -4113,6 +4116,7 @@ bool PN532I2cScreen::_formatClassic1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
+  render();
   ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
 
   if (ok) {
@@ -4262,6 +4266,7 @@ bool PN532I2cScreen::_writeClassicNdefRecord(const uint8_t* ndef, size_t ndefLen
 
   ProgressView::finish();
   delete[] payload;
+  render();
 
   ShowStatusAction::show(success ? "NDEF written" : "Failed", 1600);
   return success;
@@ -4453,6 +4458,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
 
   ProgressView::finish();
   delete[] payload;
+  render();
 
   ShowStatusAction::show(success ? "NDEF written" : "Failed", 1600);
   return success;
