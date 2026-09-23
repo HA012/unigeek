@@ -606,11 +606,7 @@ void PN532I2cScreen::onUpdate() {
           _goMifareTag();
         }
       } else if (dir == INavigation::DIR_PRESS && _state == STATE_MIFARE_DUMP && _hasDump) {
-        if (_dumpComplete) _showDumpActions();
-        else {
-          _resumeReadAfterDict = true;
-          _doDictionaryPicker();
-        }
+        _showDumpActions();
       } else {
         _scrollView.onNav(dir);
       }
@@ -2263,6 +2259,7 @@ void PN532I2cScreen::_doReadTag() {
       {"Partial Read",      "partial"},
     };
     const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
+    render();  // Clear the popup before opening picker/progress UI.
     if (!r) { _goMifareTag(); return; }
     if (strcmp(r, "dict") == 0) {
       _resumeReadAfterDict = true;
@@ -2282,6 +2279,7 @@ void PN532I2cScreen::_doDumpMemory() {
   _resetRows();
   _hasDump = false;
   _dumpComplete = false;
+  _dumpReadBlocks = 0;
   const size_t totalSectors = dims.first;
   const size_t totalBlocks = dims.second;
   _dumpLen = totalBlocks * 16u;
@@ -2317,25 +2315,33 @@ void PN532I2cScreen::_doDumpMemory() {
 
     auto& slotA = _mfKeys[sector].first;
     auto& slotB = _mfKeys[sector].second;
-    bool useKeyB = !slotA && (bool)slotB;
-    auto& slot   = useKeyB ? slotB : slotA;
-    if (!slot) continue;
-
-    const auto kv = slot.value();
-    if (!_nfc->mifareclassic_AuthenticateBlock(
-          _uid, _uidLen, trailer, useKeyB ? 1 : 0, (uint8_t*)kv.data())) {
-      // Try re-select + re-auth
-      uint8_t rUid[7]; uint8_t rLen;
-      if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, rUid, &rLen, 200)) {
-        if (!_nfc->mifareclassic_AuthenticateBlock(
-              _uid, _uidLen, trailer, useKeyB ? 1 : 0, (uint8_t*)kv.data())) {
-          continue;
-        }
-      } else { continue; }
-    }
+    if (!slotA && !slotB) continue;
 
     uint8_t data[16];
-    if (!_nfc->mifareclassic_ReadDataBlock((uint8_t)blk, data)) continue;
+    bool blockRead = false;
+    // Try every known credential for the sector. A known Key A can still be
+    // unusable for a particular block/access condition while Key B works.
+    for (int keyType = 0; keyType < 2 && !blockRead; ++keyType) {
+      auto& slot = (keyType == 0) ? slotA : slotB;
+      if (!slot) continue;
+
+      const auto kv = slot.value();
+      bool authenticated = _nfc->mifareclassic_AuthenticateBlock(
+          _uid, _uidLen, trailer, keyType, (uint8_t*)kv.data());
+      if (!authenticated) {
+        // Re-select once before giving up on this key.
+        uint8_t rUid[7]; uint8_t rLen;
+        if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, rUid, &rLen, 200)) {
+          authenticated = _nfc->mifareclassic_AuthenticateBlock(
+              _uid, _uidLen, trailer, keyType, (uint8_t*)kv.data());
+        }
+      }
+      if (!authenticated) continue;
+
+      blockRead = _nfc->mifareclassic_ReadDataBlock((uint8_t)blk, data);
+    }
+    if (!blockRead) continue;
+
     readCount++;
     memcpy(&_dumpImg[blk * 16], data, 16);
   }
@@ -2360,7 +2366,8 @@ void PN532I2cScreen::_doDumpMemory() {
     }
   }
 
-  _dumpComplete = (readCount == (int)totalBlocks);
+  _dumpReadBlocks = (size_t)readCount;
+  _dumpComplete = (_dumpReadBlocks == totalBlocks);
   _hasDump = true;
 
   int n = Achievement.inc("nfc_dump_memory");
@@ -2389,7 +2396,7 @@ void PN532I2cScreen::_showTagDetails() {
 
   _pushRow("Size", String((unsigned)_dumpLen) + " bytes");
   _pushRow("Sectors", String((unsigned)dims.first));
-  _pushRow("Blocks", String((unsigned)dims.second));
+  _pushRow("Blocks", String((unsigned)_dumpReadBlocks) + "/" + String((unsigned)dims.second));
 
   size_t sectorsWithKey = 0;
   for (size_t s = 0; s < dims.first; s++) {
@@ -2397,15 +2404,15 @@ void PN532I2cScreen::_showTagDetails() {
   }
   _pushRow("Keys", String((unsigned)sectorsWithKey) + "/" + String((unsigned)dims.first) + " sectors");
   _pushRow("Status", _dumpComplete ? "Complete" : "Partial");
-  if (_dumpComplete) _appendDumpNdefDetails();
-  _pushRow("[Press]", _dumpComplete ? "Actions" : "Dictionary Attack");
+  _appendDumpNdefDetails();
+  _pushRow("[Press]", "Actions");
 
   _scrollView.setRows(_rows, _rowCount);
   render();
 }
 
 void PN532I2cScreen::_appendDumpNdefDetails() {
-  if (!_hasDump || !_dumpComplete) return;
+  if (!_hasDump) return;
 
   auto dims = _mfDims(_sak);
   if (dims.first == 0) return;

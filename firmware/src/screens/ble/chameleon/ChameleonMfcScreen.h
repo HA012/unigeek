@@ -58,6 +58,7 @@ private:
   uint8_t* _dump       = nullptr;
   uint16_t _dumpLen    = 0;
   uint16_t _dumpBlocks = 0;
+  uint16_t _dumpReadBlocks = 0;
 
   // Discovered keys
   uint8_t _keysA[40][6] = {};

@@ -231,6 +231,7 @@ private:
   size_t   _dumpLen = 0;
   bool     _hasDump = false;
   bool     _dumpComplete = false;
+  size_t   _dumpReadBlocks = 0;
   bool     _resumeReadAfterDict = false;
   String   _dumpPickDir;
   String   _uidPickDir;

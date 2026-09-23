@@ -263,7 +263,17 @@ void ChameleonMfcScreen::_dispatchStartAction() {
 }
 
 void ChameleonMfcScreen::_continueRead() {
-  if (_recovered >= _sectors * 2) {
+  // A sector is readable when at least one of its keys is known. Requiring
+  // both A and B here would offer a partial-read fallback even when every
+  // sector can already be read with the credentials we have.
+  bool readableEverySector = true;
+  for (int s = 0; s < _sectors; ++s) {
+    if (!_foundA[s] && !_foundB[s]) {
+      readableEverySector = false;
+      break;
+    }
+  }
+  if (readableEverySector) {
     _callDump();
     return;
   }
@@ -657,7 +667,13 @@ void ChameleonMfcScreen::_buildDumpPreview() {
                                       : "MF Classic 1K";
   addRow("Type", type);
   addRow("UID", uid);
-  addRow("Blocks", String(_dumpBlocks));
+  addRow("Blocks", String(_dumpReadBlocks) + "/" + String(_dumpBlocks));
+  uint8_t sectorsWithKey = 0;
+  for (uint8_t s = 0; s < _sectors; ++s) {
+    if (_foundA[s] || _foundB[s]) ++sectorsWithKey;
+  }
+  addRow("Keys", String((unsigned)sectorsWithKey) + "/" + String((unsigned)_sectors) + " sectors");
+  addRow("Status", _dumpReadBlocks == _dumpBlocks ? "Complete" : "Partial");
   addRow("Dump", String(_dumpLen) + " bytes");
 
   uint8_t* ndef = nullptr;
@@ -920,6 +936,7 @@ void ChameleonMfcScreen::_callDump() {
   c.setMode(1);
 
   _dumpBlocks = _totalBlocks();
+  _dumpReadBlocks = 0;
   _dumpLen = (uint16_t)(_dumpBlocks * 16u);
   _dump = (uint8_t*)malloc(_dumpLen);
   if (!_dump) {
@@ -946,6 +963,7 @@ void ChameleonMfcScreen::_callDump() {
     if (_foundA[s]) ok = c.mf1ReadBlock(block, 0x60, _keysA[s], data);
     if (!ok && _foundB[s]) ok = c.mf1ReadBlock(block, 0x61, _keysB[s], data);
     if (!ok) memset(data, 0, 16);
+    else ++_dumpReadBlocks;
 
     if (block == _trailerBlock(s)) {
       if (_foundA[s]) memcpy(data, _keysA[s], 6);
