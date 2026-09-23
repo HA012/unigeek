@@ -381,11 +381,11 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     const uint8_t block = _trailerBlock(s);
     for (int kt = 0; kt < 2; ++kt) {
       ++done;
-      if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
-      const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
       char msg[40];
       snprintf(msg, sizeof(msg), "Checking keys (%d/%d)...", done, total);
       ProgressView::progress(msg, (uint8_t)((done * 100) / total));
+      if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
+      const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
       for (uint8_t i = 0; i < kMfcBuiltinCount; ++i) {
         if (!c.mf1CheckKey(block, keyType, kMfcBuiltinKeys[i])) continue;
         if (kt == 0) {
@@ -412,7 +412,6 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   const bool ntOk = c.mf1NTLevel(&ntLevel);
   if (restore) c.setMode(previousMode);
   _saveKeys();
-  ProgressView::finish();
   _running = false;
 
   bool readableEverySector = true;
@@ -420,26 +419,40 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (!_foundA[s] && !_foundB[s]) { readableEverySector = false; break; }
   }
   if (readableEverySector) {
+    ProgressView::finish();
     _callDump();
     return;
   }
 
   if (!hasKey && ntOk && ntLevel == 2) {
+    ProgressView::progress("Darkside", 100);
+    delay(200);
+    ProgressView::finish();
     Screen.push(new ChameleonMfcDarksideScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
     return;
   }
   if (hasKey && ntOk && ntLevel == 1) {
+    ProgressView::progress("Static Nested", 100);
+    delay(200);
+    ProgressView::finish();
     _callStaticNested();
     return;
   }
   if (hasKey && ntOk && ntLevel == 2) {
+    ProgressView::progress("Nested Attack", 100);
+    delay(200);
+    ProgressView::finish();
     _callNestedAttack();
     return;
   }
   if (hasKey && ntOk && ntLevel == 3) {
+    ProgressView::progress("Hard Nested", 100);
+    delay(200);
+    ProgressView::finish();
     Screen.push(new ChameleonMfcHardNestedScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
     return;
   }
+  ProgressView::finish();
   if (!hasKey) {
     ShowStatusAction::show(ntLevel == 1 ? "Need 1 key for Static Nested" :
                            "No key found", 1800);
