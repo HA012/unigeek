@@ -11,7 +11,8 @@ void ChameleonMfcAttacksScreen::onInit() {
   _items[1] = {"Static Nested"};
   _items[2] = {"Nested Attack"};
   _items[3] = {"Darkside"};
-  _items[4] = {"MFKey32"};
+  _items[4] = {"Full Recovery"};
+  _items[5] = {"MFKey32"};
   setItems(_items);
 }
 
@@ -21,10 +22,12 @@ void ChameleonMfcAttacksScreen::onItemSelected(uint8_t index) {
     case 1: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_STATIC_NESTED));  break;
     case 2: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_NESTED));         break;
     case 3:
-      // Standalone: the Darkside screen scans the tag itself.
       Screen.push(new ChameleonMfcDarksideScreen());
       break;
-    case 4: {
+    case 4:
+      Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_RECOVER));
+      break;
+    case 5: {
       auto& c = ChameleonClient::get();
       ChameleonClient::SlotTypes types[8] = {};
       if (!c.getSlotTypes(types)) {

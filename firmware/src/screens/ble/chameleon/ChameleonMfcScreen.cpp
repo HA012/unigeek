@@ -1,5 +1,7 @@
 #include "ChameleonMfcScreen.h"
 #include "ChameleonMfcDarksideScreen.h"
+#include "ChameleonMfcHardNestedScreen.h"
+#include "ChameleonMfcBackdoorScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -356,9 +358,6 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   _running = true;
   render();
 
-  ProgressView::init();
-  ProgressView::progress("Dictionary...", 0);
-
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
   const bool restore = c.getMode(&previousMode);
@@ -372,6 +371,12 @@ void ChameleonMfcScreen::_callRecoverKeys() {
 
   const int total = _sectors * 2;
   int done = 0;
+  ProgressView::init();
+  {
+    char startMsg[40];
+    snprintf(startMsg, sizeof(startMsg), "Checking keys (1/%d)...", total);
+    ProgressView::progress(startMsg, 0);
+  }
   for (uint8_t s = 0; s < _sectors; ++s) {
     const uint8_t block = _trailerBlock(s);
     for (int kt = 0; kt < 2; ++kt) {
@@ -379,7 +384,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
       if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
       const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
       char msg[40];
-      snprintf(msg, sizeof(msg), "Dictionary S%d %c", s, kt ? 'B' : 'A');
+      snprintf(msg, sizeof(msg), "Checking keys (%d/%d)...", done, total);
       ProgressView::progress(msg, (uint8_t)((done * 100) / total));
       for (uint8_t i = 0; i < kMfcBuiltinCount; ++i) {
         if (!c.mf1CheckKey(block, keyType, kMfcBuiltinKeys[i])) continue;
@@ -429,6 +434,10 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   }
   if (hasKey && ntOk && ntLevel == 2) {
     _callNestedAttack();
+    return;
+  }
+  if (hasKey && ntOk && ntLevel == 3) {
+    Screen.push(new ChameleonMfcHardNestedScreen(_uid, _uidLen, _sectors, _foundA, _foundB));
     return;
   }
   if (!hasKey) {

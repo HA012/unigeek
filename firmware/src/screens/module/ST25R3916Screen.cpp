@@ -1364,8 +1364,8 @@ void ST25R3916Screen::_readMfcTag() {
   if (blocksRead != blocks && !resumedAfterDict) {
     render();
     static const InputSelectAction::Option opts[] = {
-      {"Dictionary Attack", "dict"},
-      {"Partial Read",      "partial"},
+      {"Recover Keys", "dict"},
+      {"Partial Read", "partial"},
     };
     const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
     render();

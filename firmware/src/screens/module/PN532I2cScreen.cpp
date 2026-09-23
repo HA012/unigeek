@@ -2255,8 +2255,8 @@ void PN532I2cScreen::_doReadTag() {
   _discoverDefaultKeys();
   if (!_hasReadableKeyForEverySector()) {
     static const InputSelectAction::Option opts[] = {
-      {"Dictionary Attack", "dict"},
-      {"Partial Read",      "partial"},
+      {"Recover Keys", "dict"},
+      {"Partial Read", "partial"},
     };
     const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
     render();  // Clear the popup before opening picker/progress UI.
