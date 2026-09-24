@@ -305,7 +305,7 @@ private:
         const char* pageLabel = "123";
         Special pageAction = SP_SYMBOL;
         if (_profile == PROFILE_HID && _page == PAGE_SYM) {
-          pageLabel = "KEYS";
+          pageLabel = "HTK";
           pageAction = SP_PAGE_HID;
         }
 
@@ -915,7 +915,7 @@ private:
       modeLabel += "123";
     } else if (_page == PAGE_HID) {
       if (modeLabel.length() > 0) modeLabel += " ";
-      modeLabel += "HID";
+      modeLabel += "HTK";
     }
     if (modeLabel.length() > 0) {
       lcd.drawString(modeLabel.c_str(), lcd.width() - PAD, PAD);
@@ -1002,7 +1002,7 @@ private:
       sp.setTextColor(TFT_WHITE, theme);
     } else {
       sp.drawRoundRect(2, 2, cW - 4, cH - 4, 3, hidModifierActive ? theme : TFT_DARKGREY);
-      sp.setTextColor(hidModifierActive ? theme : (s.isSpecial ? TFT_WHITE : TFT_LIGHTGREY), TFT_BLACK);
+      sp.setTextColor(hidModifierActive ? theme : TFT_LIGHTGREY, TFT_BLACK);
     }
 
     String lbl;
@@ -1023,7 +1023,7 @@ private:
 
       lbl = String(shown);
     } else if (_mode == INPUT_TEXT && idx == 30 && _page != PAGE_HID) {
-      lbl = (_page == PAGE_ABC) ? "123" : ((_profile == PROFILE_HID) ? "HID" : "ABC");
+      lbl = (_page == PAGE_ABC) ? "123" : ((_profile == PROFILE_HID) ? "HTK" : "ABC");
     } else {
       lbl = String(s.label);
     }
