@@ -178,6 +178,10 @@ public:
   virtual void sendMouseReport(MouseReport* m)  {}
   virtual void sendConsumerReport(uint16_t code){}
   virtual bool isConnected()                    { return true; }
+  // Optional write-status hooks. HID transports keep the default success
+  // semantics; stream-backed adapters can report a failed write to the UI.
+  virtual void resetWriteStatus()                {}
+  virtual bool lastWriteOk() const               { return true; }
   virtual void setBatteryLevel(uint8_t)         {}
   virtual void resetPair()                      {}
 

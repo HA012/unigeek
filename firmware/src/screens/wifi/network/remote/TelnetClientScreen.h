@@ -79,6 +79,8 @@ private:
 
   void _openCommandInput();
   void _handleTerminalInput();
+  bool _sendTerminalBytes(const uint8_t* data, size_t len);
+  static bool _terminalWriteThunk(void* context, const uint8_t* data, size_t len);
   void _sendCommand(const String& command);
   bool _writeAll(const uint8_t* data, size_t len);
   void _handleSendFailure();

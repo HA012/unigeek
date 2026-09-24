@@ -4,6 +4,7 @@
 #include "core/INavigation.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
+#include "utils/keyboard/TerminalKeyboardUtil.h"
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/ShowStatusAction.h"
 
@@ -819,13 +820,11 @@ void SshClientScreen::_openCommandInput() {
 #ifdef DEVICE_HAS_KEYBOARD
   return;
 #else
-  String command = InputTextAction::popup(
-    "Command", _inputLine.text(), InputTextAction::INPUT_TEXT);
-
-  if (!InputTextAction::wasCancelled()) {
-    _inputLine.clear();
-    _sendCommand(command);
-  }
+  TerminalKeyboardUtil terminal(&_terminalWriteThunk, this);
+  InputTextAction::popup(
+    "Terminal", "", InputTextAction::INPUT_TEXT,
+    InputTextAction::PROFILE_TERMINAL, &terminal);
+  _inputLine.clear();
 
   _drainWorkerRx();
   render();
@@ -869,6 +868,23 @@ void SshClientScreen::_handleTerminalInput() {
       return;
   }
 #endif
+}
+
+bool SshClientScreen::_terminalWriteThunk(void* context, const uint8_t* data, size_t len) {
+  return context && static_cast<SshClientScreen*>(context)->_sendTerminalBytes(data, len);
+}
+
+bool SshClientScreen::_sendTerminalBytes(const uint8_t* data, size_t len) {
+  if (!data || len == 0 || _remoteClosed || _workerState != WORKER_RUNNING || !_ioMutex) return false;
+  bool queued = false;
+  if (xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    if ((int)_workerTx.length() + (int)len <= MAX_SHARED_TX_CHARS) {
+      for (size_t i = 0; i < len; ++i) _workerTx += (char)data[i];
+      queued = true;
+    }
+    xSemaphoreGive(_ioMutex);
+  }
+  return queued;
 }
 
 void SshClientScreen::_sendCommand(const String& command) {
