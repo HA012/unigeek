@@ -51,11 +51,11 @@ void PinSettingsScreen::onInit() {
   _map[_itemCount] = PIN_CC1101_SW1;
   _itemCount++;
 
-  _items[_itemCount] = {"NRF24 CS Pin", ""};
+  _items[_itemCount] = {"NRF24 CE Pin", ""};
   _map[_itemCount] = PIN_NRF24_CE;
   _itemCount++;
 
-  _items[_itemCount] = {"NRF24 GDO0 Pin", ""};
+  _items[_itemCount] = {"NRF24 CSN Pin", ""};
   _map[_itemCount] = PIN_NRF24_CSN;
   _itemCount++;
 
@@ -216,7 +216,7 @@ void PinSettingsScreen::onItemSelected(uint8_t index) {
     }
     case PIN_NRF24_CE: {
       int cur = PinConfig.getInt(PIN_CONFIG_NRF24_CE, PIN_CONFIG_NRF24_CE_DEFAULT);
-      int val = InputNumberAction::popup("NRF24 CS Pin", 0, 48, cur);
+      int val = InputNumberAction::popup("NRF24 CE Pin", 0, 48, cur);
       if (!InputNumberAction::wasCancelled()) {
         PinConfig.set(PIN_CONFIG_NRF24_CE, String(val));
         PinConfig.save(Uni.Storage);
@@ -225,7 +225,7 @@ void PinSettingsScreen::onItemSelected(uint8_t index) {
     }
     case PIN_NRF24_CSN: {
       int cur = PinConfig.getInt(PIN_CONFIG_NRF24_CSN, PIN_CONFIG_NRF24_CSN_DEFAULT);
-      int val = InputNumberAction::popup("NRF24 GDO0 Pin", 0, 48, cur);
+      int val = InputNumberAction::popup("NRF24 CSN Pin", 0, 48, cur);
       if (!InputNumberAction::wasCancelled()) {
         PinConfig.set(PIN_CONFIG_NRF24_CSN, String(val));
         PinConfig.save(Uni.Storage);
