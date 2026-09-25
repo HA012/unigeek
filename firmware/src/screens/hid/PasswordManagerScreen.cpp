@@ -115,7 +115,7 @@ void PasswordManagerScreen::onItemSelected(uint8_t index)
       _updateAddLabels(); render();
     } else if (index == IDX_SOURCE) {
       if (!_waMasterAvailable()) {
-        ShowStatusAction::show("Run Utility > Manage WebAuthn > Generate BIP39", 2200);
+        ShowStatusAction::show("Run Utilities > Manage WebAuthn > Generate BIP39", 2200);
         _pendingSource = SRC_LEGACY;
         _updateAddLabels(); render();
         return;

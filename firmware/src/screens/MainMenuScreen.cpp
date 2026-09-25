@@ -38,7 +38,7 @@ void MainMenuScreen::onInit() {
   _items[1] = {"Bluetooth", Icons::drawBluetooth};
   _items[2] = {"HID", Icons::drawKeyboard};
   _items[3] = {"Modules", Icons::drawModule};
-  _items[4] = {"Utility", Icons::drawUtility};
+  _items[4] = {"Utilities", Icons::drawUtility};
 #if APP_MAIN_MENU_LUA
   _items[kIdxLua] = {"LUA", Icons::drawLua};
 #endif
