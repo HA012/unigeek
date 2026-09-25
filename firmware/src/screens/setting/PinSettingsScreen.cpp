@@ -43,6 +43,14 @@ void PinSettingsScreen::onInit() {
   _map[_itemCount] = PIN_CC1101_GDO0;
   _itemCount++;
 
+  _items[_itemCount] = {"CC1101 SW0 Pin", ""};
+  _map[_itemCount] = PIN_CC1101_SW0;
+  _itemCount++;
+
+  _items[_itemCount] = {"CC1101 SW1 Pin", ""};
+  _map[_itemCount] = PIN_CC1101_SW1;
+  _itemCount++;
+
   _items[_itemCount] = {"NRF24 CS Pin", ""};
   _map[_itemCount] = PIN_NRF24_CE;
   _itemCount++;
@@ -91,6 +99,8 @@ void PinSettingsScreen::_refresh() {
   _sclSub = PinConfig.get(PIN_CONFIG_EXT_SCL, PIN_CONFIG_EXT_SCL_DEFAULT);
   _cc1101CsSub = PinConfig.get(PIN_CONFIG_CC1101_CS, PIN_CONFIG_CC1101_CS_DEFAULT);
   _cc1101Gdo0Sub = PinConfig.get(PIN_CONFIG_CC1101_GDO0, PIN_CONFIG_CC1101_GDO0_DEFAULT);
+  _cc1101Sw0Sub = PinConfig.get(PIN_CONFIG_CC1101_SW0, PIN_CONFIG_CC1101_SW0_DEFAULT);
+  _cc1101Sw1Sub = PinConfig.get(PIN_CONFIG_CC1101_SW1, PIN_CONFIG_CC1101_SW1_DEFAULT);
   _nrf24CeSub = PinConfig.get(PIN_CONFIG_NRF24_CE, PIN_CONFIG_NRF24_CE_DEFAULT);
   _nrf24CsnSub = PinConfig.get(PIN_CONFIG_NRF24_CSN, PIN_CONFIG_NRF24_CSN_DEFAULT);
   _pn532TxSub = PinConfig.get(PIN_CONFIG_PN532_TX, PIN_CONFIG_PN532_TX_DEFAULT);
@@ -109,6 +119,8 @@ void PinSettingsScreen::_refresh() {
       case PIN_EXT_SCL:     _items[i].sublabel = _sclSub.c_str(); break;
       case PIN_CC1101_CS:   _items[i].sublabel = _cc1101CsSub.c_str(); break;
       case PIN_CC1101_GDO0: _items[i].sublabel = _cc1101Gdo0Sub.c_str(); break;
+      case PIN_CC1101_SW0:   _items[i].sublabel = _cc1101Sw0Sub.c_str(); break;
+      case PIN_CC1101_SW1:   _items[i].sublabel = _cc1101Sw1Sub.c_str(); break;
       case PIN_NRF24_CE:    _items[i].sublabel = _nrf24CeSub.c_str(); break;
       case PIN_NRF24_CSN:   _items[i].sublabel = _nrf24CsnSub.c_str(); break;
       case PIN_PN532_TX:    _items[i].sublabel = _pn532TxSub.c_str(); break;
@@ -188,6 +200,18 @@ void PinSettingsScreen::onItemSelected(uint8_t index) {
         PinConfig.set(PIN_CONFIG_CC1101_GDO0, String(val));
         PinConfig.save(Uni.Storage);
       }
+      break;
+    }
+    case PIN_CC1101_SW0: {
+      int cur = PinConfig.getInt(PIN_CONFIG_CC1101_SW0, PIN_CONFIG_CC1101_SW0_DEFAULT);
+      int val = InputNumberAction::popup("CC1101 SW0 Pin", -1, 48, cur);
+      if (!InputNumberAction::wasCancelled()) { PinConfig.set(PIN_CONFIG_CC1101_SW0, String(val)); PinConfig.save(Uni.Storage); }
+      break;
+    }
+    case PIN_CC1101_SW1: {
+      int cur = PinConfig.getInt(PIN_CONFIG_CC1101_SW1, PIN_CONFIG_CC1101_SW1_DEFAULT);
+      int val = InputNumberAction::popup("CC1101 SW1 Pin", -1, 48, cur);
+      if (!InputNumberAction::wasCancelled()) { PinConfig.set(PIN_CONFIG_CC1101_SW1, String(val)); PinConfig.save(Uni.Storage); }
       break;
     }
     case PIN_NRF24_CE: {

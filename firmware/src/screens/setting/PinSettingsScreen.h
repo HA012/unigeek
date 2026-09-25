@@ -28,7 +28,7 @@ private:
 
   // track which config each index maps to
   enum PinType { PIN_GPS_TX, PIN_GPS_RX, PIN_GPS_BAUD, PIN_EXT_SDA, PIN_EXT_SCL,
-                 PIN_CC1101_CS, PIN_CC1101_GDO0,
+                 PIN_CC1101_CS, PIN_CC1101_GDO0, PIN_CC1101_SW0, PIN_CC1101_SW1,
                  PIN_NRF24_CE, PIN_NRF24_CSN,
                  PIN_PN532_TX, PIN_PN532_RX, PIN_PN532_BAUD,
                  PIN_IR_TX, PIN_IR_RX,
@@ -42,6 +42,8 @@ private:
   String _sclSub;
   String _cc1101CsSub;
   String _cc1101Gdo0Sub;
+  String _cc1101Sw0Sub;
+  String _cc1101Sw1Sub;
   String _nrf24CeSub;
   String _nrf24CsnSub;
   String _pn532TxSub;
