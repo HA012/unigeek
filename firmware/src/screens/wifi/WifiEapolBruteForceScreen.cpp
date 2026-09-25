@@ -659,7 +659,7 @@ void WifiEapolBruteForceScreen::_startCrack() {
   if (!_ctx.queue || !_ctx.doneSem) {
     if (_ctx.queue)   { vQueueDelete(_ctx.queue);       _ctx.queue   = nullptr; }
     if (_ctx.doneSem) { vSemaphoreDelete(_ctx.doneSem); _ctx.doneSem = nullptr; }
-    ShowStatusAction::show("Not enough memory");
+    ShowStatusAction::show("Out of memory");
     render();
     return;
   }

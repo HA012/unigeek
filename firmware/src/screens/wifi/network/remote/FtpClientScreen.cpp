@@ -719,7 +719,7 @@ void FtpClientScreen::_workerEntry(void* arg) {
 
 void FtpClientScreen::_setWorkerError(const char* message) {
   if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    _commandError = message ? message : "FTP failed";
+    _commandError = message ? message : "Failed";
     xSemaphoreGive(_mutex);
   }
   _workerState = WORKER_FAILED;
@@ -1023,7 +1023,7 @@ bool FtpClientScreen::_workerList(void* controlOpaque, const String& path) {
   uint8_t count = 0;
   if (!_ftpList(controlOpaque, path, temp, count)) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "FTP list failed";
+      _commandError = "Failed to list directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1460,7 +1460,7 @@ void FtpClientScreen::_worker() {
   int port = _port;
 
   if (!control.connect(host.c_str(), port)) {
-    _setWorkerError("FTP connect failed");
+    _setWorkerError("Failed to connect");
     goto cleanup;
   }
 
@@ -1480,11 +1480,11 @@ void FtpClientScreen::_worker() {
     if (code == 331) {
       if (!_ftpCommand(&control, "PASS " + password, code, reply) ||
           (code != 230 && code != 202)) {
-        _setWorkerError("FTP authentication failed");
+        _setWorkerError("Authentication failed");
         goto cleanup;
       }
     } else if (code != 230) {
-      _setWorkerError("FTP authentication failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
 
@@ -1551,7 +1551,7 @@ void FtpClientScreen::_worker() {
       }
     } else if (!ok && _mutex &&
                xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      if (!_commandError.length()) _commandError = "FTP operation failed";
+      if (!_commandError.length()) _commandError = "Failed";
       xSemaphoreGive(_mutex);
     }
 

@@ -153,7 +153,7 @@ void WifiCiwZeroclickScreen::onItemSelected(uint8_t index)
     case 1: _startBroadcast(); break;
     case 2: {
       static constexpr InputSelectAction::Option opts[] = {
-        {"3 sec", "3"}, {"5 sec", "5"}, {"10 sec", "10"}, {"15 sec", "15"}, {"30 sec", "30"},
+        {"3 s", "3"}, {"5 s", "5"}, {"10 s", "10"}, {"15 s", "15"}, {"30 s", "30"},
       };
       const char* val = InputSelectAction::popup("Rotation", opts, 5);
       if (val) {

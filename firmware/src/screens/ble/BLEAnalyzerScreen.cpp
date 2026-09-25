@@ -117,7 +117,7 @@ static String _serviceUUIDName(uint16_t uuid)
     case 0x181F: return "CGM";
     case 0x1822: return "Pulse Ox";
     case 0x1826: return "Fitness";
-    case 0xFD6F: return "Exposure Notif";
+    case 0xFD6F: return "Exposure Notification";
     case 0xFE03: return "Amazon";
     case 0xFE2C: return "Google FastPair";
     case 0xFE9F: return "Google";
@@ -445,6 +445,7 @@ void BLEAnalyzerScreen::_doScan()
 {
   _state             = STATE_SCAN;
   _selectedDeviceIdx = -1;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   // Undo the watcher's scan config before a storing scan.

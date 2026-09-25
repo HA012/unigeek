@@ -58,3 +58,5 @@ void UtilityMenuScreen::onItemSelected(uint8_t index) {
     case 11: Screen.push(new AchievementScreen());      break;
   }
 }
+#endif
+}

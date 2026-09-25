@@ -20,7 +20,7 @@ const char* WebAuthnBackupScreen::title()
     case ST_NO_MASTER: return "Backup Unavailable";
     case ST_WARNING:   return "Backup: Warning";
     case ST_WORDS:     return "Backup Seed";
-    case ST_DONE:      return "Backup Done";
+    case ST_DONE:      return "Backup complete";
     case ST_DENIED:    return "Backup Denied";
     default:           return "Backup";
   }
@@ -67,12 +67,12 @@ bool WebAuthnBackupScreen::_generate()
 {
   uint8_t master[webauthn::CredentialStore::kMasterKeySize];
   if (!webauthn::CredentialStore::getMasterKey(master)) {
-    _err = "Master key load failed";
+    _err = "Failed to load master key";
     return false;
   }
   bool ok = unigeek::crypto::Bip39::encode(master, sizeof(master), _wordIdx);
   memset(master, 0, sizeof(master));   // never linger
-  if (!ok) { _err = "BIP-39 encode failed"; return false; }
+  if (!ok) { _err = "Failed to encode BIP-39"; return false; }
   _wordsReady = true;
   return true;
 }

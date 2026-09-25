@@ -746,7 +746,7 @@ bool DownloadScreen::_loadLuaMap() {
   http.end();
 
   if (_luaMap.length() == 0) {
-    ShowStatusAction::show("map.txt is empty");
+    ShowStatusAction::show("Empty map file");
     render();
     return false;
   }
@@ -818,7 +818,7 @@ bool DownloadScreen::_populateLuaLevel(const String& path) {
   }
 
   if (_luaCount == 0) {
-    ShowStatusAction::show("Folder is empty");
+    ShowStatusAction::show("Empty folder");
     render();
     return false;
   }

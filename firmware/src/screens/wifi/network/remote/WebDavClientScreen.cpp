@@ -361,7 +361,7 @@ void WebDavClientScreen::_connect() {
   uint8_t count = 0;
   if (!_propfind("", nullptr, count)) {
     ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "WebDAV connection failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to connect",
         1700);
     render();
     return;
@@ -559,7 +559,7 @@ void WebDavClientScreen::_selectRemote(uint8_t index) {
   _startProgress(false, _remoteNames[index], _remoteSizes[index], 1);
   bool ok = _getFile(_remotePaths[index], local, _remoteSizes[index]);
   _finishProgress(ok,
-      ok ? "" : (_lastError.length() ? _lastError.c_str() : "Download failed"));
+      ok ? "" : (_lastError.length() ? _lastError.c_str() : "Failed"));
 }
 
 void WebDavClientScreen::_holdRemote(uint8_t index) {
@@ -596,7 +596,7 @@ void WebDavClientScreen::_holdRemote(uint8_t index) {
   }
   _finishProgress(ok,
       ok ? "" : (_lastError.length() ? _lastError.c_str()
-                                     : "Directory download failed"));
+                                     : "Failed to download directory"));
 }
 
 void WebDavClientScreen::_chooseUploadDestination(const String& path) {
@@ -628,7 +628,7 @@ void WebDavClientScreen::_chooseUploadDestination(const String& path) {
     }
     _finishProgress(ok,
         ok ? "" : (_lastError.length() ? _lastError.c_str()
-                                       : "Directory upload failed"));
+                                       : "Failed to upload directory"));
   } else {
     fs::File f = Uni.Storage->open(_uploadLocalPath.c_str(), "r");
     uint64_t size = f ? (uint64_t)f.size() : 0;
@@ -637,7 +637,7 @@ void WebDavClientScreen::_chooseUploadDestination(const String& path) {
     _startProgress(true, _uploadName, size, 1);
     bool ok = _putFile(_uploadLocalPath, _joinRemote(dir, _uploadName), size);
     _finishProgress(ok,
-        ok ? "" : (_lastError.length() ? _lastError.c_str() : "Upload failed"));
+        ok ? "" : (_lastError.length() ? _lastError.c_str() : "Failed"));
   }
 }
 
@@ -1009,7 +1009,7 @@ bool WebDavClientScreen::_scanRemote(const String& path,
 
   RemoteEntry* temp = new (std::nothrow) RemoteEntry[MAX_REMOTE_ENTRIES];
   if (!temp) {
-    _lastError = "Not enough memory";
+    _lastError = "Out of memory";
     return false;
   }
 
@@ -1049,7 +1049,7 @@ bool WebDavClientScreen::_downloadTree(const String& remote,
 
   RemoteEntry* temp = new (std::nothrow) RemoteEntry[MAX_REMOTE_ENTRIES];
   if (!temp) {
-    _lastError = "Not enough memory";
+    _lastError = "Out of memory";
     return false;
   }
 
@@ -1458,7 +1458,7 @@ void WebDavClientScreen::_finishProgress(bool ok, const char* error) {
     ShowStatusAction::show(
         _transferIsUpload ? "Uploaded" : "Downloaded", 1400);
   } else {
-    ShowStatusAction::show(error && *error ? error : "Transfer failed", 1600);
+    ShowStatusAction::show(error && *error ? error : "Failed", 1600);
   }
   render();
 }

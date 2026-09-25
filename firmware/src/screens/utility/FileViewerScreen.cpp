@@ -23,6 +23,7 @@ void FileViewerScreen::onInit() {
   _wrap = lower.endsWith(".txt");
 
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    render();
     ShowStatusAction::show("Storage not available");
     _goBack();
     return;
@@ -30,7 +31,8 @@ void FileViewerScreen::onInit() {
 
   fs::File f = Uni.Storage->open(_path.c_str(), "r");
   if (!f) {
-    ShowStatusAction::show("Cannot open file");
+    render();
+    ShowStatusAction::show("Failed to open file");
     _goBack();
     return;
   }
@@ -38,19 +40,22 @@ void FileViewerScreen::onInit() {
   f.close();
 
   if (fileSize == 0) {
+    render();
     ShowStatusAction::show("Empty file");
     _goBack();
     return;
   }
 
   if (fileSize > MAX_FILE_SIZE) {
-    ShowStatusAction::show("File too large (>32KB)");
+    render();
+    ShowStatusAction::show("File too large (>110 KB)");
     _goBack();
     return;
   }
 
   _content = Uni.Storage->readFile(_path.c_str());
   if (_content.length() == 0) {
+    render();
     ShowStatusAction::show("Failed to read file");
     _goBack();
     return;

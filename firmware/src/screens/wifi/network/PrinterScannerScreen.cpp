@@ -151,7 +151,7 @@ void PrinterScannerScreen::_scan()
   );
   if (!ssdp) {
     ProgressView::finish();
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     _showConfig();
     return;
   }
@@ -184,7 +184,7 @@ void PrinterScannerScreen::_scan()
   );
   if (!mdns) {
     ProgressView::finish();
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     _showConfig();
     return;
   }

@@ -109,7 +109,7 @@ void BarcodeScreen::_generateFromFile(const String& path) {
   data.trim();
 
   if (data.length() == 0) {
-    ShowStatusAction::show("File is empty", 1500);
+    ShowStatusAction::show("Empty file", 1500);
     render();
     return;
   }

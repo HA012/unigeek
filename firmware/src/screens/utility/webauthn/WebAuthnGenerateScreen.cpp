@@ -30,7 +30,7 @@ const char* WebAuthnGenerateScreen::title()
     case ST_NTP_SYNC:    return "Syncing Time";
     case ST_GENERATING:  return "Generating";
     case ST_WORDS:       return _isRegen ? "Regenerated Seed" : "New Seed";
-    case ST_DONE:        return "Done";
+    case ST_DONE:        return "Generated";
     case ST_ERROR:       return "Error";
     case ST_WARNING:
     default:             return _isRegen ? "Regenerate BIP39" : "Generate BIP39";
@@ -105,7 +105,7 @@ bool WebAuthnGenerateScreen::_connectAndAdvance(uint8_t index)
     render();
     return false;
   }
-  ShowStatusAction::show("Connection Failed!", 1500);
+  ShowStatusAction::show("Failed", 1500);
   // Re-scan so the list reflects current air conditions.
   _enterWifiList();
   return false;
@@ -116,20 +116,20 @@ bool WebAuthnGenerateScreen::_runGenerate()
   // RTC set + RF active. Refresh both RNG layers before pulling the master.
   RandomSeed::reseed();
   if (!webauthn::WebAuthnCrypto::reseed()) {
-    _err = "DRBG reseed failed"; return false;
+    _err = "Failed to reseed DRBG"; return false;
   }
   if (!webauthn::CredentialStore::generateMaster(_isRegen)) {
-    _err = _isRegen ? "Regenerate failed" : "Generate failed";
+    _err = _isRegen ? "Failed to regenerate" : "Failed to generate";
     return false;
   }
 
   uint8_t master[webauthn::CredentialStore::kMasterKeySize];
   if (!webauthn::CredentialStore::getMasterKey(master)) {
-    _err = "Master read-back failed"; return false;
+    _err = "Failed to read back master key"; return false;
   }
   bool ok = unigeek::crypto::Bip39::encode(master, sizeof(master), _wordIdx);
   memset(master, 0, sizeof(master));
-  if (!ok) { _err = "BIP-39 encode failed"; return false; }
+  if (!ok) { _err = "Failed to encode BIP-39"; return false; }
   _wordsReady = true;
   return true;
 }

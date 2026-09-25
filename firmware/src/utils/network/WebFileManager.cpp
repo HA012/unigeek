@@ -10,7 +10,7 @@
 bool WebFileManager::begin() {
   wifi_mode_t mode = WiFi.getMode();
   if (WiFi.status() != WL_CONNECTED && mode != WIFI_MODE_AP && mode != WIFI_MODE_APSTA) {
-    _lastError = "WiFi not connected";
+    _lastError = "Not connected";
     return false;
   }
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {

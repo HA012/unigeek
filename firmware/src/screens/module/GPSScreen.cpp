@@ -317,7 +317,7 @@ void GPSScreen::_showMenu() {
 
   // Wigle Token sublabel
   _wigleTokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[5] = {"Wigle Token", _wigleTokenSub.c_str()};
+  _menuItems[5] = {"WiGLE Token", _wigleTokenSub.c_str()};
 
   setItems(_menuItems);
 }
@@ -478,12 +478,12 @@ void GPSScreen::_connectInternet() {
 
 void GPSScreen::_editWigleToken() {
   String current = WigleUtil::readToken(Uni.Storage);
-  String token = InputTextAction::popup("Wigle API Token", current);
+  String token = InputTextAction::popup("WiGLE API Token", current);
   if (token.length() == 0) return;
   token.trim();
   WigleUtil::saveToken(Uni.Storage, token);
   _wigleTokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[5] = {"Wigle Token", _wigleTokenSub.c_str()};
+  _menuItems[5] = {"WiGLE Token", _wigleTokenSub.c_str()};
   ShowStatusAction::show("Saved");
 }
 
@@ -498,12 +498,12 @@ void GPSScreen::_showWigleStats() {
 
 void GPSScreen::_showUploadMenu() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Internet connection required");
+    ShowStatusAction::show("Not connected");
     return;
   }
   String token = WigleUtil::readToken(Uni.Storage);
   if (token.length() == 0) {
-    ShowStatusAction::show("Wigle token not set");
+    ShowStatusAction::show("WiGLE token not set");
     return;
   }
 

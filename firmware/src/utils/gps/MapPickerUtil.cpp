@@ -5,7 +5,7 @@
 
 bool MapPickerUtil::ensureWifi() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Connect to internet first");
+    ShowStatusAction::show("Not connected");
     return false;
   }
   return true;

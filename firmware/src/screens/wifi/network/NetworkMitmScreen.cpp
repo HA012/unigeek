@@ -114,7 +114,7 @@ void NetworkMitmScreen::_start() {
   const bool relayMode = _arpEnabled;
   if (_snifferEnabled) {
     if (!Uni.StorageSD || !Uni.StorageSD->isAvailable()) {
-      _log.addLine("No SD card", TFT_RED);
+      _log.addLine("SD card not available", TFT_RED);
       _snifferEnabled = false;
     } else if (Uni.StorageSD->freeBytes() < kMinFree) {
       _log.addLine("SD card full", TFT_RED);
@@ -311,7 +311,7 @@ void NetworkMitmScreen::onUpdate() {
 
   if (_relayUp && _relay.storageFailed()) {
     _log.addLine("Failed to write to SD", TFT_RED);
-    _stop("SD error");
+    _stop("Failed to write to SD");
     _showMenu();
     return;
   }

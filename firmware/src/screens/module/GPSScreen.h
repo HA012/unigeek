@@ -54,7 +54,7 @@ private:
     {"Wardrive Mode"},
     {"Wardriver"},
     {"Internet"},
-    {"Wigle Token"},
+    {"WiGLE Token"},
     {"Wardrive Stat"},
     {"Upload Wardrive"},
     {"Map View"},

@@ -123,7 +123,7 @@ void SftpClientScreen::onUpdate() {
 
   if (_state == STATE_REMOTE_LOADING) {
     if (_workerState == WORKER_FAILED || _workerState == WORKER_CLOSED) {
-      String err = "SFTP list failed";
+      String err = "Failed to list directory";
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_commandError.length()) err = _commandError;
         xSemaphoreGive(_mutex);
@@ -137,7 +137,7 @@ void SftpClientScreen::onUpdate() {
       bool ok = _commandOk;
       _commandDone = false;
       if (!ok) {
-        String err = "Directory read failed";
+        String err = "Failed to read directory";
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
           if (_commandError.length()) err = _commandError;
           xSemaphoreGive(_mutex);
@@ -704,7 +704,7 @@ void SftpClientScreen::_workerEntry(void* arg) {
 
 void SftpClientScreen::_setWorkerError(const char* message) {
   if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    _commandError = message ? message : "SFTP failed";
+    _commandError = message ? message : "Failed";
     xSemaphoreGive(_mutex);
   }
   _workerState = WORKER_FAILED;
@@ -832,7 +832,7 @@ void SftpClientScreen::_worker() {
 
   sftp = sftp_new(session);
   if (!sftp || sftp_init(sftp) != SSH_OK) {
-    _setWorkerError("SFTP init failed");
+    _setWorkerError("Failed to start SFTP");
     goto cleanup;
   }
 
@@ -1206,7 +1206,7 @@ void SftpClientScreen::_requestDownload(const String& remotePath, bool directory
 
 void SftpClientScreen::_requestUpload(const String& remoteDir) {
   if (!_uploadLocalPath.length()) {
-    ShowStatusAction::show("Upload source not found", 1200);
+    ShowStatusAction::show("No upload source", 1200);
     render();
     return;
   }
@@ -1311,7 +1311,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
     if (written != (size_t)n) {
       ok = false;
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        _commandError = "Storage write failed";
+        _commandError = "Failed to write file";
         xSemaphoreGive(_mutex);
       }
       break;

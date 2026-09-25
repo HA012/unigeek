@@ -85,6 +85,7 @@ void NetworkMenuScreen::_showMenu() {
 void NetworkMenuScreen::_showWifiList() {
   _state    = STATE_SELECT_WIFI;
   _scanning = true;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   _scannedCount = WifiUtility::scan(_scanned, WifiUtility::MAX_WIFI);
@@ -111,6 +112,7 @@ void NetworkMenuScreen::_connectToSelected(uint8_t index) {
   auto result = WifiUtility::connectWithPrompt(_scanned[index].bssid, _scanned[index].ssid);
 
   if (result == WifiUtility::CONNECT_OK) {
+    render();
     ShowStatusAction::show("Connected", 1500);
     int nc = Achievement.inc("wifi_first_connect");
     if (nc == 1)  Achievement.unlock("wifi_first_connect");
@@ -120,6 +122,7 @@ void NetworkMenuScreen::_connectToSelected(uint8_t index) {
   } else if (result == WifiUtility::CONNECT_CANCELLED) {
     render();
   } else {
+    render();
     ShowStatusAction::show("Failed", 1500);
     _showWifiList();
   }

@@ -621,9 +621,9 @@ void WifiKarmaBroadcastScreen::_optAttackStrategy()
     } else if (!strcmp(r, "spd")) {
       char cur[6]; snprintf(cur, sizeof(cur), "%d", _beaconMs);
       InputSelectAction::Option sv[] = {
-        {"Fast (200ms)",   "200"},
-        {"Normal (300ms)", "300"},
-        {"Slow (500ms)",   "500"},
+        {"Fast (200 ms)",   "200"},
+        {"Normal (300 ms)", "300"},
+        {"Slow (500 ms)",   "500"},
       };
       const char* v = InputSelectAction::popup("Beacon Speed", sv, 3, cur);
       if (v) _beaconMs = atoi(v);
@@ -651,9 +651,9 @@ void WifiKarmaBroadcastScreen::_optBroadcastControl()
     } else if (!strcmp(r, "spd")) {
       char cur[6]; snprintf(cur, sizeof(cur), "%d", _beaconMs);
       InputSelectAction::Option sv[] = {
-        {"Fast (200ms)",   "200"},
-        {"Normal (300ms)", "300"},
-        {"Slow (500ms)",   "500"},
+        {"Fast (200 ms)",   "200"},
+        {"Normal (300 ms)", "300"},
+        {"Slow (500 ms)",   "500"},
       };
       const char* v = InputSelectAction::popup("Beacon Speed", sv, 3, cur);
       if (v) _beaconMs = atoi(v);

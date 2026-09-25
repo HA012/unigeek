@@ -158,11 +158,10 @@ void CastBombScreen::_cast(uint8_t index) {
       ShowStatusAction::show(msg.c_str(), 0);
       if (CastBombUtil::launchYouTube(_devices[i], vid) == CastBombUtil::CAST_OK) hits++;
     }
-    String done = "Cast ";
+    String done = "Launched ";
     done += String(hits);
     done += "/";
     done += String(_devCount);
-    done += " ok";
     ShowStatusAction::show(done.c_str(), 1500);
     anyHit = hits > 0;
   }

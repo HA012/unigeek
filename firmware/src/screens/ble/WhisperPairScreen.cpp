@@ -102,7 +102,8 @@ void WhisperPairScreen::onBack()
 void WhisperPairScreen::_startScan()
 {
   _state = STATE_SCAN;
-  ShowStatusAction::show("Scanning FP...", 0);
+  render();
+  ShowStatusAction::show("Scanning...", 0);
   _bleScan->clearResults();
   _scanResults = _bleScan->start(5, false);
 
@@ -150,7 +151,7 @@ void WhisperPairScreen::_showList()
   }
 
   if (_devCount == 0) {
-    _devLabel[0] = "No FP devices";
+    _devLabel[0] = "No Fast Pair devices";
     _devItems[0] = {_devLabel[0].c_str()};
     _devCount    = 1;
   }
@@ -188,7 +189,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   pClient->setConnectTimeout(5);
 
   if (!pClient->connect(dev.getAddress())) {
-    _log.addLine("Connect failed");
+    _log.addLine("Failed to connect");
     render();
     NimBLEDevice::deleteClient(pClient);
     return false;
@@ -199,7 +200,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   // Locate Fast Pair GATT service
   NimBLERemoteService* pSvc = pClient->getService(NimBLEUUID(kFpServiceUUID));
   if (!pSvc) {
-    _log.addLine("No FP service");
+    _log.addLine("No Fast Pair service");
     render();
     pClient->disconnect();
     NimBLEDevice::deleteClient(pClient);
@@ -209,7 +210,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   // Locate KBP characteristic
   NimBLERemoteCharacteristic* pChar = pSvc->getCharacteristic(NimBLEUUID(kKbpCharUUID));
   if (!pChar) {
-    _log.addLine("No KBP char");
+    _log.addLine("No KBP characteristic");
     render();
     pClient->disconnect();
     NimBLEDevice::deleteClient(pClient);
@@ -253,7 +254,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   // ── ECDH shared secret → AES-128 key ──────────────────────────────────
   uint8_t aesKey[16];
   _deriveAesKey(peerKey, hasKey, aesKey);
-  _log.addLine("ECDH done");
+  _log.addLine("ECDH complete");
   render();
 
   // ── Build KBP request packet (16 bytes) ───────────────────────────────
@@ -283,7 +284,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
 
   bool writeOk = pChar->writeValue(ciphertext, 16, true);
   if (!writeOk) {
-    _log.addLine("Write failed");
+    _log.addLine("Failed to send KBP");
     render();
     pClient->disconnect();
     NimBLEDevice::deleteClient(pClient);

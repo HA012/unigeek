@@ -257,7 +257,7 @@ bool IoTDeviceScannerScreen::_discoverMulticast()
     calloc(SsdpScanUtil::MAX_DEVICES, sizeof(SsdpScanUtil::Device))
   );
   if (!ssdpBuffer) {
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
 
@@ -292,7 +292,7 @@ bool IoTDeviceScannerScreen::_discoverMulticast()
     calloc(16, sizeof(MdnsScanUtil::Service))
   );
   if (!mdnsBuffer) {
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
 

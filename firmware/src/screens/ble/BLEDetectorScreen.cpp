@@ -224,7 +224,7 @@ void BLEDetectorScreen::_onDevice(NimBLEAdvertisedDevice* dev)
 
   // Alert on skimmer detection
   if (strcmp(devType, "Skimmer") == 0) {
-    _pushAlert("Skimmer Found!");
+    _pushAlert("Skimmer found");
   }
 
   // Check Flipper OUI for spoofed status

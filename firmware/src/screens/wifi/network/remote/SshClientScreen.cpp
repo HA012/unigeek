@@ -528,7 +528,7 @@ void SshClientScreen::_sshWorkerEntry(void* arg) {
 
 void SshClientScreen::_setWorkerError(const char* message) {
   if (_ioMutex && xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    _workerError = message ? message : "SSH failed";
+    _workerError = message ? message : "Failed";
     xSemaphoreGive(_ioMutex);
   }
   _workerState = WORKER_FAILED;

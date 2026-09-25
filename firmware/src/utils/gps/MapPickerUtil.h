@@ -12,6 +12,6 @@ class MapPickerUtil
 {
 public:
   // Returns true if WiFi is connected. Otherwise shows a status popup
-  // ("Connect to internet first") and returns false.
+  // ("Not connected") and returns false.
   static bool ensureWifi();
 };

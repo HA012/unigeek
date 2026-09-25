@@ -8,7 +8,7 @@
 class WigleScreen : public ListScreen
 {
 public:
-  const char* title() override { return "Wigle"; }
+  const char* title() override { return "WiGLE"; }
 
   void onInit() override;
   void onBack() override;
@@ -30,7 +30,7 @@ private:
   String _tokenSub;
 
   ListItem _menuItems[4] = {
-    {"Wigle Token"},
+    {"WiGLE Token"},
     {"Wardrive Stat"},
     {"Upload Wardrive"},
     {"Map View"},

@@ -98,18 +98,18 @@ void WigleScreen::onItemSelected(uint8_t index) {
 void WigleScreen::_showMenu() {
   _state = STATE_MENU;
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[0] = {"Wigle Token", _tokenSub.c_str()};
+  _menuItems[0] = {"WiGLE Token", _tokenSub.c_str()};
   setItems(_menuItems);
 }
 
 void WigleScreen::_editToken() {
   String current = WigleUtil::readToken(Uni.Storage);
-  String token = InputTextAction::popup("Wigle API Token", current);
+  String token = InputTextAction::popup("WiGLE API Token", current);
   if (token.length() == 0) return;
   token.trim();
   WigleUtil::saveToken(Uni.Storage, token);
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[0] = {"Wigle Token", _tokenSub.c_str()};
+  _menuItems[0] = {"WiGLE Token", _tokenSub.c_str()};
   ShowStatusAction::show("Saved");
 }
 

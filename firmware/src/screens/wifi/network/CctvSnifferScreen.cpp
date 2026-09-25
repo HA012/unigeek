@@ -465,7 +465,7 @@ void CctvSnifferScreen::_showCameraMenu(uint8_t camIdx)
   _selectedCamera = camIdx;
 
   _usernameSub = _username;
-  _passwordSub = _password.length() ? _password : "(empty)";
+  _passwordSub = _password.length() ? _password : "Empty";
 
   _menuItems[0] = {"Username", _usernameSub.c_str()};
   _menuItems[1] = {"Password", _passwordSub.c_str()};

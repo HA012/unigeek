@@ -75,7 +75,7 @@ void WifiRogueAPScreen::onItemSelected(uint8_t index) {
     }
     case 1: {
       if (!_dnsSpoofEnabled && (!Uni.Storage || !Uni.Storage->exists(DnsSpoofServer::CONFIG_PATH))) {
-        ShowStatusAction::show("DNS config not found", 1500);
+        ShowStatusAction::show("No DNS config file", 1500);
         render();
         break;
       }
