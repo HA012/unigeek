@@ -247,7 +247,7 @@ void WebAuthnBackupScreen::_drawWords()
   sp.setTextDatum(BC_DATUM);
   sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
   sp.drawString(_page + 1 < L.pageCount ? "[Press] Next"
-                                        : "[Press] Done",
+                                        : "[Press] Finish",
                 bodyW() / 2, bodyH() - 4);
 
   sp.pushSprite(bodyX(), bodyY());

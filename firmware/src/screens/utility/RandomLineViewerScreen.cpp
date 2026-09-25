@@ -57,7 +57,7 @@ void RandomLineViewerScreen::onInit() {
 
   _parseLines();
   if (_lineCount == 0) {
-    ShowStatusAction::show("No lines found", 1500);
+    ShowStatusAction::show("No lines", 1500);
     _goBack();
     return;
   }

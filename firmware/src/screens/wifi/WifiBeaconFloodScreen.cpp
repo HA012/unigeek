@@ -233,8 +233,8 @@ void WifiBeaconFloodScreen::_updateMenuValues()
 
   const bool needTarget = (_mode == MODE_FLOOD && _floodTarget < 0);
   const bool needFile   = (_mode == MODE_SPAM && _spamTarget == SPAM_FILE && _fileSsidCount == 0);
-  _startSub = needTarget ? "select target first"
-            : needFile   ? "pick a file first"
+  _startSub = needTarget ? "Target not selected"
+            : needFile   ? "File not selected"
                          : "";
 
   // Always 3 rows: [Mode, Target, Start]. In-place sublabel update preserves

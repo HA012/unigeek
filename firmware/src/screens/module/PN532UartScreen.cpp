@@ -513,7 +513,7 @@ void PN532UartScreen::_doAuthenticate() {
 }
 
 void PN532UartScreen::_doDumpMemory() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
 
@@ -591,7 +591,7 @@ void PN532UartScreen::_doDumpMemory() {
 }
 
 void PN532UartScreen::_doShowKeys() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
 
@@ -607,7 +607,7 @@ void PN532UartScreen::_doShowKeys() {
 }
 
 void PN532UartScreen::_doDictionaryPicker() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
 
   _state = STATE_DICT_SELECT;
   if (_dictPickDir.length() == 0) _dictPickDir = _dictPath;
@@ -774,7 +774,7 @@ void PN532UartScreen::_doUltralightWrite() {
   if (_pn->ultralightWrite4((uint8_t)page, data)) {
     ShowStatusAction::show("Written");
   } else {
-    ShowStatusAction::show("Write failed");
+    ShowStatusAction::show("Failed");
   }
   _goUltralight();
 }
@@ -838,7 +838,7 @@ void PN532UartScreen::_doGen3SetUid() {
     int n = Achievement.inc("pn532_magic_detect");
     if (n == 1) Achievement.unlock("pn532_magic_detect");
   }
-  ShowStatusAction::show(ok2 ? "Gen3 UID set" : "Set UID failed");
+  ShowStatusAction::show(ok2 ? "Gen3 UID set" : "Failed");
   _goMagic();
 }
 
@@ -855,7 +855,7 @@ void PN532UartScreen::_doGen3LockUid() {
     delay(50);
   }
   if (!ok) { ShowStatusAction::show("Tag not detected"); _goMagic(); return; }
-  ShowStatusAction::show(_pn->gen3LockUid() ? "Gen3 UID locked" : "Lock failed");
+  ShowStatusAction::show(_pn->gen3LockUid() ? "Gen3 UID locked" : "Failed");
   _goMagic();
 }
 
@@ -958,7 +958,7 @@ void PN532UartScreen::_doSaveDump() {
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed");
     render();
     return;
   }
@@ -990,7 +990,7 @@ void PN532UartScreen::_doLoadAndEmulate(uint8_t fileIndex) {
   uint8_t img[1024];
   memset(img, 0x00, sizeof(img));
   fs::File f = Uni.Storage->open(path.c_str(), "r");
-  if (!f) { ShowStatusAction::show("Read failed"); _goMain(); return; }
+  if (!f) { ShowStatusAction::show("Failed"); _goMain(); return; }
   f.read(img, sizeof(img));
   f.close();
 

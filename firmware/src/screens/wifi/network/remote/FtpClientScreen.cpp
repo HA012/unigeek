@@ -1490,7 +1490,7 @@ void FtpClientScreen::_worker() {
 
     // Binary mode is required for arbitrary files.
     if (!_ftpCommand(&control, "TYPE I", code, reply) || code != 200) {
-      _setWorkerError("FTP binary mode failed");
+      _setWorkerError("Failed to set binary mode");
       goto cleanup;
     }
   }
