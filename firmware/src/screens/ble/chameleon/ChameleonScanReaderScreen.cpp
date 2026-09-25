@@ -65,7 +65,7 @@ void ChameleonScanReaderScreen::onInit() {
 void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
   uint8_t rec[18] = {};
   if (!ChameleonClient::get().mf1GetDetectRecord(index,rec)) {
-    _setError("Unable to read detection");
+    _setError("Reader not detected");
     return;
   }
   _state=RESULT; _rowCount=0;

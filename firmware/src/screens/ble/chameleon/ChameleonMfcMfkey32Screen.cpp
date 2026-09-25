@@ -371,7 +371,7 @@ void ChameleonMfcMfkey32Screen::onUpdate() {
   while (_nextRecord < count) {
     uint8_t record[18] = {};
     if (!ChameleonClient::get().mf1GetDetectRecord(_nextRecord, record)) {
-      _setError("Unable to read detection");
+      _setError("Reader not detected");
       _restore();
       return;
     }

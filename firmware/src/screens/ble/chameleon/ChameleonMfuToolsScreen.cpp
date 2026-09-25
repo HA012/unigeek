@@ -39,7 +39,7 @@ void ChameleonMfuToolsScreen::_writeFromFile() {
   uint8_t n = _browser.load(this, "/unigeek/nfc/dumps", BrowseFileView::Mode(BrowseFileView::Mode::FILE_ONLY, ".bin", 540));
   if (!n) {
     render();
-    ShowStatusAction::show("No NTAG215 .bin", 1600);
+    ShowStatusAction::show("No NTAG215 dumps", 1600);
     render();
     return;
   }

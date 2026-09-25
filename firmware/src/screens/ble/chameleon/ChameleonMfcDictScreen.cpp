@@ -316,7 +316,7 @@ void ChameleonMfcDictScreen::_runAttack(const char* sourceLabel) {
     }
   }
 
-  snprintf(msg, sizeof(msg), "Done: %d keys found", _recovered);
+  snprintf(msg, sizeof(msg), "%d keys found", _recovered);
   strncpy(_runStatus, msg, sizeof(_runStatus) - 1);
   _runPct = 100;
   _runLog.addLine(msg, _recovered > 0 ? TFT_GREEN : TFT_RED);

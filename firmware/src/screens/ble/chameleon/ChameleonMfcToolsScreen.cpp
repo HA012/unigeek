@@ -127,7 +127,7 @@ void ChameleonMfcToolsScreen::_writeFromFile() { _openDumpFileBrowser(); }
 void ChameleonMfcToolsScreen::_openDumpFileBrowser(){
   _state=DUMP_FILE_PICKER; _browser.root="/unigeek/nfc/dumps"; if(!_dumpPickDir.startsWith(_browser.root))_dumpPickDir=_browser.root;
   const uint8_t n=_browser.load(this,_dumpPickDir,BrowseFileView::Mode(".bin",1024));
-  if(!n&&_dumpPickDir==_browser.root){_state=MENU;render();ShowStatusAction::show("No Classic 1K .bin",1600);render();return;}setItems(_browser.items(),n);
+  if(!n&&_dumpPickDir==_browser.root){_state=MENU;render();ShowStatusAction::show("No Classic 1K dumps",1600);render();return;}setItems(_browser.items(),n);
 }
 
 void ChameleonMfcToolsScreen::_writeFromSlot() {
@@ -325,7 +325,7 @@ void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
     const auto info = HfDumpParser::inspect(dump, len); delete[] dump;
     if (!HfDumpParser::isMifareClassic(info.type) || !info.uidValid ||
         (info.uidLen != 4 && info.uidLen != 7)) {
-      ShowStatusAction::show("Dump UID not supported", 1600);
+      ShowStatusAction::show("UID dump not supported", 1600);
       return;
     }
     memcpy(_uid,info.uid,info.uidLen);_uidLen=info.uidLen;_uidDumpFile=entry.path;_rebuildUidForm(1);

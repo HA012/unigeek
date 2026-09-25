@@ -41,7 +41,7 @@ void ChameleonMfcBackdoorScreen::_run() {
   uint8_t prev = 0;
   const bool restore = c.getMode(&prev);
   if (!c.setMode(1)) {
-    _status = "No reader mode";
+    _status = "Device not in reader mode";
     if (restore) c.setMode(prev);
     ProgressView::finish();
     _busy = false;

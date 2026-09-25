@@ -205,7 +205,7 @@ void ChameleonMfuNdefScreen::show(const uint8_t* ndef, size_t len, const uint8_t
 
   NdefParser::Result r;
   if (!ndef || !len || !NdefParser::parse(ndef, len, r)) {
-    add("NDEF", "Not found");
+    add("NDEF", "NDEF not found");
   } else {
     switch (r.kind) {
       case NdefParser::RECORD_TEXT:

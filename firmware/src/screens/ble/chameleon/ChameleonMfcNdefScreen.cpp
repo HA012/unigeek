@@ -678,7 +678,7 @@ void ChameleonMfcNdefScreen::_showResult(const uint8_t* ndef, size_t ndefLen) {
   _state = STATE_RESULT; _resetRows(); _hasNdef = false; _ndefLen = 0;
   if (_uidLen) _addRow("UID", _uidString());
   if (!ndef) {
-    _addRow("NDEF", "Not found");
+    _addRow("NDEF", "NDEF not found");
     _scrollView.setRows(_rows, _rowCount); render(); return;
   }
   if (ndefLen <= MAX_NDEF_BYTES) {
