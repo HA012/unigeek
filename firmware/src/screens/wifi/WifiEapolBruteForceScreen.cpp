@@ -111,7 +111,7 @@ void WifiEapolBruteForceScreen::_showMenu() {
 
 void WifiEapolBruteForceScreen::onInit() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage available.");
+    ShowStatusAction::show("No storage available");
     Screen.goBack();
     return;
   }
@@ -203,7 +203,7 @@ void WifiEapolBruteForceScreen::onItemSelected(uint8_t index) {
       if (!_reloadPicker()) {
         _state = STATE_MENU;
         _showMenu();
-        ShowStatusAction::show("No PCAP files found. Capture EAPOL first.");
+        ShowStatusAction::show("No EAPOL captures found");
         return;
       }
     } else if (index == 1) {
@@ -214,18 +214,18 @@ void WifiEapolBruteForceScreen::onItemSelected(uint8_t index) {
     } else if (index == 2) {
       // Start — require both selected
       if (_selectedPcap[0] == '\0') {
-        ShowStatusAction::show("Select a PCAP file first.");
+        ShowStatusAction::show("PCAP not selected");
         render();
         return;
       }
       if (_selectedWordlist[0] == '\0') {
-        ShowStatusAction::show("Select a wordlist first.");
+        ShowStatusAction::show("Wordlist not selected");
         render();
         return;
       }
       ShowStatusAction::show("Parsing PCAP...", 0);
       if (!_parsePcap(_selectedPcap)) {
-        ShowStatusAction::show("Handshake incomplete. M2 missing. Recapture needed.");
+        ShowStatusAction::show("Handshake incomplete, M2 missing");
         render();
         return;
       }
@@ -659,7 +659,7 @@ void WifiEapolBruteForceScreen::_startCrack() {
   if (!_ctx.queue || !_ctx.doneSem) {
     if (_ctx.queue)   { vQueueDelete(_ctx.queue);       _ctx.queue   = nullptr; }
     if (_ctx.doneSem) { vSemaphoreDelete(_ctx.doneSem); _ctx.doneSem = nullptr; }
-    ShowStatusAction::show("Not enough memory to start.");
+    ShowStatusAction::show("Not enough memory");
     render();
     return;
   }
@@ -676,7 +676,7 @@ void WifiEapolBruteForceScreen::_startCrack() {
     if (pOk == pdPASS) { vTaskDelete(_taskHandle); _taskHandle = nullptr; }
     vQueueDelete(_ctx.queue);       _ctx.queue   = nullptr;
     vSemaphoreDelete(_ctx.doneSem); _ctx.doneSem = nullptr;
-    ShowStatusAction::show("Failed to start crack tasks.");
+    ShowStatusAction::show("Failed");
     render();
     return;
   }
@@ -810,7 +810,7 @@ void WifiEapolBruteForceScreen::_renderDone() {
   if (_ctx.found) {
     lcd.setTextDatum(MC_DATUM);
     lcd.setTextColor(TFT_GREEN, TFT_BLACK);
-    lcd.drawString("PASSWORD FOUND!", cx, cy - 22);
+    lcd.drawString("PASSWORD FOUND", cx, cy - 22);
 
     // measure password text width and draw a pill behind it
     int pwW = lcd.textWidth(_ctx.foundPass);

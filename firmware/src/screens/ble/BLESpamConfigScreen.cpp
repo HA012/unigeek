@@ -31,8 +31,8 @@ void BLESpamConfigScreen::_rebuild()
 
   _items[n++] = {"TX Power",    _txSub.c_str()};
   _items[n++] = {"MAC Random",  _macSub.c_str()};
-  _items[n++] = {"Adv Ms",      _advSub.c_str()};
-  _items[n++] = {"Gap Ms",      _gapSub.c_str()};
+  _items[n++] = {"Adv Window",      _advSub.c_str()};
+  _items[n++] = {"Gap",      _gapSub.c_str()};
   _items[n++] = {"Custom Name", _nameSub.c_str()};
   _items[n++] = {"Start"};
   _count = n;
@@ -64,12 +64,12 @@ void BLESpamConfigScreen::onItemSelected(uint8_t index)
       BleSpamUtil::macRand = (BleSpamUtil::MacRand)((BleSpamUtil::macRand + 1) % 8);
       break;
     case 2: {  // Adv Ms
-      int v = InputNumberAction::popup("Adv Ms", 1, 1000, (int)BleSpamUtil::advMs);
+      int v = InputNumberAction::popup("Adv Window", 1, 1000, (int)BleSpamUtil::advMs);
       if (!InputNumberAction::wasCancelled() && v >= 1) BleSpamUtil::advMs = (uint32_t)v;
       break;
     }
     case 3: {  // Gap Ms
-      int v = InputNumberAction::popup("Gap Ms", 0, 1000, (int)BleSpamUtil::gapMs);
+      int v = InputNumberAction::popup("Gap", 0, 1000, (int)BleSpamUtil::gapMs);
       if (!InputNumberAction::wasCancelled() && v >= 0) BleSpamUtil::gapMs = (uint32_t)v;
       break;
     }

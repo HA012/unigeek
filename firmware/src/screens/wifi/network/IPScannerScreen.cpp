@@ -86,7 +86,7 @@ void IPScannerScreen::_showConfiguration(uint8_t selectedIndex) {
 
 void IPScannerScreen::_scanIP() {
   if (WiFi.localIP() == IPAddress(0, 0, 0, 0)) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 

@@ -25,13 +25,13 @@ WifiKarmaCaptiveScreen::~WifiKarmaCaptiveScreen()
 void WifiKarmaCaptiveScreen::_onVisit(void* ctx)
 {
   auto* self = static_cast<WifiKarmaCaptiveScreen*>(ctx);
-  self->_log.addLine("[+] Portal visited");
+  self->_log.addLine("Portal visited");
 }
 
 void WifiKarmaCaptiveScreen::_onPost(const String& data, void* ctx)
 {
   auto* self = static_cast<WifiKarmaCaptiveScreen*>(ctx);
-  self->_log.addLine("[+] Credential captured!", TFT_GREEN);
+  self->_log.addLine("Credential captured", TFT_GREEN);
 
   int nc = Achievement.inc("wifi_karma_captive_captured");
   if (nc == 1)  Achievement.unlock("wifi_karma_captive_captured");
@@ -75,7 +75,7 @@ void WifiKarmaCaptiveScreen::onItemSelected(uint8_t index)
       uint8_t n = _browser.load(this, CaptivePortalServer::PORTALS_DIR,
                                 BrowseFileView::Mode::DIRECTORY);
       if (n == 0) {
-        ShowStatusAction::show("No portals found. WiFi > Network > Download > Firmware Sample Files");
+        ShowStatusAction::show("No portals found");
         _state = STATE_MENU;
         render();
         break;
@@ -131,13 +131,13 @@ void WifiKarmaCaptiveScreen::onUpdate()
       _clientConnected = true;
       _inputStartTime = now;
       char buf[60];
-      snprintf(buf, sizeof(buf), "[+] Client connected to: %s", _currentSsid);
+      snprintf(buf, sizeof(buf), "Client connected: %s", _currentSsid);
       _log.addLine(buf, TFT_GREEN);
     }
     if (!_clientConnected) {
       if (now - _apStartTime > (unsigned long)_waitConnect * 1000) {
         char buf[60];
-        snprintf(buf, sizeof(buf), "[-] Timeout: %s", _currentSsid);
+        snprintf(buf, sizeof(buf), "Connection timeout: %s", _currentSsid);
         _log.addLine(buf);
         _blacklistSSID(_currentSsid);
         _teardownAP();
@@ -145,7 +145,7 @@ void WifiKarmaCaptiveScreen::onUpdate()
     } else {
       if (now - _inputStartTime > (unsigned long)_waitInput * 1000) {
         char buf[60];
-        snprintf(buf, sizeof(buf), "[-] Input timeout: %s", _currentSsid);
+        snprintf(buf, sizeof(buf), "Input timeout: %s", _currentSsid);
         _log.addLine(buf);
         _blacklistSSID(_currentSsid);
         _teardownAP();
@@ -256,7 +256,7 @@ void WifiKarmaCaptiveScreen::_onProbe(const char* ssid)
   _capturedCount++;
 
   char buf[60];
-  snprintf(buf, sizeof(buf), "[*] Probe: %s", ssid);
+  snprintf(buf, sizeof(buf), "Probe: %s", ssid);
   _log.addLine(buf);
 
   if (_saveList) _saveSSIDToFile(ssid);
@@ -274,7 +274,7 @@ void WifiKarmaCaptiveScreen::_startSniffing()
   esp_wifi_set_promiscuous_rx_cb(&_promiscuousCb);
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
-  _log.addLine("[*] Sniffing probes...");
+  _log.addLine("Sniffing probes...");
 }
 
 void WifiKarmaCaptiveScreen::_stopSniffing()
@@ -302,7 +302,7 @@ void WifiKarmaCaptiveScreen::_deployAP(const char* ssid, unsigned long now)
   _clientConnected = false;
 
   char buf[60];
-  snprintf(buf, sizeof(buf), "[>] AP: %.20s (%ds)", ssid, _waitConnect);
+  snprintf(buf, sizeof(buf), "AP: %.20s (%d s)", ssid, _waitConnect);
   _log.addLine(buf);
 }
 
@@ -322,11 +322,11 @@ void WifiKarmaCaptiveScreen::_teardownAP()
 void WifiKarmaCaptiveScreen::_startAttack()
 {
   if (_portal.portalFolder().isEmpty()) {
-    ShowStatusAction::show("Select a portal first!");
+    ShowStatusAction::show("Portal not selected");
     return;
   }
   if (!StorageUtil::hasSpace()) {
-    ShowStatusAction::show("Storage full! (<20KB free)");
+    ShowStatusAction::show("Storage full (<20 KB free)");
     return;
   }
 
@@ -343,7 +343,7 @@ void WifiKarmaCaptiveScreen::_startAttack()
   _portal.setCallbacks(_onVisit, _onPost, this);
   _portal.loadPortalHtml();
   if (_portal.portalHtml().isEmpty()) {
-    ShowStatusAction::show("Portal HTML not found!");
+    ShowStatusAction::show("Portal not found");
     _state = STATE_MENU;
     return;
   }
@@ -351,7 +351,7 @@ void WifiKarmaCaptiveScreen::_startAttack()
   int nk = Achievement.inc("wifi_karma_captive_started");
   if (nk == 1) Achievement.unlock("wifi_karma_captive_started");
 
-  _log.addLine("[*] Karma Captive started");
+  _log.addLine("Started");
   _startSniffing();
   _drawLog();
 }
@@ -376,7 +376,7 @@ void WifiKarmaCaptiveScreen::_saveSSIDToFile(const char* ssid)
 {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) return;
   if (!StorageUtil::hasSpace()) {
-    _log.addLine("[!] Storage full, skip save", TFT_RED);
+    _log.addLine("Storage full, skipping save", TFT_RED);
     return;
   }
 

@@ -99,7 +99,7 @@ void DownloadScreen::_showMenu() {
 
 void DownloadScreen::_downloadWebPage() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -163,7 +163,7 @@ void DownloadScreen::_downloadWebPage() {
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
       http.end();
-      ShowStatusAction::show(("Download failed (" + String(code) + ")").c_str());
+      ShowStatusAction::show(("Failed (" + String(code) + ")").c_str());
       return;
     }
 
@@ -182,10 +182,10 @@ void DownloadScreen::_downloadWebPage() {
   String ver = sha.length() > 0 ? sha : "installed";
   Uni.Storage->writeFile((base + "/version.txt").c_str(), ver.c_str());
 
-  ProgressView::progress("Done!", 100);
+  ProgressView::progress("Installed", 100);
   String msg = sha.length() >= 7
-    ? ("Done! v" + sha.substring(0, 7))
-    : "Done!";
+    ? ("Installed: v" + sha.substring(0, 7))
+    : "Installed";
   ShowStatusAction::show(msg.c_str(), 1500);
   _showMenu();
 }
@@ -219,7 +219,7 @@ bool DownloadScreen::_downloadFile(WiFiClientSecure& client, const char* url, co
 
 void DownloadScreen::_downloadSampleData() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -280,7 +280,7 @@ void DownloadScreen::_downloadSampleData() {
     idx++;
     uint8_t pct = (uint8_t)((idx * 100) / fileCount);
     char label[32];
-    snprintf(label, sizeof(label), "[%02d/%02d] Downloading...", idx, fileCount);
+    snprintf(label, sizeof(label), "Downloading (%02d/%02d)...", idx, fileCount);
     ProgressView::progress(label, pct);
 
     String url  = String(REPO_BASE) + "/" + line;
@@ -316,7 +316,7 @@ void DownloadScreen::_downloadSampleData() {
 
 void DownloadScreen::_showIRCategories() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -432,7 +432,7 @@ void DownloadScreen::_downloadIRCategory(uint8_t index) {
     idx++;
     uint8_t pct = (uint8_t)((idx * 100) / fileCount);
     char label[32];
-    snprintf(label, sizeof(label), "[%d/%d] Downloading...", idx, fileCount);
+    snprintf(label, sizeof(label), "Downloading (%d/%d)...", idx, fileCount);
     ProgressView::progress(label, pct);
 
     // Source: Flipper-IRDB repo, path as-is (e.g. "TVs/Samsung/Samsung_TV.ir")
@@ -500,7 +500,7 @@ static String badusbCategoryName(const String& folder) {
 
 void DownloadScreen::_showBadUSBOS() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -600,7 +600,7 @@ void DownloadScreen::_showBadUSBCategoriesForOS(uint8_t osIndex) {
   }
 
   if (_badusbCount == 0) {
-    ShowStatusAction::show("No categories");
+    ShowStatusAction::show("No categories found");
     render();
     return;
   }
@@ -674,7 +674,7 @@ void DownloadScreen::_downloadBadUSBCategory(uint8_t index) {
     idx++;
     uint8_t pct = (uint8_t)((idx * 100) / fileCount);
     char label[32];
-    snprintf(label, sizeof(label), "[%d/%d] Downloading...", idx, fileCount);
+    snprintf(label, sizeof(label), "Downloading (%d/%d)...", idx, fileCount);
     ProgressView::progress(label, pct);
 
     // line = "windows/recon/windows_sysinfo.txt" — full path from repo root
@@ -714,7 +714,7 @@ void DownloadScreen::_downloadBadUSBCategory(uint8_t index) {
 
 void DownloadScreen::_showLuaRoot() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
   if (!_loadLuaMap()) return;
@@ -738,7 +738,7 @@ bool DownloadScreen::_loadLuaMap() {
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     http.end();
-    ShowStatusAction::show(("map.txt failed (" + String(code) + ")").c_str());
+    ShowStatusAction::show(("Failed (" + String(code) + ")").c_str());
     render();
     return false;
   }
@@ -818,7 +818,7 @@ bool DownloadScreen::_populateLuaLevel(const String& path) {
   }
 
   if (_luaCount == 0) {
-    ShowStatusAction::show("Empty folder");
+    ShowStatusAction::show("Folder is empty");
     render();
     return false;
   }
@@ -884,7 +884,7 @@ void DownloadScreen::_downloadLuaScript(uint8_t index) {
 
   bool ok = _downloadFile(client, url.c_str(), dest.c_str());
   if (!ok) {
-    ShowStatusAction::show(("Failed: " + name).c_str(), 1800);
+    ShowStatusAction::show("Failed", 1800);
     render();
     return;
   }
@@ -892,7 +892,7 @@ void DownloadScreen::_downloadLuaScript(uint8_t index) {
   int n = Achievement.inc("wifi_download_lua");
   if (n == 1) Achievement.unlock("wifi_download_lua");
 
-  ShowStatusAction::show(("Saved: " + name).c_str(), 1500);
+  ShowStatusAction::show("Saved", 1500);
   // Keep the cursor on the just-downloaded row so the user can move to the
   // next script without re-finding their place.
   render();

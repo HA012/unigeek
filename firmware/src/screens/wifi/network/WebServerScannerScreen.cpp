@@ -171,7 +171,7 @@ void WebServerScannerScreen::_showConfig(uint8_t selectedIndex)
 void WebServerScannerScreen::_scan()
 {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -222,7 +222,7 @@ void WebServerScannerScreen::_scan()
       ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
-        ShowStatusAction::show("Could not resolve target", 900);
+        ShowStatusAction::show("Failed to resolve target", 900);
         done++;
         continue;
       }

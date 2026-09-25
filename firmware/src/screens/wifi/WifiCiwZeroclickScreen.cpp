@@ -264,7 +264,7 @@ void WifiCiwZeroclickScreen::_startBroadcast()
 {
   _loadPayloads();
   if (_active.empty()) {
-    ShowStatusAction::show("No payloads");
+    ShowStatusAction::show("No payloads found");
     render();
     return;
   }
@@ -308,7 +308,7 @@ void WifiCiwZeroclickScreen::_stopBroadcast()
 void WifiCiwZeroclickScreen::_showDevices()
 {
   if (_deviceCount == 0) {
-    ShowStatusAction::show("No devices");
+    ShowStatusAction::show("No devices found");
     render();
     return;
   }

@@ -110,7 +110,7 @@ void WigleScreen::_editToken() {
   WigleUtil::saveToken(Uni.Storage, token);
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
   _menuItems[0] = {"Wigle Token", _tokenSub.c_str()};
-  ShowStatusAction::show("Token saved");
+  ShowStatusAction::show("Saved");
 }
 
 void WigleScreen::_showStats() {
@@ -129,7 +129,7 @@ void WigleScreen::_showUploadMenu() {
   }
   String token = WigleUtil::readToken(Uni.Storage);
   if (token.length() == 0) {
-    ShowStatusAction::show("Set Wigle token first");
+    ShowStatusAction::show("Token not set");
     return;
   }
 

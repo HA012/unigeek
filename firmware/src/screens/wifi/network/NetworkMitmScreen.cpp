@@ -21,7 +21,7 @@ void NetworkMitmScreen::onInit() {
 
 void NetworkMitmScreen::onBack() {
   if (_state == STATE_RUNNING) {
-    _stop("Stopped by user");
+    _stop("Stopped");
     _showMenu();
     return;
   }
@@ -53,7 +53,7 @@ void NetworkMitmScreen::onItemSelected(uint8_t index) {
     case 1:
       if (!_snifferEnabled &&
           (!Uni.StorageSD || !Uni.StorageSD->isAvailable())) {
-        ShowStatusAction::show("SD card required!", 1500);
+        ShowStatusAction::show("SD card not available", 1500);
         render();
         return;
       }
@@ -71,11 +71,11 @@ void NetworkMitmScreen::onItemSelected(uint8_t index) {
 
 void NetworkMitmScreen::_start() {
   if (!_arpEnabled && !_snifferEnabled) {
-    ShowStatusAction::show("Enable at least one option!");
+    ShowStatusAction::show("No option enabled");
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to a network!", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     return;
   }
 
@@ -89,7 +89,7 @@ void NetworkMitmScreen::_start() {
 
   char buf[60];
   char mac[20];
-  snprintf(buf, sizeof(buf), "[*] %s  gw %s",
+  snprintf(buf, sizeof(buf), "IP: %s, gateway: %s",
            WiFi.localIP().toString().c_str(),
            WiFi.gatewayIP().toString().c_str());
   _log.addLine(buf);
@@ -99,14 +99,14 @@ void NetworkMitmScreen::_start() {
   uint8_t self[6];
   WiFi.macAddress(self);
   _fmtMac(self, mac, sizeof(mac));
-  snprintf(buf, sizeof(buf), "[*] Us  %s", mac);
+  snprintf(buf, sizeof(buf), "MAC: %s", mac);
   _log.addLine(buf, TFT_YELLOW);
 
   // Baseline heap. Serving portal files is the heaviest allocator in the whole
   // attack, so knowing what we started with tells a leak apart from simply not
   // having had the room to begin with.
   const uint32_t heap0 = ESP.getFreeHeap() / 1024;
-  snprintf(buf, sizeof(buf), "[*] Heap %luk free", (unsigned long)heap0);
+  snprintf(buf, sizeof(buf), "Heap: %lu KB free", (unsigned long)heap0);
   _log.addLine(buf, heap0 < 40 ? TFT_RED : TFT_DARKGREY);
 
   // 1. Capture file. Link type depends on where the frames come from: the relay
@@ -114,21 +114,21 @@ void NetworkMitmScreen::_start() {
   const bool relayMode = _arpEnabled;
   if (_snifferEnabled) {
     if (!Uni.StorageSD || !Uni.StorageSD->isAvailable()) {
-      _log.addLine("[!] No SD card", TFT_RED);
+      _log.addLine("No SD card", TFT_RED);
       _snifferEnabled = false;
     } else if (Uni.StorageSD->freeBytes() < kMinFree) {
-      _log.addLine("[!] SD card full", TFT_RED);
+      _log.addLine("SD card full", TFT_RED);
       _snifferEnabled = false;
     } else {
       const uint32_t linktype = relayMode ? PcapWriter::LINKTYPE_ETHERNET
                                           : PcapWriter::LINKTYPE_IEEE802_11;
       if (_pcap.begin(Uni.StorageSD, SAVE_DIR, WiFi.SSID(), linktype, MitmRelay::SNAP_LEN)) {
         _pcapUp = true;
-        snprintf(buf, sizeof(buf), "[+] %s", _pcap.filename().c_str());
+        snprintf(buf, sizeof(buf), "PCAP: %s", _pcap.filename().c_str());
         _log.addLine(buf, TFT_GREEN);
         _log.addLine(relayMode ? "    Ethernet (decrypted)" : "    802.11 (encrypted)");
       } else {
-        snprintf(buf, sizeof(buf), "[!] %s", _pcap.error() ? _pcap.error() : "PCAP failed");
+        snprintf(buf, sizeof(buf), "%s", _pcap.error() ? _pcap.error() : "Failed to create PCAP");
         _log.addLine(buf, TFT_RED);
         _snifferEnabled = false;
       }
@@ -139,11 +139,11 @@ void NetworkMitmScreen::_start() {
   if (_arpEnabled) {
     if (_arp.begin()) {
       _arpUp = true;
-      snprintf(buf, sizeof(buf), "[*] Sweeping %lu hosts...",
+      snprintf(buf, sizeof(buf), "Sweeping %lu hosts...",
                (unsigned long)_arp.sweepTotal());
       _log.addLine(buf);
     } else {
-      _log.addLine("[!] ARP spoof init failed", TFT_RED);
+      _log.addLine("Failed to start ARP spoofing", TFT_RED);
       _arpEnabled = false;
     }
   }
@@ -156,9 +156,9 @@ void NetworkMitmScreen::_start() {
 
     if (_relay.begin(relayMode ? MitmRelay::MODE_RELAY : MitmRelay::MODE_MONITOR)) {
       _relayUp = true;
-      _log.addLine(relayMode ? "[+] Relay active" : "[+] Monitor active", TFT_GREEN);
+      _log.addLine(relayMode ? "Relay active" : "Monitor active", TFT_GREEN);
     } else {
-      snprintf(buf, sizeof(buf), "[!] Relay: %s", _relay.error());
+      snprintf(buf, sizeof(buf), "Relay: %s", _relay.error());
       _log.addLine(buf, TFT_RED);
       _stop(_relay.error());
       _showMenu();
@@ -170,7 +170,7 @@ void NetworkMitmScreen::_start() {
     // Everything the user picked failed to come up. The per-component lines
     // above already say why; repeat the first cause in the toast so it is
     // visible without scrolling the log.
-    _log.addLine("[!] Nothing started", TFT_RED);
+    _log.addLine("Nothing started", TFT_RED);
     _stop(_pcap.error() ? _pcap.error() : "Nothing started");
     _showMenu();
     return;
@@ -233,7 +233,7 @@ void NetworkMitmScreen::onUpdate() {
     _gwLogged = true;
     char mac[20], line[60];
     _fmtMac(_arp.gatewayMac(), mac, sizeof(mac));
-    snprintf(line, sizeof(line), "[*] GW  %s", mac);
+    snprintf(line, sizeof(line), "Gateway: %s", mac);
     _log.addLine(line, TFT_CYAN);
   }
 
@@ -253,11 +253,11 @@ void NetworkMitmScreen::onUpdate() {
         _phase      = PHASE_POISON;
         _lastRescan = now;
         char buf[60];
-        snprintf(buf, sizeof(buf), "[+] %d hosts, gw %s",
+        snprintf(buf, sizeof(buf), "%d hosts, gateway: %s",
                  _arp.targetCount(), _arp.gatewayKnown() ? "ok" : "UNKNOWN");
         _log.addLine(buf, _arp.gatewayKnown() ? TFT_GREEN : TFT_RED);
         if (!_arp.gatewayKnown())
-          _log.addLine("[!] No gateway MAC - not poisoning", TFT_RED);
+          _log.addLine("Gateway MAC not found, skipping poisoning", TFT_RED);
       }
     }
 
@@ -288,14 +288,14 @@ void NetworkMitmScreen::onUpdate() {
       if (_arp.probeLost() != _lastProbeLost) {
         _lastProbeLost = _arp.probeLost();
         char buf[52];
-        snprintf(buf, sizeof(buf), "[!] %lu gw claim lost - TX starved",
+        snprintf(buf, sizeof(buf), "%lu gateway claims lost, TX starved",
                  (unsigned long)_lastProbeLost);
         _log.addLine(buf, TFT_RED);
       }
       if (_arp.probeDropped() != _lastProbeDropped) {
         _lastProbeDropped = _arp.probeDropped();
         char buf[52];
-        snprintf(buf, sizeof(buf), "[!] %lu gw claim dropped - queue full",
+        snprintf(buf, sizeof(buf), "%lu gateway claims dropped, queue full",
                  (unsigned long)_lastProbeDropped);
         _log.addLine(buf, TFT_RED);
       }
@@ -303,14 +303,14 @@ void NetworkMitmScreen::onUpdate() {
       if (_arp.targetCount() != _lastTargets) {
         _lastTargets = _arp.targetCount();
         char buf[48];
-        snprintf(buf, sizeof(buf), "[+] Poisoning %d hosts", _lastTargets);
+        snprintf(buf, sizeof(buf), "Poisoning %d hosts", _lastTargets);
         _log.addLine(buf, TFT_GREEN);
       }
     }
   }
 
   if (_relayUp && _relay.storageFailed()) {
-    _log.addLine("[!] SD write failed", TFT_RED);
+    _log.addLine("Failed to write to SD", TFT_RED);
     _stop("SD error");
     _showMenu();
     return;
@@ -370,7 +370,7 @@ void NetworkMitmScreen::onUpdate() {
   if (Uni.Nav->wasPressed()) {
     const auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
-      _stop("Stopped by user");
+      _stop("Stopped");
       _showMenu();
     }
   }

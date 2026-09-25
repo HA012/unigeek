@@ -24,7 +24,7 @@ CastBombScreen::CastBombScreen() {
 
 void CastBombScreen::onInit() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     Screen.goBack();
     return;
   }
@@ -91,7 +91,7 @@ void CastBombScreen::_discover() {
   ProgressView::init();
   _devCount = CastBombUtil::discover(
     _devices, CastBombUtil::MAX_DEVICES,
-    [](uint8_t pct) { ProgressView::progress("Searching cast targets...", pct); }
+    [](uint8_t pct) { ProgressView::progress("Searching for cast devices...", pct); }
   );
   ProgressView::finish();
 
@@ -124,7 +124,7 @@ void CastBombScreen::_cast(uint8_t index) {
 
   const char* vid = _currentVideoId();
   if (!vid || !*vid) {
-    ShowStatusAction::show("No video selected", 1500);
+    ShowStatusAction::show("Video not selected", 1500);
     _showDevices();
     return;
   }
@@ -134,8 +134,8 @@ void CastBombScreen::_cast(uint8_t index) {
   auto castMsg = [](CastBombUtil::CastResult r) -> const char* {
     switch (r) {
       case CastBombUtil::CAST_OK:      return "Cast launched";
-      case CastBombUtil::CAST_NO_DIAL: return "No DIAL support";
-      default:                         return "Cast failed";
+      case CastBombUtil::CAST_NO_DIAL: return "DIAL not supported";
+      default:                         return "Failed";
     }
   };
 

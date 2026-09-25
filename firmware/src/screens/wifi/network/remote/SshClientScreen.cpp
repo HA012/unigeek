@@ -89,7 +89,7 @@ void SshClientScreen::onUpdate() {
     }
 
     if (_workerState == WORKER_FAILED) {
-      String error = "SSH connection failed";
+      String error = "Failed";
       if (_ioMutex && xSemaphoreTake(_ioMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_workerError.length() > 0) error = _workerError;
         xSemaphoreGive(_ioMutex);
@@ -375,7 +375,7 @@ void SshClientScreen::_selectAuth(uint8_t index) {
 
 void SshClientScreen::_openKeyPicker() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -418,28 +418,28 @@ void SshClientScreen::_selectKey(uint8_t index) {
 
 void SshClientScreen::_connect() {
   if (_host.length() == 0) {
-    ShowStatusAction::show("Host required", 1200);
+    ShowStatusAction::show("Host not set", 1200);
     render();
     return;
   }
   if (_username.length() == 0) {
-    ShowStatusAction::show("Username required", 1200);
+    ShowStatusAction::show("Username not set", 1200);
     render();
     return;
   }
   if (_port < 1 || _port > 65535) {
-    ShowStatusAction::show("Port required", 1200);
+    ShowStatusAction::show("Port not set", 1200);
     render();
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     render();
     return;
   }
 
   if (_authMode == AUTH_NONE) {
-    ShowStatusAction::show("Auth method required", 1500);
+    ShowStatusAction::show("Authentication method not set", 1500);
     render();
     return;
   }
@@ -455,18 +455,18 @@ void SshClientScreen::_connect() {
     }
   } else {
     if (_keyPath.length() == 0) {
-      ShowStatusAction::show("Key file required", 1500);
+      ShowStatusAction::show("Key file not selected", 1500);
       render();
       return;
     }
     if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-      ShowStatusAction::show("Storage not available", 1500);
+      ShowStatusAction::show("No storage available", 1500);
       render();
       return;
     }
     _keyData = Uni.Storage->readFile(_keyPath.c_str());
     if (_keyData.length() == 0) {
-      ShowStatusAction::show("Key read failed", 1500);
+      ShowStatusAction::show("Failed to read key", 1500);
       render();
       return;
     }
@@ -474,14 +474,14 @@ void SshClientScreen::_connect() {
 
   if (!_ioMutex) _ioMutex = xSemaphoreCreateMutex();
   if (!_ioMutex) {
-    ShowStatusAction::show("SSH mutex failed", 1500);
+    ShowStatusAction::show("Failed to start", 1500);
     return;
   }
 
   if (!_startSshWorker()) {
     _password = "";
     _keyData = "";
-    ShowStatusAction::show("SSH task failed", 1500);
+    ShowStatusAction::show("Failed to start", 1500);
     render();
     return;
   }
@@ -551,21 +551,21 @@ void SshClientScreen::_sshWorker() {
 
   session = ssh_new();
   if (!session) {
-    _setWorkerError("SSH session failed");
+    _setWorkerError("Failed to create SSH session");
     goto cleanup;
   }
 
   if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK ||
       ssh_options_set(session, SSH_OPTIONS_USER, user.c_str()) != SSH_OK ||
       ssh_options_set(session, SSH_OPTIONS_PORT, &port) != SSH_OK) {
-    _setWorkerError("SSH options failed");
+    _setWorkerError("Failed to configure SSH session");
     goto cleanup;
   }
 
   if (_stopRequested) goto cleanup;
 
   if (ssh_connect(session) != SSH_OK) {
-    _setWorkerError("SSH connect failed");
+    _setWorkerError("Failed to connect");
     goto cleanup;
   }
 
@@ -579,7 +579,7 @@ void SshClientScreen::_sshWorker() {
 
     if (ssh_get_server_publickey(session, &serverKey) != SSH_OK || !serverKey) {
       if (serverKey) ssh_key_free(serverKey);
-      _setWorkerError("SSH host key failed");
+      _setWorkerError("Failed to get host key");
       goto cleanup;
     }
 
@@ -589,7 +589,7 @@ void SshClientScreen::_sshWorker() {
 
     if (rc != SSH_OK || !hash || hashLen == 0) {
       if (hash) ssh_clean_pubkey_hash(&hash);
-      _setWorkerError("SSH fingerprint failed");
+      _setWorkerError("Failed to get fingerprint");
       goto cleanup;
     }
 
@@ -597,7 +597,7 @@ void SshClientScreen::_sshWorker() {
     ssh_clean_pubkey_hash(&hash);
 
     if (!hex) {
-      _setWorkerError("SSH fingerprint failed");
+      _setWorkerError("Failed to get fingerprint");
       goto cleanup;
     }
 
@@ -627,7 +627,7 @@ void SshClientScreen::_sshWorker() {
 
   if (authMode == AUTH_PASSWORD) {
     if (ssh_userauth_password(session, nullptr, password.c_str()) != SSH_AUTH_SUCCESS) {
-      _setWorkerError("SSH authentication failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
   } else {
@@ -638,7 +638,7 @@ void SshClientScreen::_sshWorker() {
       keyData.c_str(), nullptr, nullptr, nullptr, &privateKey);
     if (rc != SSH_OK || !privateKey) {
       if (privateKey) ssh_key_free(privateKey);
-      _setWorkerError("SSH key import failed");
+      _setWorkerError("Failed to import key");
       goto cleanup;
     }
 
@@ -646,7 +646,7 @@ void SshClientScreen::_sshWorker() {
     if (rc != SSH_OK || !publicKey) {
       if (publicKey) ssh_key_free(publicKey);
       ssh_key_free(privateKey);
-      _setWorkerError("SSH public key failed");
+      _setWorkerError("Failed to get public key");
       goto cleanup;
     }
 
@@ -654,7 +654,7 @@ void SshClientScreen::_sshWorker() {
     if (rc != SSH_AUTH_SUCCESS) {
       ssh_key_free(publicKey);
       ssh_key_free(privateKey);
-      _setWorkerError("SSH key not accepted");
+      _setWorkerError("Key not accepted");
       goto cleanup;
     }
 
@@ -663,7 +663,7 @@ void SshClientScreen::_sshWorker() {
     ssh_key_free(privateKey);
 
     if (rc != SSH_AUTH_SUCCESS) {
-      _setWorkerError("SSH key auth failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
   }
@@ -673,17 +673,17 @@ void SshClientScreen::_sshWorker() {
 
   channel = ssh_channel_new(session);
   if (!channel || ssh_channel_open_session(channel) != SSH_OK) {
-    _setWorkerError("SSH channel failed");
+    _setWorkerError("Failed to open channel");
     goto cleanup;
   }
 
   if (ssh_channel_request_pty_size(channel, "vt100", cols, rows) != SSH_OK) {
-    _setWorkerError("SSH PTY failed");
+    _setWorkerError("Failed to request PTY");
     goto cleanup;
   }
 
   if (ssh_channel_request_shell(channel) != SSH_OK) {
-    _setWorkerError("SSH shell failed");
+    _setWorkerError("Failed to start shell");
     goto cleanup;
   }
 
@@ -713,7 +713,7 @@ void SshClientScreen::_sshWorker() {
       while (sent < (int)tx.length() && !_stopRequested) {
         int n = ssh_channel_write(channel, tx.c_str() + sent, tx.length() - sent);
         if (n == SSH_ERROR) {
-          _setWorkerError("SSH write failed");
+          _setWorkerError("Failed to write");
           goto cleanup;
         }
 
@@ -725,7 +725,7 @@ void SshClientScreen::_sshWorker() {
         }
 
         if (millis() - lastProgress >= WRITE_STALL_TIMEOUT_MS) {
-          _setWorkerError("SSH write timed out");
+          _setWorkerError("Write timeout");
           goto cleanup;
         }
         vTaskDelay(pdMS_TO_TICKS(2));
@@ -738,7 +738,7 @@ void SshClientScreen::_sshWorker() {
         int room = min<int>(sizeof(buf), MAX_RX_PER_WORKER_LOOP - rxThisLoop);
         int n = ssh_channel_read_nonblocking(channel, buf, room, stream);
         if (n == SSH_ERROR) {
-          _setWorkerError("SSH read failed");
+          _setWorkerError("Failed to read");
           goto cleanup;
         }
         if (n <= 0) break;
@@ -1101,7 +1101,7 @@ void SshClientScreen::_renderConnecting() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
 
-  String msg = "Connecting to " + _host + ":" + String(_port) + "...";
+  String msg = "Connecting...";
   lcd.drawString(msg.c_str(), x + w / 2, y + h / 2);
   lcd.setTextDatum(TL_DATUM);
 }

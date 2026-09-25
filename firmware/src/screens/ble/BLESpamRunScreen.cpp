@@ -71,7 +71,7 @@ void BLESpamRunScreen::onRender()
   sp.setTextDatum(TL_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
   char line[32];
-  snprintf(line, sizeof(line), "[%c] Spamming  pkts:%lu",
+  snprintf(line, sizeof(line), "[%c] Spamming  Packets: %lu",
            _spinner[_spinIdx], (unsigned long)_spam.packets());
   sp.drawString(line, 2, 0, 1);
   sp.pushSprite(bx + 4, by + 4 + bh / 6 * 3);

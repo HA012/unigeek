@@ -73,7 +73,6 @@ void WhisperPairScreen::onItemSelected(uint8_t index)
   _state       = STATE_TESTING;
   _testPending = true;
   _log.clear();
-  _log.addLine("Device:");
   _log.addLine(_devSub[index].c_str());
   render();
 }
@@ -247,7 +246,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   }
 
   if (!hasKey) {
-    _log.addLine("Key: none");
+    _log.addLine("Key: None");
     render();
   }
 
@@ -298,7 +297,7 @@ bool WhisperPairScreen::_doKbpTest(NimBLEAdvertisedDevice dev)
   }
 
   bool vulnerable = s_notifReceived;
-  _log.addLine(vulnerable ? "Notif: YES" : "Notif: NO");
+  _log.addLine(vulnerable ? "Notification: Yes" : "Notification: No");
   render();
 
   pClient->disconnect();

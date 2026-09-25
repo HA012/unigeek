@@ -34,7 +34,7 @@ void ResponderScreen::_statusCb(Sprite& sp, int barY, int width, void* userData)
 void ResponderScreen::onInit() {
   _log.clear();
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Connect to WiFi first.");
+    ShowStatusAction::show("Not connected");
     Screen.goBack();
     return;
   }

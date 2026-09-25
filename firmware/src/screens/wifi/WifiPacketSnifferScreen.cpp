@@ -339,7 +339,7 @@ void WifiPacketSnifferScreen::_editFilename() {
 bool WifiPacketSnifferScreen::_beginCapture() {
   if (!_saveCapture) return true;
   if (!Uni.Storage) {
-    ShowStatusAction::show("Storage unavailable", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     return false;
   }
   if (_filename[0] == '\0') _makeDefaultFilename();
@@ -359,21 +359,21 @@ bool WifiPacketSnifferScreen::_beginCapture() {
       if (!Uni.Storage->exists(_capturePath)) { found = true; break; }
     }
     if (!found) {
-      ShowStatusAction::show("Filename unavailable", 1500);
+      ShowStatusAction::show("Filename not available", 1500);
       return false;
     }
   }
 
   _captureFile = Uni.Storage->open(_capturePath, FILE_WRITE);
   if (!_captureFile) {
-    ShowStatusAction::show("Capture open failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
   SnifferPcapGlobalHdr hdr;
   if (_captureFile.write(reinterpret_cast<const uint8_t*>(&hdr), sizeof(hdr)) != sizeof(hdr)) {
     _captureFile.close();
-    ShowStatusAction::show("Capture write failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return false;
   }
 
@@ -435,7 +435,7 @@ void WifiPacketSnifferScreen::_flushCapture() {
       _captureActive = false;
       portEXIT_CRITICAL(&g_snifferMux);
       _captureFile.close();
-      ShowStatusAction::show("Capture write failed", 1500);
+      ShowStatusAction::show("Failed", 1500);
       return;
     }
 

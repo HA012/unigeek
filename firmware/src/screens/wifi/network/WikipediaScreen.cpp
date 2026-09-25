@@ -257,7 +257,7 @@ void WikipediaScreen::_chooseLanguage() {
 // ── search (online) ────────────────────────────────────
 
 void WikipediaScreen::_doSearch() {
-  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("WiFi not connected"); return; }
+  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); return; }
 
   String q = InputTextAction::popup("Search Wikipedia");
   if (InputTextAction::wasCancelled() || q.length() == 0) { render(); return; }
@@ -268,7 +268,7 @@ void WikipediaScreen::_doSearch() {
 
 void WikipediaScreen::_runSearch(int offset) {
   if (offset < 0) offset = 0;
-  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("WiFi not connected"); render(); return; }
+  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); render(); return; }
 
   ShowStatusAction::show("Searching...", 0);
   String url = "https://" + _langCode() + ".wikipedia.org/w/api.php"
@@ -277,7 +277,7 @@ void WikipediaScreen::_runSearch(int offset) {
                "&sroffset=" + String(offset) +
                "&srsearch=" + _urlEncode(_searchQuery);
   String body;
-  if (!_httpGet(url, body)) { ShowStatusAction::show("Search failed"); render(); return; }
+  if (!_httpGet(url, body)) { ShowStatusAction::show("Failed"); render(); return; }
 
   _resultCount = 0;
   int from = 0;
@@ -323,7 +323,7 @@ void WikipediaScreen::_openResultByIdx(uint8_t dataIndex) {
 // ── random ─────────────────────────────────────────────
 
 void WikipediaScreen::_showRandom() {
-  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("WiFi not connected"); return; }
+  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); return; }
 
   ShowStatusAction::show("Random article...", 0);
   String lang = _langCode();
@@ -333,7 +333,7 @@ void WikipediaScreen::_showRandom() {
   if (!_httpGet(url, body)) { ShowStatusAction::show("Failed"); return; }
 
   int idx = body.indexOf("\"title\":\"");
-  if (idx < 0) { ShowStatusAction::show("No article"); return; }
+  if (idx < 0) { ShowStatusAction::show("Article not selected"); return; }
   int start = idx + 9;
   String raw = _jsonUnescape(body.substring(start, _strEnd(body, start)));
 
@@ -347,11 +347,11 @@ void WikipediaScreen::_showRandom() {
 // ── on this day ────────────────────────────────────────
 
 void WikipediaScreen::_showOnThisDay() {
-  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("WiFi not connected"); return; }
+  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); return; }
 
   struct tm tmv = {};
   if (!getLocalTime(&tmv, 0) || tmv.tm_year + 1900 < 2023) {
-    ShowStatusAction::show("Set time first (World Clock)", 1800);
+    ShowStatusAction::show("Time not set", 1800);
     return;
   }
 
@@ -646,7 +646,7 @@ bool WikipediaScreen::_favToggle(const String& rel) {
 
 bool WikipediaScreen::_fetchAndCache(const String& rawTitle, const String& label,
                                      const String& lang, String& outPath) {
-  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("WiFi not connected"); render(); return false; }
+  if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); render(); return false; }
 
   ShowStatusAction::show("Loading article...", 0);
   // No exchars: the API caps it at 1200, so requesting it truncates to the
@@ -656,10 +656,10 @@ bool WikipediaScreen::_fetchAndCache(const String& rawTitle, const String& label
                "&explaintext=1&exsectionformat=plain&redirects=1&exlimit=1"
                "&format=json&titles=" + _urlEncode(rawTitle);
   String body;
-  if (!_httpGet(url, body)) { ShowStatusAction::show("Load failed"); render(); return false; }
+  if (!_httpGet(url, body)) { ShowStatusAction::show("Failed"); render(); return false; }
 
   String text = _extractField(body);
-  if (text.length() == 0) { ShowStatusAction::show("No article content"); render(); return false; }
+  if (text.length() == 0) { ShowStatusAction::show("Article content not available"); render(); return false; }
   if (text.length() > kMaxArticleBytes) text = text.substring(0, kMaxArticleBytes);
 
   Uni.Storage->makeDir(WIKI_DIR);

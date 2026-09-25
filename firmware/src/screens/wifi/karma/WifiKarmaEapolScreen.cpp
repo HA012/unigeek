@@ -206,12 +206,12 @@ void WifiKarmaEapolScreen::onUpdate()
       _apActive    = true;
       _apStartTime = now;
       char buf[60];
-      snprintf(buf, sizeof(buf), "[+] AP ready: %.20s (%ds)", _pendingSsid, _waitConnect);
+      snprintf(buf, sizeof(buf), "AP ready: %.20s (%d s)", _pendingSsid, _waitConnect);
       _log.addLine(buf, TFT_GREEN);
     } else if (now > _ackTimeout) {
       _waitingForAck = false;
       char buf[60];
-      snprintf(buf, sizeof(buf), "[!] ACK timeout: %.20s", _pendingSsid);
+      snprintf(buf, sizeof(buf), "ACK timeout: %.20s", _pendingSsid);
       _log.addLine(buf, TFT_RED);
       _blacklistSSID(_pendingSsid);
       _capturingEapol = false;
@@ -235,7 +235,7 @@ void WifiKarmaEapolScreen::onUpdate()
       _handshakeCaptured = false;
     } else if (now - _apStartTime > (unsigned long)_waitConnect * 1000) {
       char buf[60];
-      snprintf(buf, sizeof(buf), "[-] Timeout: %s", _currentSsid);
+      snprintf(buf, sizeof(buf), "Handshake timeout: %s", _currentSsid);
       _log.addLine(buf);
       _blacklistSSID(_currentSsid);
       _capturingEapol = false;
@@ -265,7 +265,7 @@ void WifiKarmaEapolScreen::onUpdate()
 
   // ── Support device gone — stop attack and reset selection ─────────────────
   if (_hasSupportDevice && !_waitingForAck && now - _lastSupportMsg > 5000) {
-    _log.addLine("[!] Support lost — stopping", TFT_RED);
+    _log.addLine("Device not responding, stopping", TFT_RED);
     _stopAttack();
     _hasSupportDevice = false;
     _lastSupportMsg   = 0;
@@ -402,7 +402,7 @@ void WifiKarmaEapolScreen::_onProbe(const char* ssid)
   _capturedCount++;
 
   char buf[60];
-  snprintf(buf, sizeof(buf), "[*] Probe: %s", ssid);
+  snprintf(buf, sizeof(buf), "Probe: %s", ssid);
   _log.addLine(buf);
 
   if (_saveList) _saveSSIDToFile(ssid);
@@ -413,7 +413,7 @@ void WifiKarmaEapolScreen::_startSniffingLight()
   _capturingEapol = false;
   esp_wifi_set_promiscuous_rx_cb(&_promiscuousCb);
   esp_wifi_set_promiscuous(true);
-  _log.addLine("[*] Sniffing probes...");
+  _log.addLine("Sniffing probes...");
 }
 
 void WifiKarmaEapolScreen::_stopSniffing()
@@ -445,7 +445,7 @@ void WifiKarmaEapolScreen::_deployAP(const char* ssid, unsigned long now)
   _pendingSsid[32] = '\0';
   _apActive        = false;
   char buf[60];
-  snprintf(buf, sizeof(buf), "[>] Deploying: %.20s...", ssid);
+  snprintf(buf, sizeof(buf), "Deploying %.20s...", ssid);
   _log.addLine(buf);
 }
 
@@ -454,15 +454,15 @@ void WifiKarmaEapolScreen::_deployAP(const char* ssid, unsigned long now)
 void WifiKarmaEapolScreen::_startAttack()
 {
   if (!_hasSupportDevice) {
-    ShowStatusAction::show("Pair a Support Device first!");
+    ShowStatusAction::show("No paired device");
     return;
   }
   if (!StorageUtil::hasSpace()) {
-    ShowStatusAction::show("Storage full! (<20KB free)");
+    ShowStatusAction::show("Storage full (<20 KB free)");
     return;
   }
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage available.");
+    ShowStatusAction::show("No storage available");
     return;
   }
   Uni.Storage->makeDir("/unigeek/wifi/eapol/karma");
@@ -488,7 +488,7 @@ void WifiKarmaEapolScreen::_startAttack()
   int nk = Achievement.inc("wifi_karma_eapol_started");
   if (nk == 1) Achievement.unlock("wifi_karma_eapol_started");
 
-  _log.addLine("[*] Karma EAPOL started");
+  _log.addLine("Started");
   _initEspNow();
   _startSniffingLight();
   _drawLog();
@@ -519,7 +519,7 @@ void WifiKarmaEapolScreen::_saveSSIDToFile(const char* ssid)
 {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) return;
   if (!StorageUtil::hasSpace()) {
-    _log.addLine("[!] Storage full, skip save", TFT_RED);
+    _log.addLine("Storage full, skipping save", TFT_RED);
     return;
   }
 
@@ -666,12 +666,12 @@ void WifiKarmaEapolScreen::_flushEapol()
         memcpy(_m1Buf, c.data, c.len);
         _m1BufLen   = c.len;
         _eapolHasM1 = true;
-        _log.addLine("[*] M1 (ANonce)", TFT_YELLOW);
+        _log.addLine("M1 (ANonce)", TFT_YELLOW);
       }
     } else if (msg == 2) {
       if (!_eapolHasM1) {
         if (!_pcapStarted) {
-          _log.addLine("[-] M2 w/o M1, skip", TFT_DARKGREY);
+          _log.addLine("M2 without M1, skipping", TFT_DARKGREY);
         }
       } else {
         if (!_pcapStarted) {
@@ -681,7 +681,7 @@ void WifiKarmaEapolScreen::_flushEapol()
           _appendEapolFrame(c.data, c.len);
           _pcapStarted       = true;
           _handshakeCaptured = true;
-          _log.addLine("[+] M1+M2 saved!", TFT_GREEN);
+          _log.addLine("M1+M2 saved", TFT_GREEN);
 
           int nc = Achievement.inc("wifi_karma_eapol_captured");
           if (nc == 1)  Achievement.unlock("wifi_karma_eapol_captured");
@@ -785,15 +785,8 @@ void WifiKarmaEapolScreen::_drawPairScan()
   const int cx = bodyW() / 2;
   const int by = spH / 2;
 
-  unsigned long elapsed   = millis() - _pairScanStart;
-  int           remaining = (elapsed < PAIR_SCAN_MS)
-                            ? (int)((PAIR_SCAN_MS - elapsed) / 1000) + 1
-                            : 0;
-
   sp.setTextColor(TFT_WHITE, TFT_BLACK);
-  char buf[32];
-  snprintf(buf, sizeof(buf), "Scanning... %ds", remaining);
-  sp.drawString(buf, cx, by - 16);
+  sp.drawString("Scanning...", cx, by - 16);
 
   if (_pairDeviceCount > 0) {
     sp.setTextColor(TFT_GREEN, TFT_BLACK);
@@ -833,7 +826,7 @@ void WifiKarmaEapolScreen::_initEspNow()
   esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 
   if (esp_now_init() != ESP_OK) {
-    _log.addLine("[!] ESP-NOW init failed");
+    _log.addLine("Failed to start ESP-NOW");
     return;
   }
 

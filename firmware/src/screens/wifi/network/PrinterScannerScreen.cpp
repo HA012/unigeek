@@ -120,13 +120,13 @@ void PrinterScannerScreen::_showConfig(uint8_t selectedIndex)
 void PrinterScannerScreen::_scan()
 {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     return;
   }
 
   if (_scanMode == MODE_TARGETS) {
     if (!_hasTargets()) {
-      ShowStatusAction::show("Enter at least one target");
+      ShowStatusAction::show("No target set");
       return;
     }
 

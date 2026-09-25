@@ -59,11 +59,11 @@ void DhcpAttackScreen::onItemSelected(uint8_t index) {
 
 void DhcpAttackScreen::_start() {
   if (!_starvEnabled && !_rogueEnabled) {
-    ShowStatusAction::show("Enable Starvation or Rogue DHCP!");
+    ShowStatusAction::show("No DHCP attack enabled");
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to a network!", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     return;
   }
 
@@ -88,22 +88,22 @@ void DhcpAttackScreen::_start() {
   memcpy(_savedBSSID, WiFi.BSSID(), 6);
 
   char buf[60];
-  snprintf(buf, sizeof(buf), "[*] IP: %s", _savedIP.toString().c_str());
+  snprintf(buf, sizeof(buf), "IP: %s", _savedIP.toString().c_str());
   _log.addLine(buf);
 
   // Rogue DHCP starts immediately only when there is no starvation to wait for.
   if (_rogueEnabled && !_starvEnabled) _startRogue();
 
   if (_starvEnabled) {
-    _log.addLine("[*] DHCP Starvation...");
+    _log.addLine("DHCP starvation...");
     render();
     if (_starv.begin()) {
       _starvRunning = true;
-      snprintf(buf, sizeof(buf), "[+] Reconnected: %s",
+      snprintf(buf, sizeof(buf), "Reconnected: %s",
                WiFi.localIP().toString().c_str());
       _log.addLine(buf);
     } else {
-      _log.addLine("[!] Starvation failed", TFT_RED);
+      _log.addLine("Failed to start DHCP starvation", TFT_RED);
       _starvEnabled = false;
       if (_rogueEnabled) _startRogue();
     }
@@ -118,10 +118,10 @@ void DhcpAttackScreen::_startRogue() {
   _rogue.setClientCallback(_onDhcpClient);
   if (_rogue.begin()) {
     _rogueRunning = true;
-    _log.addLine("[+] Rogue DHCP active", TFT_GREEN);
+    _log.addLine("Rogue DHCP active", TFT_GREEN);
     _log.addLine("    Gateway + DNS = us");
   } else {
-    _log.addLine("[!] Rogue DHCP failed", TFT_RED);
+    _log.addLine("Failed to start Rogue DHCP", TFT_RED);
     _rogueEnabled = false;
   }
 }
@@ -129,7 +129,7 @@ void DhcpAttackScreen::_startRogue() {
 // ── Deauth burst ────────────────────────────────────────────────────────────
 
 void DhcpAttackScreen::_startDeauthBurst() {
-  _log.addLine("[*] Deauth burst (10s)...");
+  _log.addLine("Deauth burst...");
   _drawLog();
 
   WiFi.disconnect(true);
@@ -146,11 +146,11 @@ void DhcpAttackScreen::_stopDeauthBurst() {
     delete _attacker;
     _attacker = nullptr;
   }
-  _log.addLine("[+] Deauth burst done");
+  _log.addLine("Deauth burst completed");
 }
 
 void DhcpAttackScreen::_reconnectStaticIP() {
-  _log.addLine("[*] Reconnecting (static IP)...");
+  _log.addLine("Reconnecting with static IP...");
   _drawLog();
 
   WiFi.mode(WIFI_STA);
@@ -162,10 +162,10 @@ void DhcpAttackScreen::_reconnectStaticIP() {
 
   char buf[60];
   if (WiFi.status() == WL_CONNECTED) {
-    snprintf(buf, sizeof(buf), "[+] Reconnected: %s", WiFi.localIP().toString().c_str());
+    snprintf(buf, sizeof(buf), "Reconnected: %s", WiFi.localIP().toString().c_str());
     _log.addLine(buf);
   } else {
-    _log.addLine("[!] Reconnect failed", TFT_RED);
+    _log.addLine("Failed to reconnect", TFT_RED);
   }
 }
 
@@ -223,7 +223,7 @@ void DhcpAttackScreen::onUpdate() {
 
       const auto& s = _starv.stats();
       char buf[60];
-      snprintf(buf, sizeof(buf), "[+] Pool exhausted! ACK:%lu NAK:%lu",
+      snprintf(buf, sizeof(buf), "Pool exhausted, ACK: %lu NAK: %lu",
                (unsigned long)s.ack, (unsigned long)s.nak);
       _log.addLine(buf, TFT_GREEN);
 
@@ -233,7 +233,7 @@ void DhcpAttackScreen::onUpdate() {
     } else if (_starv.isStuck()) {
       _starvRunning = false;
       _starv.stop();
-      _log.addLine("[!] Starvation stuck", TFT_RED);
+      _log.addLine("Starvation stuck", TFT_RED);
       _log.addLine("    Server keys on chaddr", TFT_DARKGREY);
       _startRogue();
     }
@@ -255,7 +255,7 @@ void DhcpAttackScreen::onRender() {
 void DhcpAttackScreen::_onDhcpClient(const char* mac, const char* ip) {
   if (!_instance) return;
   char buf[60];
-  snprintf(buf, sizeof(buf), "[+] DHCP %s", ip);
+  snprintf(buf, sizeof(buf), "DHCP: %s", ip);
   _instance->_log.addLine(buf, TFT_GREEN);
 }
 

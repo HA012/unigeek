@@ -226,7 +226,7 @@ void CctvSnifferScreen::_startScan()
 {
   if (WiFi.localIP()[0] == 0 && WiFi.localIP()[1] == 0 &&
       WiFi.localIP()[2] == 0 && WiFi.localIP()[3] == 0) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -275,7 +275,7 @@ void CctvSnifferScreen::_startScan()
       ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
-        ShowStatusAction::show("Could not resolve target", 900);
+        ShowStatusAction::show("Failed to resolve target", 900);
         done++;
         continue;
       }
@@ -501,7 +501,7 @@ void CctvSnifferScreen::_startStream()
 
 
   if (!_stream.begin(streamUrl, user, pass)) {
-    ShowStatusAction::show("Stream failed!", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _showCameraMenu(_selectedCamera);
     return;
   }

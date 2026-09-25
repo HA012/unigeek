@@ -22,7 +22,7 @@ static void _onRoguePost(const char* clientIP, const char* domain, const char* d
   (void)clientIP; (void)data;
   if (_activeRogueInstance) {
     char buf[60];
-    snprintf(buf, sizeof(buf), "[+] POST %s", domain);
+    snprintf(buf, sizeof(buf), "POST: %s", domain);
     _activeRogueInstance->logPost(buf);
   }
 }
@@ -60,7 +60,7 @@ void WifiRogueAPScreen::onItemSelected(uint8_t index) {
       render();
       if (InputTextAction::wasCancelled()) { render(); return; }
       if (ssid.isEmpty()) {
-        ShowStatusAction::show("SSID is required", 1500);
+        ShowStatusAction::show("SSID not set", 1500);
         render();
         return;
       }
@@ -75,7 +75,7 @@ void WifiRogueAPScreen::onItemSelected(uint8_t index) {
     }
     case 1: {
       if (!_dnsSpoofEnabled && (!Uni.Storage || !Uni.Storage->exists(DnsSpoofServer::CONFIG_PATH))) {
-        ShowStatusAction::show("dns_config not found", 1500);
+        ShowStatusAction::show("DNS config not found", 1500);
         render();
         break;
       }
@@ -94,7 +94,7 @@ void WifiRogueAPScreen::onItemSelected(uint8_t index) {
         }
         uint8_t n = _browser.load(this, PORTALS_DIR, BrowseFileView::Mode::DIRECTORY);
         if (n == 0) {
-          ShowStatusAction::show("No portal folders found", 1500);
+          ShowStatusAction::show("No portals found", 1500);
           render();
           break;
         }
@@ -139,12 +139,12 @@ void WifiRogueAPScreen::_showMenu() {
 
 void WifiRogueAPScreen::_startAP() {
   if (_ssid.isEmpty()) {
-    ShowStatusAction::show("SSID is required", 1500);
+    ShowStatusAction::show("SSID not set", 1500);
     render();
     return;
   }
   if ((_dnsSpoofEnabled || _captiveEnabled) && !StorageUtil::hasSpace()) {
-    ShowStatusAction::show("Storage full! (<20KB free)");
+    ShowStatusAction::show("Storage full (<20 KB free)");
     render();
     return;
   }
@@ -177,7 +177,7 @@ void WifiRogueAPScreen::_stopAP() {
   _captiveSub = "-";
   _log.clear();
   _lastDraw = 0;
-  ShowStatusAction::show("AP Stopped", 1500);
+  ShowStatusAction::show("AP stopped", 1500);
   _showMenu();
 }
 
@@ -185,10 +185,10 @@ void WifiRogueAPScreen::_showLog() {
   _state = STATE_LOG;
   _log.clear();
   char apLabel[60];
-  snprintf(apLabel, sizeof(apLabel), "[*] AP: %s", _ssid.c_str());
+  snprintf(apLabel, sizeof(apLabel), "AP: %s", _ssid.c_str());
   _log.addLine(apLabel);
   if (_dnsSpoofEnabled) {
-    _log.addLine("[*] DNS Spoof started");
+    _log.addLine("DNS spoofing started");
     for (int i = 0; i < _dnsSpoofServer.recordCount(); i++) {
       char buf[60];
       const char* path = _dnsSpoofServer.records()[i].path;
@@ -200,7 +200,7 @@ void WifiRogueAPScreen::_showLog() {
   if (_captiveEnabled) {
     char buf[60];
     const char* lastSlash = strrchr(_captivePath.c_str(), '/');
-    snprintf(buf, sizeof(buf), "[*] Captive: %s", lastSlash ? lastSlash + 1 : _captivePath.c_str());
+    snprintf(buf, sizeof(buf), "Captive portal: %s", lastSlash ? lastSlash + 1 : _captivePath.c_str());
     _log.addLine(buf);
   }
   _log.addLine("");

@@ -44,7 +44,7 @@ PrinterPrankScreen::PrinterPrankScreen() {
 
 void PrinterPrankScreen::onInit() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     Screen.goBack();
     return;
   }
@@ -144,7 +144,7 @@ void PrinterPrankScreen::_print(uint8_t index) {
 
   const char* body = _currentBody();
   if (!body || !*body) {
-    ShowStatusAction::show("No message", 1500);
+    ShowStatusAction::show("Message not set", 1500);
     _showDevices();
     return;
   }
@@ -157,7 +157,7 @@ void PrinterPrankScreen::_print(uint8_t index) {
     msg += "...";
     ShowStatusAction::show(msg.c_str(), 0);
     bool ok = PrinterPrankUtil::printText(_devices[index], body);
-    ShowStatusAction::show(ok ? "Job sent" : "Send failed", 1200);
+    ShowStatusAction::show(ok ? "Sent" : "Failed", 1200);
     anyHit = ok;
   } else {
     uint8_t hits = 0;

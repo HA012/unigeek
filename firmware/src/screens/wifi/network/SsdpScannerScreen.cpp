@@ -8,7 +8,7 @@
 void SsdpScannerScreen::onInit()
 {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     Screen.goBack();
     return;
   }

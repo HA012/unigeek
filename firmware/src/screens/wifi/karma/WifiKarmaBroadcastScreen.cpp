@@ -115,11 +115,11 @@ void WifiKarmaBroadcastScreen::_startAttack()
   esp_wifi_set_promiscuous_rx_cb(&_promiscuousCb);
   esp_wifi_set_channel(_channel, WIFI_SECOND_CHAN_NONE);
 
-  _log.addLine("[*] Karma Attack started");
-  _log.addLine((String("[*] Mode: ") + _modeName()).c_str());
-  _log.addLine(_wpa2 ? "[*] Mimicry WPA2 (RSN)" : "[*] Mimicry open");
-  if (_autoKarma) _log.addLine("[*] Karma responses ON");
-  if (_deauth)    _log.addLine("[*] Integrated deauth ON");
+  _log.addLine("Started");
+  _log.addLine((String("Mode: ") + _modeName()).c_str());
+  _log.addLine(_wpa2 ? "Mimicry: WPA2 (RSN)" : "Mimicry: Open");
+  if (_autoKarma) _log.addLine("Karma responses: On");
+  if (_deauth)    _log.addLine("Integrated deauth: On");
   render();
 }
 
@@ -647,7 +647,7 @@ void WifiKarmaBroadcastScreen::_optBroadcastControl()
 
     if (!strcmp(r, "tgl")) {
       _beaconing = !_beaconing;
-      ShowStatusAction::show(_beaconing ? "Broadcast started" : "Broadcast stopped", 800);
+      ShowStatusAction::show(_beaconing ? "Started" : "Stopped", 800);
     } else if (!strcmp(r, "spd")) {
       char cur[6]; snprintf(cur, sizeof(cur), "%d", _beaconMs);
       InputSelectAction::Option sv[] = {
@@ -684,7 +684,7 @@ void WifiKarmaBroadcastScreen::_optEvilAp()
   }
   portEXIT_CRITICAL(&_lock);
 
-  if (cnt == 0) { ShowStatusAction::show("No SSIDs yet", 900); return; }
+  if (cnt == 0) { ShowStatusAction::show("No SSIDs found", 900); return; }
 
   InputSelectAction::Option o[MAX_SSID];
   for (int i = 0; i < cnt && i < MAX_SSID; i++) { o[n].label = names[i]; o[n].value = names[i]; n++; }
@@ -712,7 +712,7 @@ void WifiKarmaBroadcastScreen::_startEvilAp(const char* ssid)
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&_promiscuousCb);
 
-  _log.addLine((String("[+] Evil AP: ") + ssid + " ch" + _channel).c_str(), TFT_CYAN);
+  _log.addLine((String("Evil AP: ") + ssid + ", ch " + _channel).c_str(), TFT_CYAN);
   ShowStatusAction::show("Evil AP up", 900);
 }
 
@@ -724,7 +724,7 @@ void WifiKarmaBroadcastScreen::_stopEvilAp()
   esp_wifi_set_channel(_channel, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_promiscuous_rx_cb(&_promiscuousCb);
-  _log.addLine("[*] Evil AP stopped", TFT_DARKGREY);
+  _log.addLine("Evil AP stopped", TFT_DARKGREY);
   ShowStatusAction::show("Evil AP stopped", 800);
 }
 
@@ -777,7 +777,7 @@ void WifiKarmaBroadcastScreen::_showStats()
 void WifiKarmaBroadcastScreen::_saveProbes()
 {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage", 900);
+    ShowStatusAction::show("No storage available", 900);
     return;
   }
 
@@ -795,7 +795,7 @@ void WifiKarmaBroadcastScreen::_saveProbes()
   Uni.Storage->makeDir("/unigeek/wifi");
   const char* path = "/unigeek/wifi/karma_ssids.txt";
   fs::File f = Uni.Storage->open(path, FILE_WRITE);
-  if (!f) { ShowStatusAction::show("Save failed", 900); return; }
+  if (!f) { ShowStatusAction::show("Failed", 900); return; }
   for (int i = 0; i < cnt; i++) { f.println(names[i]); }
   f.close();
   _fileCount = cnt;

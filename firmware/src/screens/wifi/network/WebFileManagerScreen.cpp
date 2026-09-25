@@ -72,7 +72,7 @@ void WebFileManagerScreen::_drawRunning() {
 }
 
 void WebFileManagerScreen::_start() {
-  ShowStatusAction::show("Starting server...", 0);
+  ShowStatusAction::show("Starting...", 0);
   auto& sw = Uni.Server;
   if (!sw.enableFileManager()) {
     ShowStatusAction::show(sw.lastError().c_str());

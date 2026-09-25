@@ -20,14 +20,14 @@ WifiEvilTwinScreen::~WifiEvilTwinScreen()
 void WifiEvilTwinScreen::_onVisit(void* ctx)
 {
   auto* self = static_cast<WifiEvilTwinScreen*>(ctx);
-  self->_log.addLine("[+] Portal visited");
+  self->_log.addLine("Portal visited");
 }
 
 void WifiEvilTwinScreen::_onPost(const String& data, void* ctx)
 {
   auto* self = static_cast<WifiEvilTwinScreen*>(ctx);
   self->_pwdCount++;
-  self->_log.addLine("[+] Credential received", TFT_GREEN);
+  self->_log.addLine("Credential received", TFT_GREEN);
 
   int nc = Achievement.inc("wifi_evil_twin_captured");
   if (nc == 1)  Achievement.unlock("wifi_evil_twin_captured");
@@ -60,7 +60,7 @@ void WifiEvilTwinScreen::_onPost(const String& data, void* ctx)
 
   if (self->_checkPwd && pwd.length() > 0) {
     char logBuf[60];
-    snprintf(logBuf, sizeof(logBuf), "[+] Pwd: %s", pwd.c_str());
+    snprintf(logBuf, sizeof(logBuf), "Password: %s", pwd.c_str());
     self->_log.addLine(logBuf, TFT_GREEN);
     self->_pendingPwd = pwd;
     self->_pwdResult = 0;
@@ -98,7 +98,7 @@ void WifiEvilTwinScreen::onItemSelected(uint8_t index)
         uint8_t n = _browser.load(this, CaptivePortalServer::PORTALS_DIR,
                                   BrowseFileView::Mode::DIRECTORY);
         if (n == 0) {
-          ShowStatusAction::show("No portals found. WiFi > Network > Download > Firmware Sample Files");
+          ShowStatusAction::show("No portals found");
           _state = STATE_MENU;
           render();
           break;
@@ -263,7 +263,7 @@ void WifiEvilTwinScreen::_selectWifi(bool forceScan)
 
 bool WifiEvilTwinScreen::_tryPassword(const String& password)
 {
-  _log.addLine("[*] Checking password...");
+  _log.addLine("Checking password...");
 
   WiFi.begin(_target.ssid.c_str(), password.c_str());
 
@@ -277,10 +277,10 @@ bool WifiEvilTwinScreen::_tryPassword(const String& password)
 
   if (ok) {
     _pwdResult = 1;
-    _log.addLine("[+] Password correct!", TFT_GREEN);
+    _log.addLine("Password verified", TFT_GREEN);
   } else {
     _pwdResult = -1;
-    _log.addLine("[!] Password wrong", TFT_RED);
+    _log.addLine("Failed to verify password", TFT_RED);
   }
 
   return ok;
@@ -292,11 +292,11 @@ void WifiEvilTwinScreen::_startAttack()
 {
   const MacAddr blank = {0, 0, 0, 0, 0, 0};
   if (_target.ssid == "-" && memcmp(_target.bssid, blank, 6) == 0) {
-    ShowStatusAction::show("Select a network first!");
+    ShowStatusAction::show("Network not selected");
     return;
   }
   if (_portal.portalFolder().isEmpty()) {
-    ShowStatusAction::show("Select a portal first!");
+    ShowStatusAction::show("Portal not selected");
     return;
   }
 
@@ -313,7 +313,7 @@ void WifiEvilTwinScreen::_startAttack()
   _portal.loadPortalHtml();
 
   if (_portal.portalHtml().isEmpty()) {
-    ShowStatusAction::show("Portal HTML not found!");
+    ShowStatusAction::show("Portal not found");
     _state = STATE_MENU;
     return;
   }
@@ -437,7 +437,7 @@ void WifiEvilTwinScreen::_drawLog()
       sp.setTextColor(TFT_GREEN, TFT_BLACK);
       sp.setTextDatum(TL_DATUM);
       char pwdLabel[16];
-      snprintf(pwdLabel, sizeof(pwdLabel), "Pwd: %d", s->_pwdCount);
+      snprintf(pwdLabel, sizeof(pwdLabel), "Password: %d", s->_pwdCount);
       sp.drawString(pwdLabel, 2, barY);
       sp.setTextDatum(TR_DATUM);
       sp.drawString(s->_target.ssid.substring(0, 16), w - 2, barY);

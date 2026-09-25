@@ -111,7 +111,7 @@ void NetworkMenuScreen::_connectToSelected(uint8_t index) {
   auto result = WifiUtility::connectWithPrompt(_scanned[index].bssid, _scanned[index].ssid);
 
   if (result == WifiUtility::CONNECT_OK) {
-    ShowStatusAction::show(("Connected to " + String(_scanned[index].ssid)).c_str(), 1500);
+    ShowStatusAction::show("Connected", 1500);
     int nc = Achievement.inc("wifi_first_connect");
     if (nc == 1)  Achievement.unlock("wifi_first_connect");
     if (nc == 5)  Achievement.unlock("wifi_connect_5");
@@ -120,7 +120,7 @@ void NetworkMenuScreen::_connectToSelected(uint8_t index) {
   } else if (result == WifiUtility::CONNECT_CANCELLED) {
     render();
   } else {
-    ShowStatusAction::show("Connection Failed!", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _showWifiList();
   }
 }

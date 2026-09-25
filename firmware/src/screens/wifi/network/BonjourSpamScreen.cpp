@@ -19,7 +19,7 @@ BonjourSpamScreen::~BonjourSpamScreen() {
 
 void BonjourSpamScreen::onInit() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     Screen.goBack();
     return;
   }
@@ -103,7 +103,7 @@ void BonjourSpamScreen::_refreshIdleLabels() {
 
 void BonjourSpamScreen::_start() {
   if (!BonjourSpamUtil::begin()) {
-    ShowStatusAction::show("Failed to start", 1500);
+    ShowStatusAction::show("Failed", 1500);
     return;
   }
   _running       = true;
