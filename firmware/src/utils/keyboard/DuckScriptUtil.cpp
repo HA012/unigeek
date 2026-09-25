@@ -683,7 +683,7 @@ void DuckScriptUtil::runScript(const String& content, LineCallback cb)
   }
 
   if (!_scanProgram()) {
-    if (_cb) _cb(String("[scan failed — check IF/WHILE/FUNCTION balance]"), false);
+    if (_cb) _cb(String("[Failed to validate script — check IF/WHILE/FUNCTION balance]"), false);
     _cb = nullptr;
     return;
   }

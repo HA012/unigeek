@@ -32,7 +32,7 @@ const char* PasswordManagerScreen::title()
 {
   if (_state == STATE_ADD)  return "New Entry";
   if (_state == STATE_VIEW) return "Password";
-  return "Password Mgr";
+  return "Password Manager";
 }
 
 void PasswordManagerScreen::onInit()
@@ -182,7 +182,7 @@ void PasswordManagerScreen::onBack()
 void PasswordManagerScreen::_tryUnlock()
 {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     Screen.goBack();
     return;
   }
@@ -392,7 +392,7 @@ void PasswordManagerScreen::_updateAddLabels()
 void PasswordManagerScreen::_saveEntry()
 {
   if (_pendingLabel.length() == 0) {
-    ShowStatusAction::show("Label required", 1200);
+    ShowStatusAction::show("Label not set", 1200);
     render();
     return;
   }
@@ -413,7 +413,7 @@ void PasswordManagerScreen::_saveEntry()
   int n = Achievement.inc("pwd_mgr_add");
   if (n == 1) Achievement.unlock("pwd_mgr_add");
 
-  ShowStatusAction::show("Saved!", 800);
+  ShowStatusAction::show("Saved", 800);
   _reloadMenu();
   render();
 }
@@ -425,7 +425,7 @@ void PasswordManagerScreen::_enterView(uint8_t index)
   _viewIdx = index;
   if (!_generatePassword(_entries[index], _viewPw, sizeof(_viewPw) - 1)) {
 #ifdef DEVICE_HAS_WEBAUTHN
-    ShowStatusAction::show("WebAuthn master missing", 1500);
+    ShowStatusAction::show("WebAuthn master not available", 1500);
 #else
     ShowStatusAction::show("WebAuthn not supported on this board", 2200);
 #endif
@@ -483,7 +483,7 @@ void PasswordManagerScreen::_typePassword()
   int n = Achievement.inc("pwd_mgr_type");
   if (n == 1) Achievement.unlock("pwd_mgr_type");
 
-  ShowStatusAction::show("Typed!", 800);
+  ShowStatusAction::show("Typed", 800);
 }
 
 void PasswordManagerScreen::_renderView()

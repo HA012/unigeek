@@ -135,7 +135,7 @@ void KeyboardScreen::onItemSelected(uint8_t index)
       _keyboard->releaseAll();
       delay(300);
       if (!_keyboard->isConnected() && _mode == MODE_BLE) {
-        ShowStatusAction::show("Not connected...", 1500);
+        ShowStatusAction::show("Not connected", 1500);
         render();
         return;
       }
@@ -175,7 +175,7 @@ void KeyboardScreen::onItemSelected(uint8_t index)
       _showFiles(_browser.entry(index).path);
     } else {
       if (!_keyboard->isConnected() && _mode == MODE_BLE) {
-        ShowStatusAction::show("Not connected...", 1500);
+        ShowStatusAction::show("Not connected", 1500);
         render();
         return;
       }
@@ -249,7 +249,7 @@ void KeyboardScreen::_goConnected()
 void KeyboardScreen::_showFiles(const String& path)
 {
   if (!Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -285,7 +285,7 @@ void KeyboardScreen::_runDuckyScript(const String& path)
 
   String content = Uni.Storage->readFile(path.c_str());
   if (content.isEmpty()) {
-    ShowStatusAction::show("Cannot open file", 1500);
+    ShowStatusAction::show("Failed to open file", 1500);
     _goMenu();
     return;
   }
@@ -517,7 +517,7 @@ void KeyboardScreen::_renderMouseJiggle()
   char line[32];
   sp.setTextSize(1);
   sp.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  snprintf(line, sizeof(line), "Moves: %lu  Next: %lus",
+  snprintf(line, sizeof(line), "Moves: %lu  Next: %lu s",
            (unsigned long)_jiggleCount, (unsigned long)secsToNext);
   sp.drawString(line, bodyW() / 2, 36);
   snprintf(line, sizeof(line), "Elapsed: %02lu:%02lu",
@@ -569,7 +569,7 @@ void KeyboardScreen::_sendMediaItem(uint8_t index)
 {
   if (index >= kMediaCount) return;
   if (!_keyboard->isConnected() && _mode == MODE_BLE) {
-    ShowStatusAction::show("Not connected...", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     render();
     return;
   }

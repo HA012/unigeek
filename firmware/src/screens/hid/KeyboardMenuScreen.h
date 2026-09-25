@@ -19,7 +19,7 @@ private:
   ListItem _items[5] = {
     {"USB HID"},
     {"BLE HID"},
-    {"USB Web Authn"},
+    {"USB WebAuthn"},
     {"USB Mass Storage"},
     {"USB Remote"},
   };

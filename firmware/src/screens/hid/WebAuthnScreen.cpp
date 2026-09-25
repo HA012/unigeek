@@ -170,7 +170,7 @@ void WebAuthnScreen::onRender()
     sp.setTextDatum(MC_DATUM);
     sp.setTextSize(2);
     sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-    sp.drawString("Confirm:", bodyW() / 2, 12);
+    sp.drawString("Confirm", bodyW() / 2, 12);
     sp.setTextSize(1);
     sp.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     sp.drawString(_promptRpId ? _promptRpId : "(unknown)", bodyW() / 2, 36);
@@ -201,7 +201,7 @@ void WebAuthnScreen::onRender()
     sp.setTextDatum(MC_DATUM);
     sp.setTextSize(3);
     sp.setTextColor(connected ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    sp.drawString(connected ? "Active" : "Idle", bodyW() / 2, 14);
+    sp.drawString(connected ? "Connected" : "Waiting...", bodyW() / 2, 14);
     sp.pushSprite(bodyX(), statusY - 14);
     sp.deleteSprite();
   }

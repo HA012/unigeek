@@ -71,7 +71,7 @@ void MassStorageScreen::onRender()
     lcd.setTextDatum(MC_DATUM);
     lcd.setTextSize(2);
     lcd.setTextColor(TFT_RED, TFT_BLACK);
-    lcd.drawString("No SD card", cx, bodyY() + bodyH() / 2 - 16);
+    lcd.drawString("SD card not available", cx, bodyY() + bodyH() / 2 - 16);
     lcd.setTextSize(1);
     lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     lcd.drawString("Internal flash can't be", cx, bodyY() + bodyH() / 2 + 4);
