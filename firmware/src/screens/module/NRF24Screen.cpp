@@ -126,7 +126,9 @@ void NRF24Screen::onInit() {
     return;
   }
 
-  ProgressView::progress("Detecting NRF24...", 30);
+  // Match PN532 module entry UX: create the loading view before reporting progress.
+  ProgressView::init();
+  ProgressView::progress("Starting NRF24...", 30);
   if (!_radioBegin()) {
     ShowStatusAction::show("NRF24 not found!");
     Screen.goBack();

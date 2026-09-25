@@ -63,7 +63,7 @@ void SubGHzScreen::onInit() {
   }
 
   ProgressView::init();
-  ProgressView::progress("Detecting CC1101...", 30);
+  ProgressView::progress("Starting CC1101...", 30);
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
     ShowStatusAction::show("CC1101 not found!");
     Screen.goBack();

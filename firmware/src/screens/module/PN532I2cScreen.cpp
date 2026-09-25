@@ -1205,7 +1205,7 @@ bool PN532I2cScreen::_initModule() {
   // This keeps the PN532 loading screen consistent with later operations.
   render();
   ProgressView::init();
-  ProgressView::progress("Probing PN532 I2C...", 10);
+  ProgressView::progress("Starting PN532 I2C...", 10);
 
   // Re-begin ExI2C on the currently-configured pins so runtime ext_sda/ext_scl
   // changes from Settings → Pin take effect without a reboot.
@@ -1216,7 +1216,7 @@ bool PN532I2cScreen::_initModule() {
 
     _nfc = new Adafruit_PN532(255, 255, Uni.ExI2C);
     _nfc->begin(); // begin(false) internally — no Wire.begin()
-    ProgressView::progress("Probing ExI2C...", 35);
+    ProgressView::progress("Starting ExI2C...", 35);
     uint32_t fw = _nfc->getFirmwareVersion();
     if (fw) {
       _fwIc  = (fw >> 24) & 0xFF;
@@ -1253,7 +1253,7 @@ bool PN532I2cScreen::_initModule() {
 
     _nfc = new Adafruit_PN532(255, 255, Uni.InI2C);
     _nfc->begin();
-    ProgressView::progress("Probing InI2C...", 35);
+    ProgressView::progress("Starting InI2C...", 35);
     uint32_t fw = _nfc->getFirmwareVersion();
     if (fw) {
       _fwIc  = (fw >> 24) & 0xFF;

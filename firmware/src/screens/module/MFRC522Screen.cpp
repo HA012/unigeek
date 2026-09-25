@@ -166,7 +166,7 @@ void MFRC522Screen::_initModule() {
     int scl = PinConfig.getInt(PIN_CONFIG_EXT_SCL, PIN_CONFIG_EXT_SCL_DEFAULT);
 
     ProgressView::init();
-    ProgressView::progress("Scanning external I2C...", 10);
+    ProgressView::progress("Starting external I2C...", 10);
     Uni.ExI2C->begin(sda, scl);
     Uni.ExI2C->setTimeOut(50);
     delay(100);
@@ -185,7 +185,7 @@ void MFRC522Screen::_initModule() {
 
   // Fall back to internal I2C
   if (!_activeBus && Uni.InI2C) {
-    ProgressView::progress("Scanning internal I2C...", 30);
+    ProgressView::progress("Starting internal I2C...", 30);
     Uni.InI2C->setTimeOut(50);
     delay(100);
 
