@@ -45,7 +45,7 @@ void WebAuthnPasskeyListScreen::onRender()
     lcd.setTextDatum(MC_DATUM);
     lcd.setTextSize(1);
     lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    lcd.drawString("No passkeys saved",
+    lcd.drawString("No passkeys",
                    bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
     return;
   }
@@ -71,7 +71,7 @@ void WebAuthnPasskeyListScreen::_confirmDelete(uint8_t index)
   memcpy(credId, _entries[index].credId, sizeof(credId));
 
   if (!webauthn::CredentialStore::deleteResidentCredById(credId)) {
-    ShowStatusAction::show("Delete failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
     return;
   }

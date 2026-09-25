@@ -88,7 +88,7 @@ private:
   void _renderView();
 
   // Returns false when source=SRC_WEBAUTHN but master.bin is missing
-  // (no webauthn build, or user hasn't run BIP39 Generate yet).
+  // (no webauthn build, or user hasn't run Generate BIP39 yet).
   bool   _generatePassword(const Entry& e, char* out, uint8_t maxLen);
   bool   _verifyMaster(const char* pw);
   void   _setMaster(const char* pw);

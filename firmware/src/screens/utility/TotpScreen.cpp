@@ -221,7 +221,7 @@ void TotpScreen::_updateAddLabels() {
 
 void TotpScreen::_saveNew() {
   if (_pendingName.length() == 0 || _pendingSecret.length() == 0) {
-    ShowStatusAction::show("Name+Secret required", 1200);
+    ShowStatusAction::show("Name or secret not set", 1200);
     render();
     return;
   }
@@ -233,9 +233,9 @@ void TotpScreen::_saveNew() {
   if (ok) {
     int n = Achievement.inc("totp_add_account");
     if (n == 1) Achievement.unlock("totp_add_account");
-    ShowStatusAction::show("Saved!", 1000);
+    ShowStatusAction::show("Saved", 1000);
   } else {
-    ShowStatusAction::show("Save failed", 1000);
+    ShowStatusAction::show("Failed", 1000);
   }
   _reloadMenu();
 }
@@ -261,7 +261,7 @@ void TotpScreen::_showAccountMenu(uint8_t index) {
 void TotpScreen::_deleteAccount(uint8_t index) {
   String path = String(DIR) + "/" + _accounts[index].name + ".key";
   bool ok = Uni.Storage->deleteFile(path.c_str());
-  ShowStatusAction::show(ok ? "Deleted" : "Delete failed", 1000);
+  ShowStatusAction::show(ok ? "Deleted" : "Failed", 1000);
   _reloadMenu();
 }
 

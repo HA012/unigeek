@@ -262,7 +262,7 @@ void KeyboardScreen::_showFiles(const String& path)
   uint8_t n = _browser.load(this, path);
 
   if (n == 0) {
-    ShowStatusAction::show("No files found", 1500);
+    ShowStatusAction::show("No files", 1500);
     _goMenu();
     return;
   }

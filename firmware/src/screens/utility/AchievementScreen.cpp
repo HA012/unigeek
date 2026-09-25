@@ -57,7 +57,7 @@ void AchievementScreen::onUpdate()
     } else {
       Config.set(APP_CONFIG_AGENT_TITLE, cat.defs[ci].title);
       Config.save(Uni.Storage);
-      ShowStatusAction::show("Title saved", 1500);
+      ShowStatusAction::show("Saved", 1500);
     }
     render();
     return;

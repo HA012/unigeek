@@ -325,7 +325,7 @@ void WikipediaScreen::_openResultByIdx(uint8_t dataIndex) {
 void WikipediaScreen::_showRandom() {
   if (WiFi.status() != WL_CONNECTED) { ShowStatusAction::show("Not connected"); return; }
 
-  ShowStatusAction::show("Random article...", 0);
+  ShowStatusAction::show("Loading...", 0);
   String lang = _langCode();
   String url = "https://" + lang + ".wikipedia.org/w/api.php"
                "?action=query&list=random&rnnamespace=0&rnlimit=1&format=json";
@@ -333,7 +333,7 @@ void WikipediaScreen::_showRandom() {
   if (!_httpGet(url, body)) { ShowStatusAction::show("Failed"); return; }
 
   int idx = body.indexOf("\"title\":\"");
-  if (idx < 0) { ShowStatusAction::show("Article not selected"); return; }
+  if (idx < 0) { ShowStatusAction::show("Failed to select article"); return; }
   int start = idx + 9;
   String raw = _jsonUnescape(body.substring(start, _strEnd(body, start)));
 
@@ -355,7 +355,7 @@ void WikipediaScreen::_showOnThisDay() {
     return;
   }
 
-  ShowStatusAction::show("On This Day...", 0);
+  ShowStatusAction::show("Loading...", 0);
   String lang = _langCode();
   char ep[64];
   snprintf(ep, sizeof(ep), "/api/rest_v1/feed/onthisday/selected/%02d/%02d",

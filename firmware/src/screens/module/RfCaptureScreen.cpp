@@ -389,7 +389,7 @@ void RfCaptureScreen::_rebuildCapturedItems() {
 void RfCaptureScreen::_sendCapturedSignal(uint8_t index) {
   if (index >= _capturedCount) return;
   ProgressView::init();
-  ProgressView::progress(("Replaying " + _capturedTimes[index]).c_str(), 50);
+  ProgressView::progress("Replaying...", 50);
   _radioSendCaptured(_capturedSignals[index]);
   ProgressView::finish();
   int n = Achievement.inc("rf_send_first");
@@ -427,7 +427,7 @@ void RfCaptureScreen::_replayStepKeeloqSignal(uint8_t index) {
 
 void RfCaptureScreen::_saveSignal(uint8_t index, const String& name) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage");
+    ShowStatusAction::show("No storage available");
     return;
   }
   Uni.Storage->makeDir(kRootPath);
@@ -445,7 +445,7 @@ void RfCaptureScreen::_saveSignal(uint8_t index, const String& name) {
     if (n == 5)  Achievement.unlock("rf_signal_saved_5");
     if (n == 20) Achievement.unlock("rf_signal_saved_20");
   } else {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed to save");
   }
 }
 
@@ -542,16 +542,16 @@ void RfCaptureScreen::_sendBrowseFile(uint8_t index) {
     return;
   }
   ProgressView::init();
-  ProgressView::progress(("Sending " + e.name).c_str(), 50);
+  ProgressView::progress("Sending...", 50);
   if (!_radioSendFromBrowse(sig)) {
-    ShowStatusAction::show("Send failed");
+    ShowStatusAction::show("Failed to send");
     render();
     return;
   }
   ProgressView::finish();
   int n = Achievement.inc("rf_send_first");
   if (n == 1) Achievement.unlock("rf_send_first");
-  ShowStatusAction::show(("Sent: " + e.name).c_str(), 1000);
+  ShowStatusAction::show("Sent", 1000);
   render();
 }
 
@@ -596,7 +596,7 @@ void RfCaptureScreen::_showBrowseOptions(uint8_t index) {
       ShowStatusAction::show("Renamed", 1000);
       _loadBrowseDir(_browsePath);
     } else {
-      ShowStatusAction::show("Rename failed");
+      ShowStatusAction::show("Failed to rename");
       render();
     }
 
@@ -605,7 +605,7 @@ void RfCaptureScreen::_showBrowseOptions(uint8_t index) {
       ShowStatusAction::show("Deleted", 1000);
       _loadBrowseDir(_browsePath);
     } else {
-      ShowStatusAction::show("Delete failed");
+      ShowStatusAction::show("Failed to delete");
       render();
     }
   }

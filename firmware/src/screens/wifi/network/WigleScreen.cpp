@@ -138,7 +138,7 @@ void WigleScreen::_showUploadMenu() {
                                      _fileUploaded, WigleUtil::MAX_FILES);
 
   if (_fileCount == 0) {
-    ShowStatusAction::show("No wardrive files found");
+    ShowStatusAction::show("No wardrive files");
     _showMenu();
     return;
   }
@@ -157,7 +157,7 @@ void WigleScreen::_showMapPickMenu() {
                                      _fileUploaded, WigleUtil::MAX_FILES);
 
   if (_fileCount == 0) {
-    ShowStatusAction::show("No wardrive files found");
+    ShowStatusAction::show("No wardrive files");
     _showMenu();
     return;
   }

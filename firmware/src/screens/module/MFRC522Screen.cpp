@@ -153,7 +153,7 @@ void MFRC522Screen::onBack() {
 
 void MFRC522Screen::_initModule() {
   if (!Uni.ExI2C && !Uni.InI2C) {
-    ShowStatusAction::show("No I2C bus available!");
+    ShowStatusAction::show("I2C bus not available");
     Screen.goBack();
     return;
   }
@@ -200,7 +200,7 @@ void MFRC522Screen::_initModule() {
   }
 
   if (!_activeBus) {
-    ShowStatusAction::show("Module not found!");
+    ShowStatusAction::show("RC522 not detected");
     Screen.goBack();
     return;
   }
@@ -280,7 +280,7 @@ void MFRC522Screen::_callScanUid() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString("Scanning ISO14443...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+  lcd.drawString("Scanning tag...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
 
   bool isFound = false;
   bool cancelled = false;
@@ -320,7 +320,7 @@ void MFRC522Screen::_callScanUid() {
     lcd.drawString(uid.c_str(), bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 + 10);
   } else {
     lcd.setTextSize(2);
-    lcd.drawString("No Tag Found", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 4);
+    lcd.drawString("No tag found", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 4);
   }
 
   lcd.setTextSize(1);
@@ -375,7 +375,7 @@ void MFRC522Screen::_callAuthenticate() {
       }
     }
     if (millis() - start > 5000) {
-      ShowStatusAction::show("No card found");
+      ShowStatusAction::show("No tag detected");
       _goMainMenu();
       return;
     }
@@ -391,7 +391,7 @@ void MFRC522Screen::_callAuthenticate() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMainMenu();
     return;
   }
@@ -473,7 +473,7 @@ void MFRC522Screen::_callMemoryReader() {
 
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMifareClassic();
     return;
   }
@@ -619,8 +619,8 @@ void MFRC522Screen::_callMemoryReader() {
     dumpFile.close();
   }
   if (_rowCount < MAX_ROWS) {
-    _rowLabels[_rowCount] = "Saved";
-    _rowValues[_rowCount] = saveOk ? (uidHex + ".bin").c_str() : "failed";
+    _rowLabels[_rowCount] = saveOk ? "Saved" : "Failed";
+    _rowValues[_rowCount] = saveOk ? (uidHex + ".bin").c_str() : "";
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
   }
@@ -638,7 +638,7 @@ void MFRC522Screen::_callDictionaryAttack() {
   _browser.root = _dictPath;
   uint8_t n = _browser.load(this, _dictPickDir, ".txt");
   if (n == 0 && _dictPickDir == _dictPath) {
-    ShowStatusAction::show("No dictionary files in nfc/dictionaries/");
+    ShowStatusAction::show("No dictionary files");
     _goMifareClassic();
     return;
   }
@@ -676,7 +676,7 @@ void MFRC522Screen::_callDictAttackWithFile(uint8_t fileIndex) {
   String filePath = e.path;
   String content = Uni.Storage->readFile(filePath.c_str());
   if (content.length() == 0) {
-    ShowStatusAction::show("Empty dictionary file");
+    ShowStatusAction::show("Empty file");
     render();
     return;
   }
@@ -704,7 +704,7 @@ void MFRC522Screen::_callDictAttackWithFile(uint8_t fileIndex) {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     _goMifareClassic();
     return;
   }
@@ -801,7 +801,7 @@ void MFRC522Screen::_callStaticNested() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }
@@ -832,7 +832,7 @@ void MFRC522Screen::_callStaticNested() {
   }
 
   if (exploitSector < 0) {
-    ShowStatusAction::show("Need at least one known key first!");
+    ShowStatusAction::show("At least one known key required");
     render();
     return;
   }
@@ -955,7 +955,7 @@ void MFRC522Screen::_callNestedAttack() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }
@@ -983,7 +983,7 @@ void MFRC522Screen::_callNestedAttack() {
   }
 
   if (exploitSector < 0) {
-    ShowStatusAction::show("Need at least one known key first!");
+    ShowStatusAction::show("At least one known key required");
     render();
     return;
   }
@@ -1105,7 +1105,7 @@ void MFRC522Screen::_callDarksideAttack() {
       delay(50);
     }
     if (!found) {
-      ShowStatusAction::show("No card found");
+      ShowStatusAction::show("No tag detected");
       _goMainMenu();
       return;
     }
@@ -1114,7 +1114,7 @@ void MFRC522Screen::_callDarksideAttack() {
   auto piccType = static_cast<MFRC522_I2C::PICC_Type>(_module->PICC_GetType(_currentCard.sak));
   auto it = _mf1CardDetails.find(piccType);
   if (it == _mf1CardDetails.end()) {
-    ShowStatusAction::show("Unsupported tag");
+    ShowStatusAction::show("Tag not supported");
     render();
     return;
   }

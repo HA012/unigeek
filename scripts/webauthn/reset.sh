@@ -11,4 +11,4 @@ press_device
 run fido2-token -R "$DEV"
 
 hint "All previously registered credentials are now invalid (intended)."
-hint "After this you'll need to run Manage WebAuthn > BIP39 Generate before any host can register."
+hint "After this you'll need to run Manage WebAuthn > Generate BIP39 before any host can register."

@@ -13,8 +13,8 @@ void WebAuthnManageScreen::onInit()
 {
   webauthn::CredentialStore::init();
   _items[0].label = webauthn::CredentialStore::hasMaster()
-                    ? "BIP39 Regenerate"
-                    : "BIP39 comGenerate";
+                    ? "Regenerate BIP39"
+                    : "Generate BIP39";
   setItems(_items);
 }
 

@@ -196,7 +196,7 @@ void PomodoroScreen::_renderTimer() {
     const char* phaseStr;
     uint16_t    phaseColor;
     if (_state == STATE_DONE) {
-      phaseStr  = (_phase == PHASE_WORK) ? "SESSION DONE" : "BREAK DONE";
+      phaseStr  = (_phase == PHASE_WORK) ? "Session complete" : "Break complete";
       phaseColor = TFT_GREEN;
     } else if (_phase == PHASE_BREAK) {
       phaseStr  = (_state == STATE_PAUSED) ? "BREAK (paused)" : "BREAK";
@@ -262,7 +262,7 @@ void PomodoroScreen::_renderTimer() {
     if (filled > w - 12)  filled = w - 12;
 
     char secsBuf[14];
-    snprintf(secsBuf, sizeof(secsBuf), "%lus / %lus",
+    snprintf(secsBuf, sizeof(secsBuf), "%lu s / %lu s",
              (unsigned long)elapsed, (unsigned long)_totalSecs);
 
     uint16_t barColor = (_state == STATE_DONE) ? TFT_GREEN

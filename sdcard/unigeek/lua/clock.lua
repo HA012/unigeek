@@ -1,7 +1,7 @@
 -- clock.lua — uni.time + uni.config: digital clock that picks up the device
 -- theme colour and name.
 -- Tip: if the time reads as 1970-01-01, the RTC hasn't been synced yet —
--- connect to WiFi once (e.g. via Manage WebAuthn > BIP39 Generate or any
+-- connect to WiFi once (e.g. via Manage WebAuthn > Generate BIP39 or any
 -- WiFi screen) so NTP can set the clock.
 
 local lcd    = require("uni.lcd")

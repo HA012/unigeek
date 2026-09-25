@@ -9,7 +9,7 @@ UniGeek can act as a hardware security key, presenting itself to the host as a U
 WebAuthn does not auto-generate the device's master key. Until you create one, the WebAuthn screen shows a "Setup needed" page and the host can't register anything.
 
 1. Open **Utility > Manage WebAuthn**
-2. Pick **BIP39 Generate** (the label switches to **BIP39 Regenerate** once a master already exists)
+2. Pick **Generate BIP39** (the label switches to **Regenerate BIP39** once a master already exists)
 3. Confirm the warning, then pick a WiFi network from the scan list — internet is required so the device can sync its RTC via NTP for stronger random-number entropy
 4. Wait for the sync (a few seconds) and the auto-generation
 5. Write down the 24 BIP-39 words shown on screen — this is your only backup. Anyone who sees them can clone every passkey on the device.
@@ -33,7 +33,7 @@ Under **Utility > Manage WebAuthn** you get four actions:
 
 | Item | What it does |
 |---|---|
-| **BIP39 Generate** / **BIP39 Regenerate** | Creates the master key with WiFi+NTP-fueled randomness, then displays the 24-word seed. Regen wipes every existing cred. |
+| **Generate BIP39** / **Regenerate BIP39** | Creates the master key with WiFi+NTP-fueled randomness, then displays the 24-word seed. Regen wipes every existing cred. |
 | **BIP39 Restore** | Re-enters a 24-word seed onto a new device (or after a wipe) so previously issued credentials still verify. Wipes any current state first. |
 | **BIP39 Backup** | Re-displays the existing 24-word seed (PIN-gated when a PIN is set). Use this to verify you wrote it down correctly. |
 | **Passkeys** | Lists every resident credential by RP and userName; press an entry then type `yes` to confirm deletion. |
@@ -200,7 +200,7 @@ Reset is a host-driven command — `fido2-token -R /dev/hidrawN` or your browser
 ## Storage
 
 ```
-/unigeek/utility/fido/master.bin       32-byte master key (created via Manage WebAuthn > BIP39 Generate)
+/unigeek/utility/fido/master.bin       32-byte master key (created via Manage WebAuthn > Generate BIP39)
 /unigeek/utility/fido/counter.bin      4-byte big-endian global signature counter
 /unigeek/utility/fido/pin.bin          retries(1) + pinLen(1) + pinHash(16) = 18 bytes
 /unigeek/utility/fido/config.bin       flags(1) + minPinLen(1) + reserved(2) — alwaysUv flag etc.

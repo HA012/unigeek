@@ -121,14 +121,14 @@ void NRF24Screen::onInit() {
   _csnPin = (int8_t)PinConfig.getInt(PIN_CONFIG_NRF24_CSN, PIN_CONFIG_NRF24_CSN_DEFAULT);
 
   if (_cePin < 0 || _csnPin < 0) {
-    ShowStatusAction::show("Set NRF24 CE/CSN pins first");
+    ShowStatusAction::show("NRF24 CE/CSN pins not set");
     Screen.goBack();
     return;
   }
 
   ProgressView::progress("Detecting NRF24...", 30);
   if (!_radioBegin()) {
-    ShowStatusAction::show("NRF24 not found!");
+    ShowStatusAction::show("NRF24 not detected");
     Screen.goBack();
     return;
   }
@@ -175,7 +175,7 @@ void NRF24Screen::onItemSelected(uint8_t index) {
     if (index == 0) {
       // ── Spectrum ──────────────────────────────────────────
       if (!_radioBegin()) {
-        ShowStatusAction::show("NRF24 not found!");
+        ShowStatusAction::show("NRF24 not detected");
         render();
         return;
       }
@@ -465,7 +465,7 @@ void NRF24Screen::_renderSpectrum() {
   }
   if (maxLevel > 10) {
     char buf[10];
-    snprintf(buf, sizeof(buf), "pk:%d", (int)maxCh);
+    snprintf(buf, sizeof(buf), "Peak:%d", (int)maxCh);
     lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
     lcd.fillRect(bx + bw - 46, by + 2, 44, 8, TFT_BLACK);
     lcd.drawRightString(buf, bx + bw - 2, by + 2, 1);
@@ -488,7 +488,7 @@ static void shuffleChannels(uint8_t* arr, size_t count) {
 
 void NRF24Screen::_startJammer() {
   if (!_radioBegin()) {
-    ShowStatusAction::show("NRF24 not found!");
+    ShowStatusAction::show("NRF24 not detected");
     render();
     return;
   }
@@ -582,7 +582,7 @@ void NRF24Screen::_renderJammerStatus() {
 
 void NRF24Screen::_setupMjScan() {
   if (!_radioBegin()) {
-    ShowStatusAction::show("NRF24 not found!");
+    ShowStatusAction::show("NRF24 not detected");
     render();
     return;
   }
@@ -1008,14 +1008,14 @@ void NRF24Screen::_injectMjText(int targetIdx, const String& text) {
   _typeString(t, text.c_str());
 
   r->powerDown();
-  ShowStatusAction::show("Injection complete");
+  ShowStatusAction::show("Completed");
   _setupMjScan();
 }
 
 void NRF24Screen::_injectMjDucky(int targetIdx, const String& path) {
   if (targetIdx < 0 || targetIdx >= (int)_mjCount) return;
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage");
+    ShowStatusAction::show("No storage available");
     return;
   }
   MjTarget t = _mjTargets[targetIdx];
@@ -1024,7 +1024,7 @@ void NRF24Screen::_injectMjDucky(int targetIdx, const String& path) {
 
   fs::File file = Uni.Storage->open(path.c_str(), "r");
   if (!file) {
-    ShowStatusAction::show("Cannot open file");
+    ShowStatusAction::show("Failed to open file");
     return;
   }
 
@@ -1066,14 +1066,14 @@ void NRF24Screen::_injectMjDucky(int targetIdx, const String& path) {
 
   file.close();
   r->powerDown();
-  ShowStatusAction::show("Script complete");
+  ShowStatusAction::show("Completed");
   _setupMjScan();
 }
 
 // Present the DuckyScript files on the SD card and run the chosen one.
 void NRF24Screen::_pickDuckyScript(int targetIdx) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("No storage");
+    ShowStatusAction::show("No storage available");
     return;
   }
   Uni.Storage->makeDir(kMjDuckyDir);
@@ -1095,7 +1095,7 @@ void NRF24Screen::_pickDuckyScript(int targetIdx) {
   }
 
   if (optCount == 0) {
-    ShowStatusAction::show("No scripts in /unigeek/ducky");
+    ShowStatusAction::show("No scripts");
     return;
   }
 

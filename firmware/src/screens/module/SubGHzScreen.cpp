@@ -57,7 +57,7 @@ void SubGHzScreen::onInit() {
   _gdo0Pin = PinConfig.get(PIN_CONFIG_CC1101_GDO0, PIN_CONFIG_CC1101_GDO0_DEFAULT).toInt();
 
   if (_csPin < 0 || _gdo0Pin < 0) {
-    ShowStatusAction::show("Set CC1101 pins first");
+    ShowStatusAction::show("CC1101 pins not set");
     Screen.goBack();
     return;
   }
@@ -65,7 +65,7 @@ void SubGHzScreen::onInit() {
   ProgressView::init();
   ProgressView::progress("Detecting CC1101...", 30);
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-    ShowStatusAction::show("CC1101 not found!");
+    ShowStatusAction::show("CC1101 not detected");
     Screen.goBack();
     return;
   }
@@ -98,16 +98,16 @@ void SubGHzScreen::_replayPendingFile() {
   String name = (slash >= 0) ? file.substring(slash + 1) : file;
 
   ProgressView::init();
-  ProgressView::progress(("Replaying " + name).c_str(), 50);
+  ProgressView::progress("Replaying...", 50);
   if (!_radioSendFromBrowse(sig)) {
-    ShowStatusAction::show("Send failed");
+    ShowStatusAction::show("Failed to send");
     Screen.goBack();
     return;
   }
   ProgressView::finish();
   int n = Achievement.inc("rf_send_first");
   if (n == 1) Achievement.unlock("rf_send_first");
-  ShowStatusAction::show(("Sent: " + name).c_str(), 1200);
+  ShowStatusAction::show("Sent", 1200);
   Screen.goBack();
 }
 
@@ -164,7 +164,7 @@ void SubGHzScreen::_updateSublabels() {
   if (store.isLoaded()) {
     _mfcodesSub = String((unsigned)store.count()) + " keys";
   } else {
-    _mfcodesSub = "not loaded";
+    _mfcodesSub = "Not loaded";
   }
   _menuItems[8].sublabel = _mfcodesSub.c_str();
 }
@@ -174,10 +174,9 @@ void SubGHzScreen::_reloadMfcodes() {
   store.reload();
   char msg[80];
   if (store.count() > 0) {
-    snprintf(msg, sizeof(msg), "Loaded %u keys from %s",
-             (unsigned)store.count(), KeeloqKeystore::PATH);
+    snprintf(msg, sizeof(msg), "Loaded %u keys", (unsigned)store.count());
   } else {
-    snprintf(msg, sizeof(msg), "No keys at %s", KeeloqKeystore::PATH);
+    snprintf(msg, sizeof(msg), "No keys");
   }
   ShowStatusAction::show(msg, 2500);
   _updateSublabels();
@@ -200,12 +199,12 @@ void SubGHzScreen::_onMenuSelected(uint8_t index) {
     }
     case 3: { // Receive
       if (_csPin < 0 || _gdo0Pin < 0) {
-        ShowStatusAction::show("Set CS and GDO0 pins first");
+        ShowStatusAction::show("CS and GDO0 pins not set");
         render();
         return;
       }
       if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-        ShowStatusAction::show("CC1101 not found");
+        ShowStatusAction::show("CC1101 not detected");
         render();
         return;
       }
@@ -218,7 +217,7 @@ void SubGHzScreen::_onMenuSelected(uint8_t index) {
     }
     case 5: { // Send
       if (_csPin < 0) {
-        ShowStatusAction::show("Set CS pin first");
+        ShowStatusAction::show("CS pin not set");
         render();
         return;
       }
@@ -231,7 +230,7 @@ void SubGHzScreen::_onMenuSelected(uint8_t index) {
     }
     case 7: { // Jammer
       if (_csPin < 0 || _gdo0Pin < 0) {
-        ShowStatusAction::show("Set CS and GDO0 pins first");
+        ShowStatusAction::show("CS and GDO0 pins not set");
         render();
         return;
       }
@@ -250,7 +249,7 @@ bool SubGHzScreen::_beginJammer() {
   if (mode < 0) return false;  // cancelled
   _jamMode = (CC1101Util::JamMode)mode;
   if (!_radioStartJam()) {
-    ShowStatusAction::show("CC1101 not found");
+    ShowStatusAction::show("CC1101 not detected");
     return false;
   }
   _enterJammingMode();
@@ -341,12 +340,12 @@ void SubGHzScreen::_selectRssiThreshold() {
 
 void SubGHzScreen::_startScan() {
   if (_csPin < 0 || _gdo0Pin < 0) {
-    ShowStatusAction::show("Set CS and GDO0 pins first");
+    ShowStatusAction::show("CS and GDO0 pins not set");
     render();
     return;
   }
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-    ShowStatusAction::show("CC1101 not found");
+    ShowStatusAction::show("CC1101 not detected");
     render();
     return;
   }
@@ -365,17 +364,17 @@ void SubGHzScreen::_startScan() {
 
 void SubGHzScreen::_startRecordRaw() {
   if (_csPin < 0 || _gdo0Pin < 0) {
-    ShowStatusAction::show("Set CS and GDO0 pins first");
+    ShowStatusAction::show("CS and GDO0 pins not set");
     render();
     return;
   }
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-    ShowStatusAction::show("CC1101 not found");
+    ShowStatusAction::show("CC1101 not detected");
     render();
     return;
   }
   if (!_rf.beginRawRecord()) {
-    ShowStatusAction::show("Record init failed");
+    ShowStatusAction::show("Failed to start recording");
     render();
     return;
   }
@@ -538,8 +537,8 @@ void SubGHzScreen::_recordRawFinish() {
     }
     if (strcmp(c, "replay") == 0) {
       ProgressView::init();
-      ProgressView::progress("Replaying RAW", 50);
-      if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) { ShowStatusAction::show("CC1101 not found"); continue; }
+      ProgressView::progress("Replaying...", 50);
+      if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) { ShowStatusAction::show("CC1101 not detected"); continue; }
       _rf.sendSignal(_capturedSignals[0]);
       ProgressView::finish();
       int n = Achievement.inc("rf_send_first");
@@ -589,7 +588,7 @@ void SubGHzScreen::_pickBruteRepeats() {
 
 void SubGHzScreen::_startBruteForce() {
   if (_csPin < 0 || _gdo0Pin < 0) {
-    ShowStatusAction::show("Set CS and GDO0 pins first");
+    ShowStatusAction::show("CS and GDO0 pins not set");
     render();
     return;
   }
@@ -619,12 +618,12 @@ void SubGHzScreen::_startBruteForce() {
   _bruteKey   = 0;
 
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-    ShowStatusAction::show("CC1101 not found");
+    ShowStatusAction::show("CC1101 not detected");
     render();
     return;
   }
   if (!_rf.beginBruteTx(_rf.getFrequency())) {
-    ShowStatusAction::show("TX init failed");
+    ShowStatusAction::show("Failed to start TX");
     _rf.end();
     render();
     return;
@@ -675,7 +674,7 @@ bool SubGHzScreen::_onUpdateBruteForce() {
   if (_bruteKey >= _bruteTotal) {
     _rf.endBruteTx();
     _rf.end();
-    ShowStatusAction::show("Brute force done", 1500);
+    ShowStatusAction::show("Completed", 1500);
     _showMenu();
     return true;
   }
@@ -891,7 +890,7 @@ void SubGHzScreen::_pickWaterfallFreq(float& boundary) {
 
 void SubGHzScreen::_startWaterfall() {
   if (_csPin < 0 || _gdo0Pin < 0) {
-    ShowStatusAction::show("Set CS and GDO0 pins first");
+    ShowStatusAction::show("CS and GDO0 pins not set");
     render();
     return;
   }
@@ -920,7 +919,7 @@ void SubGHzScreen::_runWaterfall() {
   if (_wfEnd - _wfStart < 0.01f) _wfEnd = _wfStart + 0.01f;
 
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
-    ShowStatusAction::show("CC1101 not found");
+    ShowStatusAction::show("CC1101 not detected");
     render();
     return;
   }
