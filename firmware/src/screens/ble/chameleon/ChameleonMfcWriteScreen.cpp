@@ -450,7 +450,7 @@ void ChameleonMfcWriteScreen::onInit() {
   if (!ok) {
     render();
     const char* msg = _source == SOURCE_FILE ? "Invalid Classic 1K dump" :
-                      (_source == SOURCE_SLOT ? "Slot is not Classic 1K" : "Read tag is not Classic 1K");
+                      (_source == SOURCE_SLOT ? "Slot is not Classic 1K" : "Tag is not Classic 1K");
     ShowStatusAction::show(msg, 1600); Screen.goBack(); return;
   }
   _buildSourcePreview();

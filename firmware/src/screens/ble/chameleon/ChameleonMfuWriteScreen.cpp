@@ -320,7 +320,7 @@ void ChameleonMfuWriteScreen::onInit() {
     render();
     const char* msg = _source == SOURCE_FILE ? "Invalid NTAG215 dump" :
                       (_source == SOURCE_SLOT ? "Slot is not NTAG215" :
-                                                "Read tag is not NTAG215");
+                                                "Tag is not NTAG215");
     ShowStatusAction::show(msg, 1600);
     Screen.goBack();
     return;

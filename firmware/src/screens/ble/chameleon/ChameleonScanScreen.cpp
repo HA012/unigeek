@@ -166,7 +166,7 @@ void ChameleonScanScreen::onItemSelected(uint8_t index) {
     _state      = STATE_EMPTY;
     _startScan();
     render();
-    ShowStatusAction::show("Failed to connect", 1200);
+    ShowStatusAction::show("Connection failed", 1200);
     render();
   }
 }
