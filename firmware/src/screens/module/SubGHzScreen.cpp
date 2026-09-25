@@ -89,7 +89,7 @@ void SubGHzScreen::_replayPendingFile() {
   String content = Uni.Storage ? Uni.Storage->readFile(file.c_str()) : String();
   Signal sig;
   if (content.length() == 0 || !CC1101Util::loadFile(content, sig)) {
-    ShowStatusAction::show("Invalid .sub file");
+    ShowStatusAction::show("Invalid SUB file");
     Screen.goBack();
     return;
   }
@@ -100,7 +100,7 @@ void SubGHzScreen::_replayPendingFile() {
   ProgressView::init();
   ProgressView::progress("Replaying...", 50);
   if (!_radioSendFromBrowse(sig)) {
-    ShowStatusAction::show("Failed to send");
+    ShowStatusAction::show("Failed");
     Screen.goBack();
     return;
   }

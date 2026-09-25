@@ -278,7 +278,7 @@ void IRScreen::onItemSelected(uint8_t index) {
           if (n == 1) Achievement.unlock("ir_remote_collection");
         }
       } else {
-        ShowStatusAction::show("Failed to save");
+        ShowStatusAction::show("Failed");
       }
       _ir.end();
       _showMenu();
@@ -521,7 +521,7 @@ void IRScreen::_saveSendFile() {
     ShowStatusAction::show("Saved");
     _sendDirty = false;
   } else {
-    ShowStatusAction::show("Failed to save");
+    ShowStatusAction::show("Failed");
   }
   _refreshSendList();
 }

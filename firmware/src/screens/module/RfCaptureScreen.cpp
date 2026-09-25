@@ -445,7 +445,7 @@ void RfCaptureScreen::_saveSignal(uint8_t index, const String& name) {
     if (n == 5)  Achievement.unlock("rf_signal_saved_5");
     if (n == 20) Achievement.unlock("rf_signal_saved_20");
   } else {
-    ShowStatusAction::show("Failed to save");
+    ShowStatusAction::show("Failed");
   }
 }
 
@@ -537,14 +537,14 @@ void RfCaptureScreen::_sendBrowseFile(uint8_t index) {
   bool ok = CC1101Util::loadFromStream(f, sig, f.size());
   f.close();
   if (!ok) {
-    ShowStatusAction::show("Invalid .sub file");
+    ShowStatusAction::show("Invalid SUB file");
     render();
     return;
   }
   ProgressView::init();
   ProgressView::progress("Sending...", 50);
   if (!_radioSendFromBrowse(sig)) {
-    ShowStatusAction::show("Failed to send");
+    ShowStatusAction::show("Failed");
     render();
     return;
   }
@@ -561,7 +561,7 @@ void RfCaptureScreen::_showBrowseFileInfo(uint8_t index) {
   bool ok = f && CC1101Util::loadFromStream(f, sig, f.size());
   if (f) f.close();
   if (!ok) {
-    ShowStatusAction::show("Invalid .sub file");
+    ShowStatusAction::show("Invalid SUB file");
     render();
     return;
   }

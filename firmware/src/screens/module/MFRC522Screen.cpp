@@ -320,7 +320,7 @@ void MFRC522Screen::_callScanUid() {
     lcd.drawString(uid.c_str(), bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 + 10);
   } else {
     lcd.setTextSize(2);
-    lcd.drawString("No tag found", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 4);
+    lcd.drawString("Tag not detected", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 4);
   }
 
   lcd.setTextSize(1);
@@ -375,7 +375,7 @@ void MFRC522Screen::_callAuthenticate() {
       }
     }
     if (millis() - start > 5000) {
-      ShowStatusAction::show("No tag detected");
+      ShowStatusAction::show("Tag not detected");
       _goMainMenu();
       return;
     }
@@ -1105,7 +1105,7 @@ void MFRC522Screen::_callDarksideAttack() {
       delay(50);
     }
     if (!found) {
-      ShowStatusAction::show("No tag detected");
+      ShowStatusAction::show("Tag not detected");
       _goMainMenu();
       return;
     }
