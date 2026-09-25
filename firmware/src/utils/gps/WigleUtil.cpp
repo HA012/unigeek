@@ -194,7 +194,7 @@ bool WigleUtil::uploadFile(IStorage* storage, const String& fileName) {
   client.setInsecure();
   if (!client.connect("api.wigle.net", 443, 10000)) {
     f.close();
-    ShowStatusAction::show("Connection failed!");
+    ShowStatusAction::show("Connection failed");
     return false;
   }
 
