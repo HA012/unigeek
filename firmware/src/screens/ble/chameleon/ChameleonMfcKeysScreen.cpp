@@ -34,7 +34,7 @@ void ChameleonMfcKeysScreen::_loadDatabases() {
   setItems(_browser.items(), n);
   render();
 
-  if (!n && _pickDir == kDictDir) ShowStatusAction::show("No dictionaries", 1600);
+  if (!n && _pickDir == kDictDir) ShowStatusAction::show("No dictionary files", 1600);
 }
 
 void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& name) {

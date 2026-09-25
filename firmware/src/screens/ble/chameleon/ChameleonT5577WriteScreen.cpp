@@ -291,6 +291,6 @@ void ChameleonT5577WriteScreen::_performWrite() {
   const bool ok = _writeWithPasswordFallback(_sourceType, _sourceData, _sourceLen);
   _busy = false;
   _buildPreview(); render();
-  if (ok) { ShowStatusAction::show("Tag written", 1600); Screen.goBack(); return; }
+  if (ok) { ShowStatusAction::show("Written", 1600); Screen.goBack(); return; }
   ShowStatusAction::show("Failed", 1600); render();
 }

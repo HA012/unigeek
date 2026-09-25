@@ -254,7 +254,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   if (!keysOk) {
     if (restoreMode) c.setMode(previousMode);
     render();
-    ShowStatusAction::show("Failed: missing key", 1600);
+    ShowStatusAction::show("Key not available", 1600);
     render();
     return;
   }

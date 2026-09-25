@@ -229,7 +229,7 @@ void ChameleonSlotEditScreen::_deleteSlot(bool) {
 void ChameleonSlotEditScreen::_saveNicks() {
   bool ok = ChameleonClient::get().saveSlotNicks();
   render();
-  ShowStatusAction::show(ok ? "Nicks saved" : "Failed", 1200);
+  ShowStatusAction::show(ok ? "Saved" : "Failed", 1200);
   render();
 }
 

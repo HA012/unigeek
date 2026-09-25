@@ -1826,7 +1826,7 @@ bool ST25R3916Screen::_writeMfcDumpToTag() {
     if (!foundA[sector] && !foundB[sector]) {
       ProgressView::finish();
       render();
-      ShowStatusAction::show("Failed: missing key", 1600);
+      ShowStatusAction::show("Key not available", 1600);
       _showMfcTagMenu();
       return false;
     }
@@ -1927,7 +1927,7 @@ bool ST25R3916Screen::_writeMfcDumpToTag() {
 
   ProgressView::finish();
   render();
-  ShowStatusAction::show("Tag written", 1500);
+  ShowStatusAction::show("Written", 1500);
   _showMfcTagMenu();
   return true;
 #else
@@ -2010,7 +2010,7 @@ void ST25R3916Screen::_eraseMfcTag() {
 
   if (!keysOk) {
     render();
-    ShowStatusAction::show("Failed: missing key", 1700);
+    ShowStatusAction::show("Key not available", 1700);
     _showMfcTagMenu();
     return;
   }
@@ -2899,9 +2899,9 @@ bool ST25R3916Screen::_writeMfuDumpToTag() {
       return false;
     }
   }
-  ProgressView::progress("Tag written", 100); ProgressView::finish(); dev.deactivate();
+  ProgressView::progress("Written", 100); ProgressView::finish(); dev.deactivate();
   render();
-  ShowStatusAction::show("Tag written", 1600); _showMfuTagMenu(); return true;
+  ShowStatusAction::show("Written", 1600); _showMfuTagMenu(); return true;
 #else
   ShowStatusAction::show("ST25R3916 not supported"); return false;
 #endif
@@ -4086,7 +4086,7 @@ void ST25R3916Screen::_showMfcKnownKeys() {
 }
 
 void ST25R3916Screen::_openMfcDictionaries(bool attackMode) {
-  if(!_dictPickDir.length())_dictPickDir=_dictPath;_browser.root=_dictPath;uint8_t n=_browser.load(this,_dictPickDir,".txt",nullptr,BrowseFileView::STEM_CAPITALIZED,attackMode?nullptr:(_dictPickDir==_dictPath?"discovered.txt":nullptr));_state=attackMode?STATE_MFC_DICT_ATTACK_SELECT:STATE_MFC_DICT_SELECT;setItems(_browser.items(),n);render();if(!n&&_dictPickDir==_dictPath)ShowStatusAction::show("No dictionaries");
+  if(!_dictPickDir.length())_dictPickDir=_dictPath;_browser.root=_dictPath;uint8_t n=_browser.load(this,_dictPickDir,".txt",nullptr,BrowseFileView::STEM_CAPITALIZED,attackMode?nullptr:(_dictPickDir==_dictPath?"discovered.txt":nullptr));_state=attackMode?STATE_MFC_DICT_ATTACK_SELECT:STATE_MFC_DICT_SELECT;setItems(_browser.items(),n);render();if(!n&&_dictPickDir==_dictPath)ShowStatusAction::show("No dictionary files");
 }
 
 void ST25R3916Screen::_openMfcDictionary(uint8_t index,bool attackMode) {
@@ -4515,7 +4515,7 @@ void ST25R3916Screen::_editMfcMemory() {
     }
   }
 
-  ShowStatusAction::show(ok ? "Block written" : "Failed: missing key", 1600);
+  ShowStatusAction::show(ok ? "Block written" : "Key not available", 1600);
 #endif
   _showMfcAdvancedMenu();
 }
@@ -4760,7 +4760,7 @@ void ST25R3916Screen::_experimentalNfcvAction(uint8_t index) {
     dev.deactivate();_showStatusAndReturn("Password not supported", STATE_EXP_ADVANCED_MENU, 1600); return;
   }
   if(index==4){int b=InputNumberAction::popup("Block to lock",0,info.blocks-1,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalAdvancedMenu();return;}static const InputSelectAction::Option o[]={{"Lock permanently","lock"}};const char*c=InputSelectAction::popup("Permanent operation",o,1,nullptr);if(!c){dev.deactivate();_showExperimentalAdvancedMenu();return;}bool ok=ST25R3916Experimental::typeVLockBlock(dev,tag,b);dev.deactivate();_showStatusAndReturn(ok?"Block locked":"Failed", STATE_EXP_ADVANCED_MENU, 1600); return;}
-  if(index==10){int start=InputNumberAction::popup("Start block",0,info.blocks-1,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}String h=InputTextAction::popup("Data (hex, block aligned)","",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}uint8_t d[256];size_t dl=0;if(!st25ParseHex(h,d,sizeof(d),dl)||!dl||dl%info.blockSize){dev.deactivate();_showStatusAndReturn("Data must align to blocks", STATE_EXP_TAG_MENU, 1600); return;}bool ok=true;for(size_t off=0;off<dl&&ok;off+=info.blockSize){uint16_t b=(uint16_t)(start+off/info.blockSize);if(b>=info.blocks){ok=false;break;}ok=ST25R3916Experimental::typeVWriteBlock(dev,tag,b,d+off,info.blockSize);}dev.deactivate();_showStatusAndReturn(ok?"Tag written":"Failed", STATE_EXP_TAG_MENU, 1600); return;}
+  if(index==10){int start=InputNumberAction::popup("Start block",0,info.blocks-1,0);if(InputNumberAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}String h=InputTextAction::popup("Data (hex, block aligned)","",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){dev.deactivate();_showExperimentalTagMenu();return;}uint8_t d[256];size_t dl=0;if(!st25ParseHex(h,d,sizeof(d),dl)||!dl||dl%info.blockSize){dev.deactivate();_showStatusAndReturn("Data must align to blocks", STATE_EXP_TAG_MENU, 1600); return;}bool ok=true;for(size_t off=0;off<dl&&ok;off+=info.blockSize){uint16_t b=(uint16_t)(start+off/info.blockSize);if(b>=info.blocks){ok=false;break;}ok=ST25R3916Experimental::typeVWriteBlock(dev,tag,b,d+off,info.blockSize);}dev.deactivate();_showStatusAndReturn(ok?"Written":"Failed", STATE_EXP_TAG_MENU, 1600); return;}
   static const InputSelectAction::Option o[]={{"Erase user data","erase"}};const char*c=InputSelectAction::popup("Preserve CC/control TLVs?",o,1,nullptr);if(!c){dev.deactivate();_showExperimentalTagMenu();return;}size_t erasedCapacity=0;bool ok=ST25R3916Experimental::typeVEraseTagSafe(dev,tag,erasedCapacity);dev.deactivate();_showStatusAndReturn(ok?"Tag data erased":"Safe erase not supported", STATE_EXP_TAG_MENU, 1600);
 #endif
 }

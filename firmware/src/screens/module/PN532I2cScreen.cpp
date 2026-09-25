@@ -2538,7 +2538,7 @@ void PN532I2cScreen::_openKeyDatabases() {
                             _keyDbPickDir == _dictPath ? "discovered.txt" : nullptr);
   setItems(_browser.items(), n);
   render();
-  if (!n && _keyDbPickDir == _dictPath) ShowStatusAction::show("No dictionaries");
+  if (!n && _keyDbPickDir == _dictPath) ShowStatusAction::show("No dictionary files");
 }
 
 void PN532I2cScreen::_openKeyDatabase(uint8_t index) {
@@ -2951,7 +2951,7 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
   }
   ProgressView::finish();
   render();
-  ShowStatusAction::show(ok ? "Tag written" : "Failed", 1600);
+  ShowStatusAction::show(ok ? "Written" : "Failed", 1600);
   return ok;
 }
 
@@ -3176,7 +3176,7 @@ void PN532I2cScreen::_doMifareEditMemory() {
     {0x1A,0x98,0x2C,0x7E,0x45,0x9A}, {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF},
   };
   bool ok=false; for(uint8_t kt=0;kt<2 && !ok;++kt) for(auto &key:keys){ uint8_t uid[7]={},ul=0; if(!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,uid,&ul,250)||ul!=_uidLen||memcmp(uid,_uid,ul)!=0) continue; if(_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,kt,const_cast<uint8_t*>(key))) ok=_nfc->mifareclassic_WriteDataBlock(block,data); if(ok) break; }
-  ShowStatusAction::show(ok?"Block written":"Failed: missing key",1600); _goMifareAdvanced();
+  ShowStatusAction::show(ok?"Block written":"Key not available",1600); _goMifareAdvanced();
 }
 
 void PN532I2cScreen::_doUltralightReadPages() {
@@ -5599,7 +5599,7 @@ bool PN532I2cScreen::_doWriteDumpToTag(const uint8_t* dump, size_t len,
   // remnants of the progress UI briefly visible during Write to Tag.
   Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
   const char* status = restoreUid ? "Tag + UID written" :
-                       (replaceUidRequested && uidDiffers ? "Tag written; UID preserved" : "Tag written");
+                       (replaceUidRequested && uidDiffers ? "Written; UID preserved" : "Written");
   ShowStatusAction::show(status, 1600);
   render();
   return true;
@@ -5612,7 +5612,7 @@ void PN532I2cScreen::_doEraseTag() {
   if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
   _discoverDefaultKeys(true);
   if (!_hasReadableKeyForEverySector()) {
-    ShowStatusAction::show("Failed: missing key"); _goMifareTag(); return;
+    ShowStatusAction::show("Key not available"); _goMifareTag(); return;
   }
 
   uint8_t zero[16] = {};

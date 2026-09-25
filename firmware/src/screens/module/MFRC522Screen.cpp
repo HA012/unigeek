@@ -375,7 +375,7 @@ void MFRC522Screen::_callAuthenticate() {
       }
     }
     if (millis() - start > 5000) {
-      ShowStatusAction::show("No card found");
+      ShowStatusAction::show("Tag not detected");
       _goMainMenu();
       return;
     }
@@ -638,7 +638,7 @@ void MFRC522Screen::_callDictionaryAttack() {
   _browser.root = _dictPath;
   uint8_t n = _browser.load(this, _dictPickDir, ".txt");
   if (n == 0 && _dictPickDir == _dictPath) {
-    ShowStatusAction::show("No dictionary files in nfc/dictionaries/");
+    ShowStatusAction::show("No dictionary files");
     _goMifareClassic();
     return;
   }
@@ -1105,7 +1105,7 @@ void MFRC522Screen::_callDarksideAttack() {
       delay(50);
     }
     if (!found) {
-      ShowStatusAction::show("No card found");
+      ShowStatusAction::show("Tag not detected");
       _goMainMenu();
       return;
     }

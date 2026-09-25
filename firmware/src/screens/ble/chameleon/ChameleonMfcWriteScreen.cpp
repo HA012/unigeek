@@ -436,7 +436,7 @@ void ChameleonMfcWriteScreen::_write() {
 
   if (ok && !uidWriteFailed) {
     const char* status = restoreUid ? "Tag + UID written" :
-                         (replaceUidRequested && uidDiffers ? "Tag written; UID preserved" : "Tag written");
+                         (replaceUidRequested && uidDiffers ? "Written; UID preserved" : "Written");
     ShowStatusAction::show(status, 1600);
     _freeDump(); Screen.goBack(); return;
   }

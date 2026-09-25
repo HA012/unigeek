@@ -299,7 +299,7 @@ void ChameleonMfuWriteScreen::_write() {
   render();
 
   if (ok) {
-    ShowStatusAction::show("Tag written", 1600);
+    ShowStatusAction::show("Written", 1600);
     _freeDump();
     Screen.goBack();
     return;

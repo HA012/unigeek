@@ -89,7 +89,7 @@ void ChameleonT5577CleanerScreen::onItemSelected(uint8_t index) {
     if (!_loadFile(e.path.c_str())) { ShowStatusAction::show("Failed to load keys",1200); render(); return; }
     label=e.name;
   }
-  if (!_keyCount) { ShowStatusAction::show("No keys in source",1200); render(); return; }
+  if (!_keyCount) { ShowStatusAction::show("No dictionary files",1200); render(); return; }
   _sourceLabel = label;
   _state = STATE_PROMPT;
   render();
@@ -122,7 +122,7 @@ void ChameleonT5577CleanerScreen::_run(const char* sourceLabel) {
     snprintf(msg,sizeof(msg),"Try pw %02X%02X%02X%02X",_keys[i][0],_keys[i][1],_keys[i][2],_keys[i][3]);
     _log.addLine(msg,TFT_WHITE); onRender();
     if (c.writeEM410XToT5577(dummyUid,newPw,_keys[i],1)) {
-      snprintf(msg,sizeof(msg),"Recovered w/ key #%u",(unsigned)i); _log.addLine(msg,TFT_GREEN); success=true; break;
+      snprintf(msg,sizeof(msg),"Recovered with key #%u",(unsigned)i); _log.addLine(msg,TFT_GREEN); success=true; break;
     }
   }
   if (!success) _log.addLine("All passwords failed",TFT_RED);

@@ -130,7 +130,7 @@ void ChameleonSettingsScreen::_togglePairing() {
 
 void ChameleonSettingsScreen::_save() {
   bool ok = ChameleonClient::get().saveSettings();
-  ShowStatusAction::show(ok ? "Settings saved" : "Save failed", 1200);
+  ShowStatusAction::show(ok ? "Saved" : "Failed", 1200);
   if (ok) {
     int n = Achievement.inc("chameleon_settings_saved");
     if (n == 1) Achievement.unlock("chameleon_settings_saved");

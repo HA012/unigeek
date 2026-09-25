@@ -116,7 +116,7 @@ void ChameleonMfcAdvancedScreen::_editMemory(){
   const int max=sak==0x18?255:63; int block=InputNumberAction::popup((String("Block (1..")+String(max)+")").c_str(),1,max,1); if(InputNumberAction::wasCancelled()){restore();render();return;}
   String h=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX); if(InputTextAction::wasCancelled()){restore();render();return;} h.replace(" ","");h.replace(":","");
   if(h.length()!=32){restore();render();ShowStatusAction::show("Need 32 hex chars", 1600);return;} uint8_t d[16]={}; for(int i=0;i<16;++i){char x[3]={h[i*2],h[i*2+1],0};char*e=nullptr;unsigned long v=strtoul(x,&e,16);if(!e||*e){restore();render();ShowStatusAction::show("Bad hex", 1200);return;}d[i]=(uint8_t)v;}
-  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Failed: missing key",1600);
+  uint8_t key[6]={},type=0; bool ok=findKey(c,(uint8_t)block,key,type)&&c.mf1WriteBlock((uint8_t)block,type,key,d); restore(); render();ShowStatusAction::show(ok?"Block written":"Key not available",1600);
 }
 
 

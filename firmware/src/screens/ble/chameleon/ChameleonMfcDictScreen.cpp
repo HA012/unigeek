@@ -165,7 +165,7 @@ void ChameleonMfcDictScreen::onItemSelected(uint8_t index) {
   }
 
   if (_keyCount == 0) {
-    ShowStatusAction::show("No keys in source", 1200);
+    ShowStatusAction::show("No dictionary files", 1200);
     render();
     return;
   }
