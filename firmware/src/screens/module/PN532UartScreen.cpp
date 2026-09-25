@@ -415,7 +415,7 @@ void PN532UartScreen::_doScan15() {
     if (_pn->listPassiveTarget15(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No 15693 tag"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMain(); return; }
 
   _state = STATE_SCAN_RESULT;
   _resetRows();
@@ -444,7 +444,7 @@ void PN532UartScreen::_doScanLF() {
     if (_pn->listPassiveTargetEM4100(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No LF tag"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMain(); return; }
 
   _state = STATE_SCAN_RESULT;
   _resetRows();
@@ -761,7 +761,7 @@ void PN532UartScreen::_doUltralightWrite() {
   String hex = InputTextAction::popup("Page data (8 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) { _goUltralight(); return; }
   hex.replace(" ", "");
-  if (hex.length() != 8) { ShowStatusAction::show("Need 8 hex chars"); _goUltralight(); return; }
+  if (hex.length() != 8) { ShowStatusAction::show("Enter 8 hex characters"); _goUltralight(); return; }
 
   uint8_t data[4];
   for (int i = 0; i < 4; i++) {

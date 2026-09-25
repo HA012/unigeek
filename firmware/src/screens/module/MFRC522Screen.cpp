@@ -696,7 +696,7 @@ void MFRC522Screen::_callDictAttackWithFile(uint8_t fileIndex) {
   }
 
   if (keyCount == 0) {
-    ShowStatusAction::show("No valid keys found");
+    ShowStatusAction::show("No valid keys");
     render();
     return;
   }
