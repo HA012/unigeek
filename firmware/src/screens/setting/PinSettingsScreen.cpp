@@ -210,7 +210,7 @@ void PinSettingsScreen::onItemSelected(uint8_t index) {
     }
     case PIN_CC1101_SW1: {
       int cur = PinConfig.getInt(PIN_CONFIG_CC1101_SW1, PIN_CONFIG_CC1101_SW1_DEFAULT);
-      int val = InputNumberAction::popup("CC1101 SW1 Pin", -1, 48, cur);
+      int val = InputNumberAction::popup("CC1101 SW1 Pin", -2, 48, cur);
       if (!InputNumberAction::wasCancelled()) { PinConfig.set(PIN_CONFIG_CC1101_SW1, String(val)); PinConfig.save(Uni.Storage); }
       break;
     }
