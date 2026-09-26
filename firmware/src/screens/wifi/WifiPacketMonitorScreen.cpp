@@ -232,6 +232,7 @@ void WifiPacketMonitorScreen::_doBssidScan()
   _state = STATE_SELECT_BSSID;
   strncpy(_title, "Select Access Points", sizeof(_title));
   _title[sizeof(_title) - 1] = '\0';
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   // Keep the scan flow aligned with WiFi Analyzer: one blocking snapshot,

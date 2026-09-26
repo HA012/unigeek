@@ -230,6 +230,7 @@ void WifiEvilTwinScreen::_selectWifi(bool forceScan)
   }
 
   _state = STATE_SELECT_WIFI;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);

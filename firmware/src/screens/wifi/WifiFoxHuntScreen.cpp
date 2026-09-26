@@ -94,6 +94,7 @@ void WifiFoxHuntScreen::_doScan()
 {
   _state = STATE_SCAN;
   _selected = -1;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);

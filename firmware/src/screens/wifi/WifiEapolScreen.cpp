@@ -302,6 +302,7 @@ void WifiEapolScreen::_selectWifi(bool forceScan) {
   }
 
   _phase = PHASE_SELECT_WIFI;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);

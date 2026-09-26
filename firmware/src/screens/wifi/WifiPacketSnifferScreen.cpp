@@ -166,6 +166,7 @@ void WifiPacketSnifferScreen::_showChannels(bool preserveSelection) {
 void WifiPacketSnifferScreen::_scanBssids() {
   _state = STATE_BSSID;
   strncpy(_title, "Select Access Points", sizeof(_title));
+  render();
   ShowStatusAction::show("Scanning...", 0);
   WiFi.mode(WIFI_STA);
   WiFi.scanDelete();
