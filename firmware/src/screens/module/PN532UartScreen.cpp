@@ -185,6 +185,9 @@ bool PN532UartScreen::_initModule() {
     return false;
   }
 
+  // BaseScreen::init() calls onInit() before the first normal render().
+  // Draw the chrome first so the loading view preserves the sidebars.
+  render();
   ProgressView::init();
   ProgressView::progress("Opening UART...", 10);
 

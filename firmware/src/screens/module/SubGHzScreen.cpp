@@ -62,6 +62,9 @@ void SubGHzScreen::onInit() {
     return;
   }
 
+  // BaseScreen::init() calls onInit() before the first normal render().
+  // Draw the chrome first so the loading view preserves the sidebars.
+  render();
   ProgressView::init();
   ProgressView::progress("Starting CC1101...", 30);
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {

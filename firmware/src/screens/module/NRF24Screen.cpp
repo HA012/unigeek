@@ -126,7 +126,8 @@ void NRF24Screen::onInit() {
     return;
   }
 
-  // Match PN532 module entry UX: create the loading view before reporting progress.
+  // Match PN532 module entry UX: draw the chrome before painting progress.
+  render();
   ProgressView::init();
   ProgressView::progress("Starting NRF24...", 30);
   if (!_radioBegin()) {

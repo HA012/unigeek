@@ -34,8 +34,9 @@ void IRScreen::onInit() {
   _txPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_TX, PIN_CONFIG_IR_TX_DEFAULT);
   _rxPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_RX, PIN_CONFIG_IR_RX_DEFAULT);
 
-  // Keep module entry UX consistent with PN532: initialize with a loading view.
+  // Keep module entry UX consistent with PN532: draw the chrome before loading.
   // IR has no hardware probe phase, but the user should see the same transition.
+  render();
   ProgressView::init();
   ProgressView::progress("Starting IR...", 30);
 

@@ -160,6 +160,9 @@ void MFRC522Screen::_initModule() {
 
   _activeBus = nullptr;
 
+  // Match PN532 module entry UX: preserve the screen chrome during loading.
+  render();
+
   // Try external I2C first
   if (Uni.ExI2C) {
     int sda = PinConfig.getInt(PIN_CONFIG_EXT_SDA, PIN_CONFIG_EXT_SDA_DEFAULT);

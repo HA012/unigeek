@@ -455,7 +455,8 @@ static bool st25BuildMfuLockMasks(const String& type, uint16_t first, uint16_t l
 #endif
 
 void ST25R3916Screen::onInit() {
-  // Match PN532 I2C module entry UX: show loading before menu.
+  // Match PN532 I2C module entry UX: preserve the chrome while loading.
+  render();
   ProgressView::init();
   ProgressView::progress("Starting ST25R3916...", 30);
   ProgressView::finish();
