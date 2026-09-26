@@ -32,6 +32,7 @@ void ChameleonSlotsScreen::_load() {
 }
 
 void ChameleonSlotsScreen::onInit() {
+  render();
   ShowStatusAction::show("Loading...", 0);
   _load();
   setItems(_items);

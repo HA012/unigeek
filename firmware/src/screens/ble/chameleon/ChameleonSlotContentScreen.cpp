@@ -506,6 +506,7 @@ void ChameleonSlotContentScreen::onInit() {
 
   _rowCount = 0;
   _loading = true;
+  render();
   ShowStatusAction::show("Loading...", 0);
   _run();
 

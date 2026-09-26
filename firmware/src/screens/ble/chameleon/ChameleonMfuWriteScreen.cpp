@@ -313,6 +313,7 @@ void ChameleonMfuWriteScreen::_write() {
 
 void ChameleonMfuWriteScreen::onInit() {
   _busy = true;
+  render();
   ShowStatusAction::show("Loading...", 0);
   bool ok = _loadSource();
   _busy = false;

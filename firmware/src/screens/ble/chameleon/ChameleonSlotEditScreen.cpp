@@ -17,7 +17,6 @@
 
 void ChameleonSlotEditScreen::_load() {
   auto& c = ChameleonClient::get();
-  snprintf(_title, sizeof(_title), "Slot %d", _slot + 1);
 
   uint8_t act = 0;
   if (c.getActiveSlot(&act)) _isActive = (act == _slot);
@@ -81,6 +80,8 @@ void ChameleonSlotEditScreen::_rebuildLabels() {
 }
 
 void ChameleonSlotEditScreen::onInit() {
+  snprintf(_title, sizeof(_title), "Slot %d", _slot + 1);
+  render();
   ShowStatusAction::show("Loading...", 0);
   _load();
   setItems(_items);

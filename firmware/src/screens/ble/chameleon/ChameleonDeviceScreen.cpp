@@ -55,6 +55,7 @@ void ChameleonDeviceScreen::_load() {
 }
 
 void ChameleonDeviceScreen::onInit() {
+  render();
   ShowStatusAction::show("Loading...", 0);
   _load();
 }

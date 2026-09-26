@@ -445,7 +445,8 @@ void ChameleonMfcWriteScreen::_write() {
 }
 
 void ChameleonMfcWriteScreen::onInit() {
-  _busy = true; ShowStatusAction::show("Loading...", 0);
+  _busy = true; render();
+  ShowStatusAction::show("Loading...", 0);
   bool ok = _loadSource(); _busy = false;
   if (!ok) {
     render();
