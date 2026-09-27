@@ -593,38 +593,37 @@ void SubGHzScreen::_startBruteForce() {
     return;
   }
 
-  // Config menu: adjust protocol / repeats, then Start. The frequency is the one
-  // configured in the module's Frequency menu (_rf keeps it). InputSelectAction
-  // appends its own Cancel entry, so we don't add one. Labels live in local
-  // buffers that outlive the (blocking) popup.
-  while (true) {
-    char protoL[36], repL[16];
-    snprintf(protoL, sizeof(protoL), "Protocol: %s", kBruteProtos[_bruteSel].label);
-    snprintf(repL,   sizeof(repL),   "Repeats: %d",  _bruteRepeat);
-    InputSelectAction::Option opts[] = {
-      {"Start", "start"},
-      {protoL,  "proto"},
-      {repL,    "rep"},
-    };
-    const char* c = InputSelectAction::popup("Brute Force", opts, 3);
-    if (!c) { render(); return; }   // Cancel
-    if (strcmp(c, "proto") == 0) { _pickBruteProto();   continue; }
-    if (strcmp(c, "rep")   == 0) { _pickBruteRepeats(); continue; }
-    if (strcmp(c, "start") == 0) break;
-  }
+  _selectedIndex = 0;
+  _showBruteForceConfig();
+}
 
+void SubGHzScreen::_showBruteForceConfig() {
+  snprintf(_bruteRepeatLabel, sizeof(_bruteRepeatLabel), "%d", _bruteRepeat);
+
+  _bruteConfigItems[0] = {"Protocol", kBruteProtos[_bruteSel].label};
+  _bruteConfigItems[1] = {"Repeats",  _bruteRepeatLabel};
+  _bruteConfigItems[2] = {"Start",    nullptr};
+
+  _state = STATE_BRUTEFORCE_CONFIG;
+  strcpy(_titleBuf, "Brute Force");
+  setItems(_bruteConfigItems, 3, min<uint8_t>(_selectedIndex, 2));
+}
+
+void SubGHzScreen::_runBruteForce() {
   _bruteBits  = kBruteProtos[_bruteSel].bits;
   _bruteTotal = (_bruteBits >= 32) ? 0xFFFFFFFFu : (1u << _bruteBits);
   _bruteKey   = 0;
 
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
     ShowStatusAction::show("CC1101 not detected");
+    _showBruteForceConfig();
     render();
     return;
   }
   if (!_rf.beginBruteTx(_rf.getFrequency())) {
     ShowStatusAction::show("Failed to start TX");
     _rf.end();
+    _showBruteForceConfig();
     render();
     return;
   }
@@ -727,6 +726,10 @@ bool SubGHzScreen::_onRenderBruteForce() {
 }
 
 bool SubGHzScreen::_onUpdateExtra() {
+  if (_state == STATE_WATERFALL_CONFIG || _state == STATE_BRUTEFORCE_CONFIG) {
+    ListScreen::onUpdate();
+    return true;
+  }
   if (_state == STATE_RECORD_RAW) return _onUpdateRecordRaw();
   if (_state == STATE_WATERFALL) return _onUpdateWaterfall();
   if (_state == STATE_BRUTEFORCE) return _onUpdateBruteForce();
@@ -752,6 +755,10 @@ bool SubGHzScreen::_onUpdateExtra() {
 }
 
 bool SubGHzScreen::_onRenderExtra() {
+  if (_state == STATE_WATERFALL_CONFIG || _state == STATE_BRUTEFORCE_CONFIG) {
+    ListScreen::onRender();
+    return true;
+  }
   if (_state == STATE_RECORD_RAW) return _onRenderRecordRaw();
   if (_state == STATE_WATERFALL) return _onRenderWaterfall();
   if (_state == STATE_BRUTEFORCE) return _onRenderBruteForce();
@@ -829,7 +836,61 @@ bool SubGHzScreen::_onRenderExtra() {
   return true;
 }
 
+bool SubGHzScreen::_onItemSelectedExtra(uint8_t index) {
+  if (_state == STATE_WATERFALL_CONFIG) {
+    switch (index) {
+      case 0:
+        _pickWaterfallFreq(_wfStart);
+        _showWaterfallConfig();
+        render();
+        break;
+      case 1:
+        _pickWaterfallFreq(_wfEnd);
+        _showWaterfallConfig();
+        render();
+        break;
+      case 2:
+        _runWaterfall();
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
+
+  if (_state == STATE_BRUTEFORCE_CONFIG) {
+    switch (index) {
+      case 0:
+        _pickBruteProto();
+        _showBruteForceConfig();
+        render();
+        break;
+      case 1:
+        _pickBruteRepeats();
+        _showBruteForceConfig();
+        render();
+        break;
+      case 2:
+        _runBruteForce();
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 bool SubGHzScreen::_onBackExtra() {
+  if (_state == STATE_BRUTEFORCE_CONFIG) {
+    _showMenu();
+    return true;
+  }
+  if (_state == STATE_WATERFALL_CONFIG) {
+    _showMenu();
+    return true;
+  }
   if (_state == STATE_RECORD_RAW) {
     _rf.endRawRecord();
     _rf.end();
@@ -895,23 +956,21 @@ void SubGHzScreen::_startWaterfall() {
     return;
   }
 
-  // Band-select loop: Start Waterfall / Start Freq / End Freq / Back.
-  while (true) {
-    char startLbl[24], endLbl[24];
-    snprintf(startLbl, sizeof(startLbl), "Start: %.2f MHz", _wfStart);
-    snprintf(endLbl,   sizeof(endLbl),   "End:   %.2f MHz", _wfEnd);
-    InputSelectAction::Option opts[4] = {
-      {"Start Waterfall", "run"},
-      {startLbl,          "start"},
-      {endLbl,            "end"},
-      {"Back",            "back"},
-    };
-    const char* c = InputSelectAction::popup("Waterfall", opts, 4);
-    if (!c || strcmp(c, "back") == 0) { render(); return; }
-    if (strcmp(c, "start") == 0)      { _pickWaterfallFreq(_wfStart); continue; }
-    if (strcmp(c, "end") == 0)        { _pickWaterfallFreq(_wfEnd);   continue; }
-    if (strcmp(c, "run") == 0)        { _runWaterfall(); return; }
-  }
+  _selectedIndex = 0;
+  _showWaterfallConfig();
+}
+
+void SubGHzScreen::_showWaterfallConfig() {
+  snprintf(_wfStartLabel, sizeof(_wfStartLabel), "%.2f MHz", _wfStart);
+  snprintf(_wfEndLabel,   sizeof(_wfEndLabel),   "%.2f MHz", _wfEnd);
+
+  _wfConfigItems[0] = {"Start Freq", _wfStartLabel};
+  _wfConfigItems[1] = {"End Freq",   _wfEndLabel};
+  _wfConfigItems[2] = {"Start",      nullptr};
+
+  _state = STATE_WATERFALL_CONFIG;
+  strcpy(_titleBuf, "Waterfall");
+  setItems(_wfConfigItems, 3, min<uint8_t>(_selectedIndex, 2));
 }
 
 void SubGHzScreen::_runWaterfall() {

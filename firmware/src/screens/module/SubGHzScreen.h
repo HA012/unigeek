@@ -22,6 +22,8 @@ protected:
   // Extra states: frequency-sweep view, RSSI waterfall.
   static constexpr int STATE_SCANNING  = STATE_USER_BASE + 0;
   static constexpr int STATE_WATERFALL = STATE_USER_BASE + 1;
+  static constexpr int STATE_WATERFALL_CONFIG  = STATE_USER_BASE + 4;
+  static constexpr int STATE_BRUTEFORCE_CONFIG = STATE_USER_BASE + 5;
 
   // ── Radio adapter ──────────────────────────────────────────────────────
   bool        _radioBeginReceive()                override { return _rf.beginReceive(); }
@@ -50,6 +52,7 @@ protected:
   bool _onUpdateExtra()             override;
   bool _onRenderExtra()             override;
   bool _onBackExtra()               override;
+  bool _onItemSelectedExtra(uint8_t index) override;
   bool _inhibitExtra() const        override {
     return _state == STATE_SCANNING || _state == STATE_WATERFALL ||
            _state == STATE_RECORD_RAW || _state == STATE_BRUTEFORCE;
@@ -125,7 +128,11 @@ private:
   uint32_t _bruteTotal    = 0;     // 1 << bits
   uint32_t _bruteRenderMs = 0;     // render throttle
   bool     _bruteChrome   = false; // static header drawn once
-  void _startBruteForce();         // config menu (protocol/freq/repeats) then run
+  ListItem _bruteConfigItems[3];
+  char     _bruteRepeatLabel[8] = {};
+  void _startBruteForce();         // show Brute Force configuration form
+  void _showBruteForceConfig();
+  void _runBruteForce();
   void _pickBruteProto();
   void _pickBruteRepeats();
   void _bruteTransmit(uint32_t code);  // encode one code + send (registry or table)
@@ -142,7 +149,11 @@ private:
   int      _wfMaxRssi = -120;
   float    _wfMaxFreq = 0;
   uint32_t _wfLastMax = 0;
-  void _startWaterfall();         // band-select popup loop, then run
+  ListItem _wfConfigItems[3];
+  char     _wfStartLabel[20] = {};
+  char     _wfEndLabel[20]   = {};
+  void _startWaterfall();         // show Waterfall configuration form
+  void _showWaterfallConfig();
   void _runWaterfall();           // enter STATE_WATERFALL
   void _pickWaterfallFreq(float& boundary);
   bool _onUpdateWaterfall();
