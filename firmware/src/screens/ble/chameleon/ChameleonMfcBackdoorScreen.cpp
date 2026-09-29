@@ -4,6 +4,7 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/MfcBackdoorSENRecovery.h"
+#include "utils/nfc/MfcKeyStore.h"
 #include <cstring>
 
 ChameleonMfcBackdoorScreen::ChameleonMfcBackdoorScreen(
@@ -67,6 +68,30 @@ void ChameleonMfcBackdoorScreen::_run() {
   memcpy(_foundB, result.foundB, sizeof(_foundB));
   memcpy(_keysA, result.keysA, sizeof(_keysA));
   memcpy(_keysB, result.keysB, sizeof(_keysB));
+
+  // Persist SEN-recovered keys using the same store used by other MIFARE attacks.
+  if (result.success && Uni.Storage && Uni.Storage->isAvailable()) {
+    String buf;
+    for (uint8_t s = 0; s < _sectors; ++s) {
+      char line[48];
+      if (_foundA[s]) {
+        snprintf(line, sizeof(line), "S%02d A %02X%02X%02X%02X%02X%02X\n",
+                 s, _keysA[s][0], _keysA[s][1], _keysA[s][2],
+                 _keysA[s][3], _keysA[s][4], _keysA[s][5]);
+        buf += line;
+      }
+      if (_foundB[s]) {
+        snprintf(line, sizeof(line), "S%02d B %02X%02X%02X%02X%02X%02X\n",
+                 s, _keysB[s][0], _keysB[s][1], _keysB[s][2],
+                 _keysB[s][3], _keysB[s][4], _keysB[s][5]);
+        buf += line;
+      }
+    }
+    if (buf.length() > 0) {
+      MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, buf);
+    }
+  }
+
   // Rebuild the screen after ProgressView before placing the modal status on
   // top; otherwise remnants of the completed progress view can show through.
   _build();

@@ -27,6 +27,12 @@ public:
   void onBack()                      override;
 
 private:
+  enum class BackdoorResult {
+    Failed,
+    Acquired,
+    Recovered,
+  };
+
   enum State {
     STATE_AUTH,
     STATE_MF_MENU,
@@ -48,8 +54,6 @@ private:
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
   bool _resumeReadAfterAttack = false;
-  bool _backdoorSENAttempted = false;
-  bool _senAvailable = false;
   bool  _running = false;
 
   // Card info
@@ -120,10 +124,9 @@ private:
   void _showReadPreview();
   void _showReadActions();
   void _callRecoverKeys();
-  enum class ChainDictResult { Completed, Skipped, Cancelled, Failed };
-  ChainDictResult _runChainDictionary(const char* path, bool allowSkip, const String* skipKeys = nullptr);
-  bool _applyBulkKeyBatch(const uint8_t* keys, uint8_t keyCount);
-  bool _tryBackdoorEncNested();
+  int  _recoverKeyFromEncSample(uint8_t sector, bool keyB,
+                                uint32_t uid32, uint32_t nt, uint32_t ntEnc);
+  BackdoorResult _tryBackdoorEncNested();
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();
