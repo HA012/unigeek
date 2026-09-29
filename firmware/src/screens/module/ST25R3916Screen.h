@@ -191,10 +191,8 @@ private:
     {"Attacks"},
     {"Keys"},
   };
-  ListItem _mfcAttackItems[3] = {
+  ListItem _mfcAttackItems[1] = {
     {"Dictionary Attack"},
-    {"Static Nested"},
-    {"Nested Attack"},
   };
   ListItem _mfcKeysItems[2] = {
     {"Check Known Keys"},

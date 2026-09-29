@@ -680,7 +680,8 @@ void ST25R3916Screen::onBack() {
   }
   if (_state == STATE_MFC_ADVANCED_MENU) { _showMfcTagMenu(); return; }
   if (_state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU) { _showMfcMenu(); return; }
-  if (_state == STATE_MFC_KEYS_VIEW || _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_VIEW) { _showMfcKeysMenu(); return; }
+  if (_state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_VIEW) { _openMfcDictionaries(false); return; }
+  if (_state == STATE_MFC_KEYS_VIEW) { _showMfcKeysMenu(); return; }
   if (_state == STATE_MFC_DICT_ATTACK_SELECT) {
     if (_resumeMfcReadAfterDict) { _resumeMfcReadAfterDict = false; _showMfcTagMenu(); }
     else _showMfcAttacksMenu();
@@ -784,8 +785,6 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_ATTACKS_MENU) {
     _selMfcAttacks = index;
     if (index == 0) { _resumeMfcReadAfterDict = false; _openMfcDictionaries(true); }
-    else if (index == 1) ShowStatusAction::show("Static Nested not available on ST25 yet");
-    else if (index == 2) ShowStatusAction::show("Nested Attack not available on ST25 yet");
     return;
   }
   if (_state == STATE_MFC_KEYS_MENU) {
@@ -999,7 +998,7 @@ void ST25R3916Screen::_showMfcNdefWriteMenu() {
 void ST25R3916Screen::_showMfcAttacksMenu() {
   _dictPickDir = _dictPath;
   _state = STATE_MFC_ATTACKS_MENU;
-  setItems(_mfcAttackItems, 3, _selMfcAttacks);
+  setItems(_mfcAttackItems, 1, _selMfcAttacks);
   render();
 }
 
