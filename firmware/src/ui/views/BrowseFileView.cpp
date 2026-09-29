@@ -67,14 +67,24 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
       bool swap = false;
       if (tmp.isDir && !raw[j].isDir) swap = true;
       else if (tmp.isDir == raw[j].isDir) {
-        // An optional preferred file is pinned before the other files while
-        // preserving the normal alphabetical order for everything else.
-        bool tmpPreferred = preferredFile && !tmp.isDir &&
-                            strcasecmp(tmp.name.c_str(), preferredFile) == 0;
-        bool curPreferred = preferredFile && !raw[j].isDir &&
-                            strcasecmp(raw[j].name.c_str(), preferredFile) == 0;
-        if (tmpPreferred != curPreferred) swap = tmpPreferred;
-        else if (strcasecmp(tmp.name.c_str(), raw[j].name.c_str()) < 0) swap = true;
+        // MIFARE dictionaries: keep the generated discovered dictionary first,
+        // then known dictionaries in semantic order, and user dictionaries
+        // alphabetically. Other file browsers keep the normal alphabetical order.
+        auto dictionaryRank = [](const String& name) -> int {
+          if (strcasecmp(name.c_str(), "discovered.txt") == 0) return 0;
+          if (strcasecmp(name.c_str(), "default.txt") == 0) return 1;
+          if (strcasecmp(name.c_str(), "extended.txt") == 0) return 2;
+          if (strcasecmp(name.c_str(), "community.txt") == 0) return 3;
+          return 100;
+        };
+        int tmpRank = dictionaryRank(tmp.name);
+        int curRank = dictionaryRank(raw[j].name);
+        bool isDictionaryOrder = tmpRank != 100 || curRank != 100;
+        if (isDictionaryOrder && tmpRank != curRank) {
+          swap = tmpRank < curRank;
+        } else if (strcasecmp(tmp.name.c_str(), raw[j].name.c_str()) < 0) {
+          swap = true;
+        }
       }
       if (!swap) break;
       raw[j + 1] = raw[j];
