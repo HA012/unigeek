@@ -276,7 +276,7 @@ public:
                               uint32_t* uidOut,
                               NestedSample* out, int maxOut, int* count);
 
-  // Static-encrypted nested acquire via a Fudan-style backdoor key (cmd 2014).
+  // Backdoor Assisted SEN recovery via Fudan-style backdoor key (cmd 2014).
   // Payload: key[6] | sector_count | starting_sector.
   // Response: uid[4] followed by N records of 14 bytes
   //   {ntA_hi[2] | parA | ntEncA[4] | ntB_hi[2] | parB | ntEncB[4]}.

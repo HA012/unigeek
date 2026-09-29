@@ -23,7 +23,7 @@ struct Result {
 
 using ProgressFn = void(*)(const char* msg, int pct);
 
-// Runs the Chameleon Ultra Backdoor Assisted Static Encrypted Nested flow.
+// Runs the Chameleon Ultra Backdoor Assisted SEN Recovery flow.
 // Existing keys are accepted so already-recovered sector keys are not retried.
 Result run(uint8_t sectors,
            const bool foundA[40], const bool foundB[40],

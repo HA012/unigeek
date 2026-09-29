@@ -516,7 +516,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     return;
   }
 
-  // Static-encrypted backdoor tags already used cmd 2014. Do not send them
+  // Backdoor Assisted SEN tags already use cmd 2014. Do not send them
   // through MF1_STATIC_NESTED_ACQUIRE (2003).
   if (_senAvailable && ntOk && ntLevel == 1) {
     ProgressView::finish();
