@@ -22,6 +22,7 @@ public:
   };
   static RecoveredKeyInfo takeRecoveredKey();
   bool runSweep();
+  bool runUntilFirstKey();
 
   const char* title() override { return "Darkside"; }
   bool inhibitPowerOff() override { return _busy; }
@@ -71,7 +72,7 @@ private:
   bool _tryCommonKeys(ChameleonClient& c, uint8_t keyType, uint8_t block);
   enum AttackResult { ATTACK_KEY_FOUND, ATTACK_NO_KEY, ATTACK_TAG_ABORT };
   AttackResult _attackCurrentTarget(ChameleonClient& c);
-  bool _runSweep();
+  bool _runSweep(bool stopAfterFirst = false);
   void _saveKey();
   const char* _stateText() const;
   static const char* _statusName(uint8_t st);

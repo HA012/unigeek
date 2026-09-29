@@ -291,10 +291,14 @@ ChameleonMfcDarksideScreen::_attackCurrentTarget(ChameleonClient& c) {
 }
 
 bool ChameleonMfcDarksideScreen::runSweep() {
-  return _runSweep();
+  return _runSweep(false);
 }
 
-bool ChameleonMfcDarksideScreen::_runSweep() {
+bool ChameleonMfcDarksideScreen::runUntilFirstKey() {
+  return _runSweep(true);
+}
+
+bool ChameleonMfcDarksideScreen::_runSweep(bool stopAfterFirst) {
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
   const bool restore = c.getMode(&previousMode);
@@ -338,8 +342,12 @@ bool ChameleonMfcDarksideScreen::_runSweep() {
 
     ++tried;
     const AttackResult r = _attackCurrentTarget(c);
-    if (r == ATTACK_KEY_FOUND) ++found;
-    else if (r == ATTACK_TAG_ABORT) return finish(found > 0);
+    if (r == ATTACK_KEY_FOUND) {
+      ++found;
+      if (stopAfterFirst) return finish(true);
+    } else if (r == ATTACK_TAG_ABORT) {
+      return finish(found > 0);
+    }
 
     const int cur = (int)_target.sector * 2 + (_target.keyB ? 1 : 0);
     if (!_selectNextMissing(1)) break;

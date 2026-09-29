@@ -50,6 +50,7 @@ public:
   static constexpr uint16_t CMD_MF1_DARKSIDE_ACQ = 2004;
   static constexpr uint16_t CMD_MF1_NT_DISTANCE  = 2005;
   static constexpr uint16_t CMD_MF1_NESTED_ACQ   = 2006;
+  static constexpr uint16_t CMD_MF1_ENC_NESTED_ACQ = 2014;
   static constexpr uint16_t CMD_MF1_CHECK_KEY    = 2007;
   static constexpr uint16_t CMD_MF1_READ_BLOCK   = 2008;
   static constexpr uint16_t CMD_MF1_WRITE_BLOCK  = 2009;
@@ -274,6 +275,17 @@ public:
                               uint8_t targetKeyType, uint8_t targetBlock,
                               uint32_t* uidOut,
                               NestedSample* out, int maxOut, int* count);
+
+  // Static-encrypted nested acquire via a Fudan-style backdoor key (cmd 2014).
+  // Payload: key[6] | sector_count | starting_sector.
+  // Response: uid[4] followed by N records of 14 bytes
+  //   {ntA_hi[2] | parA | ntEncA[4] | ntB_hi[2] | parB | ntEncB[4]}.
+  // `nt` is reconstructed from the 16-bit prefix the same way as the official CLI.
+  bool mf1EncNestedAcquire(const uint8_t backdoorKey[6],
+                           uint8_t sectorCount, uint8_t startingSector,
+                           uint32_t* uidOut,
+                           NestedSample* outA, NestedSample* outB,
+                           int maxSectors, int* gotSectors);
 
   enum DarksideStatus : uint8_t {
     DARKSIDE_OK            = 0,

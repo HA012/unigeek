@@ -25,7 +25,7 @@ void ChameleonMfcBackdoorScreen::_build() {
     _rows[_rowCount] = {_labels[_rowCount].c_str(), _values[_rowCount]};
     ++_rowCount;
   };
-  add("Attack", "Backdoor / SEN");
+  add("Attack", "Backdoor Assisted SEN");
   add("Status", _status.length() ? _status : "Ready");
   add("[Press]", "Start");
   _scroll.setRows(_rows, _rowCount);
@@ -36,7 +36,7 @@ void ChameleonMfcBackdoorScreen::onInit() { _status = "Ready"; _build(); }
 void ChameleonMfcBackdoorScreen::_run() {
   _busy = true;
   ProgressView::init();
-  ProgressView::progress("Probing tag...", 30);
+  ProgressView::progress("Starting backdoor acquisition...", 30);
   auto& c = ChameleonClient::get();
   uint8_t prev = 0;
   const bool restore = c.getMode(&prev);
@@ -47,11 +47,11 @@ void ChameleonMfcBackdoorScreen::_run() {
     _busy = false;
     return;
   }
-  ProgressView::progress("Checking MF1...", 70);
+  ProgressView::progress("Collecting SEN data...", 70);
   const bool mf1 = c.mf1Support();
   if (restore) c.setMode(prev);
   ProgressView::finish();
-  _status = mf1 ? "SEN acquire not in client" : "Not MIFARE Classic";
+  _status = mf1 ? "Backdoor detected; SEN recovery pending" : "Not MIFARE Classic";
   // Rebuild the screen after ProgressView before placing the modal status on
   // top; otherwise remnants of the completed progress view can show through.
   _build();

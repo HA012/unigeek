@@ -118,6 +118,10 @@ private:
   void _showReadPreview();
   void _showReadActions();
   void _callRecoverKeys();
+  enum class ChainDictResult { Completed, Skipped, Cancelled, Failed };
+  ChainDictResult _runChainDictionary(const char* path, bool allowSkip, const String* skipKeys = nullptr);
+  bool _applyBulkKeyBatch(const uint8_t* keys, uint8_t keyCount);
+  bool _tryBackdoorEncNested();
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();

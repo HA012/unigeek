@@ -9,7 +9,7 @@ public:
   ChameleonMfcBackdoorScreen(const uint8_t* uid, uint8_t uidLen, uint8_t sectors,
                              const bool* foundA = nullptr,
                              const bool* foundB = nullptr);
-  const char* title() override { return "Backdoor / SEN"; }
+  const char* title() override { return "Backdoor Assisted SEN"; }
   bool inhibitPowerOff() override { return _busy; }
   void onInit() override;
   void onUpdate() override;

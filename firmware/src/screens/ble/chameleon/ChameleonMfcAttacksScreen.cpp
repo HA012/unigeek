@@ -1,6 +1,7 @@
 #include "ChameleonMfcAttacksScreen.h"
 #include "ChameleonMfcScreen.h"
 #include "ChameleonMfcMfkey32Screen.h"
+#include "ChameleonMfcBackdoorScreen.h"
 #include "ChameleonMfcDarksideScreen.h"
 #include "utils/ble/ChameleonClient.h"
 #include "ui/actions/InputSelectAction.h"
@@ -12,7 +13,8 @@ void ChameleonMfcAttacksScreen::onInit() {
   _items[2] = {"Nested Attack"};
   _items[3] = {"Darkside"};
   _items[4] = {"Attack Chain"};
-  _items[5] = {"MFKey32"};
+  _items[5] = {"Backdoor Assisted SEN"};
+  _items[6] = {"MFKey32"};
   setItems(_items);
 }
 
@@ -27,7 +29,10 @@ void ChameleonMfcAttacksScreen::onItemSelected(uint8_t index) {
     case 4:
       Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_RECOVER));
       break;
-    case 5: {
+    case 5:
+      Screen.push(new ChameleonMfcBackdoorScreen());
+      break;
+    case 6: {
       auto& c = ChameleonClient::get();
       ChameleonClient::SlotTypes types[8] = {};
       if (!c.getSlotTypes(types)) {
