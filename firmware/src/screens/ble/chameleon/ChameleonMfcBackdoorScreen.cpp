@@ -3,6 +3,7 @@
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/views/ProgressView.h"
+#include "utils/nfc/MfcBackdoorSENRecovery.h"
 #include <cstring>
 
 ChameleonMfcBackdoorScreen::ChameleonMfcBackdoorScreen(
@@ -13,7 +14,8 @@ ChameleonMfcBackdoorScreen::ChameleonMfcBackdoorScreen(
     memcpy(_uid, uid, _uidLen);
   }
   _sectors = sectors && sectors <= 40 ? sectors : 16;
-  (void)foundA; (void)foundB;
+  if (foundA) memcpy(_foundA, foundA, sizeof(_foundA));
+  if (foundB) memcpy(_foundB, foundB, sizeof(_foundB));
 }
 
 void ChameleonMfcBackdoorScreen::_build() {
@@ -47,11 +49,24 @@ void ChameleonMfcBackdoorScreen::_run() {
     _busy = false;
     return;
   }
-  ProgressView::progress("Collecting SEN data...", 70);
-  const bool mf1 = c.mf1Support();
+  auto progress = [](const char* msg, int pct) {
+    ProgressView::progress(msg, pct);
+  };
+  const auto result = MfcBackdoorSENRecovery::run(
+      _sectors, _foundA, _foundB, _keysA, _keysB, progress);
   if (restore) c.setMode(prev);
   ProgressView::finish();
-  _status = mf1 ? "Backdoor detected; SEN recovery pending" : "Not MIFARE Classic";
+  if (!result.acquired) {
+    _status = "Backdoor not available";
+  } else if (!result.success) {
+    _status = "Backdoor acquired; no keys recovered";
+  } else {
+    _status = "Keys recovered";
+  }
+  memcpy(_foundA, result.foundA, sizeof(_foundA));
+  memcpy(_foundB, result.foundB, sizeof(_foundB));
+  memcpy(_keysA, result.keysA, sizeof(_keysA));
+  memcpy(_keysB, result.keysB, sizeof(_keysB));
   // Rebuild the screen after ProgressView before placing the modal status on
   // top; otherwise remnants of the completed progress view can show through.
   _build();

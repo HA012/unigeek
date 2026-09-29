@@ -308,7 +308,7 @@ bool ChameleonMfcDarksideScreen::_runSweep(bool stopAfterFirst) {
   };
 
   if (!c.setMode(1)) {
-    _statusText = "Unable to enter reader mode";
+    _statusText = "Failed to enter reader mode";
     return finish(false);
   }
 

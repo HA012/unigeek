@@ -181,7 +181,20 @@ void ChameleonMfcScreen::_callAuth() {
   // before being trusted, then FFFFFFFFFFFF fills any remaining gaps.
   _loadKeys();
 
-  // Initial scan tries persisted keys first and then FFFFFFFFFFFF.
+  // Bootstrap manual attacks with the built-in key set. This keeps attacks
+  // such as Nested/Static Nested consistent with Recover Keys while avoiding
+  // the cost of large dictionaries.
+  if (!_applyBulkKeyBatch(reinterpret_cast<const uint8_t*>(kMfcBuiltinKeys),
+                          sizeof(kMfcBuiltinKeys) / sizeof(kMfcBuiltinKeys[0]))) {
+    c.setMode(0);
+    _running = false;
+    render();
+    ShowStatusAction::show("Failed", 1200);
+    Screen.goBack();
+    return;
+  }
+
+  // Initial scan continues with remaining fallback checks.
   static constexpr uint8_t kDefaultKey[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
   int totalWork = _sectors * 2;
   int progress  = 0;
@@ -353,7 +366,18 @@ bool ChameleonMfcScreen::_tryBackdoorEncNested() {
 
   const auto result = MfcBackdoorSENRecovery::run(
       _sectors, _foundA, _foundB, _keysA, _keysB, progress);
-  if (!result.success) return false;
+
+  _senAvailable = result.acquired;
+
+  if (!result.acquired) {
+    ProgressView::progress("Backdoor not available", 100);
+    return false;
+  }
+
+  if (!result.success) {
+    ProgressView::progress("Backdoor acquired; no keys recovered", 100);
+    return false;
+  }
 
   memcpy(_foundA, result.foundA, sizeof(_foundA));
   memcpy(_foundB, result.foundB, sizeof(_foundB));
@@ -458,6 +482,7 @@ ChameleonMfcScreen::ChainDictResult ChameleonMfcScreen::_runChainDictionary(
 }
 
 void ChameleonMfcScreen::_callRecoverKeys() {
+  _backdoorSENAttempted = false;
   _state = STATE_RECOVER;
   _running = true;
   render();
@@ -469,13 +494,13 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     _running = false;
     _resumeReadAfterAttack = false;
     if (restore) c.setMode(previousMode);
-    ShowStatusAction::show("Unable to enter reader mode", 1600);
+    ShowStatusAction::show("Failed to enter reader mode", 1600);
     _showReadPreview();
     return;
   }
 
   ProgressView::init();
-  ProgressView::progress("Checking common keys...", 0);
+  ProgressView::progress("Checking keys...", 0);
   if (!_applyBulkKeyBatch(&kMfcBuiltinKeys[0][0], kMfcBuiltinCount)) {
     if (restore) c.setMode(previousMode);
     _running = false;
@@ -525,7 +550,16 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (_foundA[s] || _foundB[s]) hasKey = true;
   }
 
-  if (!hasKey) {
+  bool missingKeys = false;
+  for (uint8_t s = 0; s < _sectors; ++s) {
+    if (!_foundA[s] && !_foundB[s]) {
+      missingKeys = true;
+      break;
+    }
+  }
+
+  if (missingKeys && !_backdoorSENAttempted) {
+    _backdoorSENAttempted = true;
     ProgressView::progress("Backdoor Assisted SEN...", 80);
     if (_tryBackdoorEncNested()) {
       hasKey = false;
@@ -546,8 +580,12 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     ProgressView::finish();
     const bool resumeRead = _resumeReadAfterAttack;
     _resumeReadAfterAttack = false;
-    if (resumeRead) _continueRead();
-    else _callDump();
+    if (resumeRead) {
+      _continueRead();
+    } else {
+      _showReadPreview();
+      ShowStatusAction::show("Keys recovered", 1400);
+    }
     return;
   }
 

@@ -119,6 +119,7 @@ Result run(uint8_t sectors,
     uid32 = uid;
     break;
   }
+  result.acquired = acquired;
   if (!acquired) return result;
 
   const uint8_t nsec = static_cast<uint8_t>((got < sectors) ? got : sectors);

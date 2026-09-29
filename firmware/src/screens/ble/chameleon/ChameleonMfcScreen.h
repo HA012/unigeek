@@ -48,6 +48,8 @@ private:
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
   bool _resumeReadAfterAttack = false;
+  bool _backdoorSENAttempted = false;
+  bool _senAvailable = false;
   bool  _running = false;
 
   // Card info

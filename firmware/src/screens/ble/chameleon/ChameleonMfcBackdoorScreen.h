@@ -18,6 +18,10 @@ private:
   uint8_t _uid[7] = {};
   uint8_t _uidLen = 0;
   uint8_t _sectors = 16;
+  bool _foundA[40] = {};
+  bool _foundB[40] = {};
+  uint8_t _keysA[40][6] = {};
+  uint8_t _keysB[40][6] = {};
   bool _busy = false;
   String _status;
   ScrollListView _scroll;

@@ -5,6 +5,7 @@
 namespace MfcBackdoorSENRecovery {
 
 struct Result {
+  bool acquired = false;
   bool success = false;
   uint8_t recovered = 0;
   bool foundA[40] = {};
