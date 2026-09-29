@@ -16,6 +16,7 @@
 #include "utils/nfc/NdefParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/nfc/MfcBackdoorSENRecovery.h"
 #include "utils/IdentityFile.h"
 extern "C" {
 #include "utils/crypto/crapto1.h"
@@ -367,96 +368,30 @@ void ChameleonMfcScreen::_showReadActions() {
   _callRecoverKeys();
 }
 
-int ChameleonMfcScreen::_recoverKeyFromEncSample(uint8_t sector, bool keyB,
-                                                uint32_t uid32, uint32_t nt,
-                                                uint32_t ntEnc) {
-  if (sector >= 40) return 0;
-  if (keyB ? _foundB[sector] : _foundA[sector]) return 0;
-  const uint32_t ks = ntEnc ^ nt;
-  Crypto1State* revstate = lfsr_recovery32(ks, nt ^ uid32);
-  if (!revstate) return 0;
-
-  auto& c = ChameleonClient::get();
-  const uint8_t tBlock = _trailerBlock(sector);
-  const uint8_t tKType = keyB ? 0x61 : 0x60;
-  bool found = false;
-  int checked = 0;
-  for (Crypto1State* rs = revstate; (rs->odd != 0 || rs->even != 0) && !found; ++rs) {
-    lfsr_rollback_word(rs, nt ^ uid32, 0);
-    uint64_t candKey64 = 0;
-    crypto1_get_lfsr(rs, &candKey64);
-
-    Crypto1State* test = crypto1_create(candKey64);
-    crypto1_word(test, uid32 ^ nt, 0);
-    const uint32_t testKs = crypto1_word(test, 0, 0);
-    crypto1_destroy(test);
-    if ((ntEnc ^ nt) != testKs) {
-      if (++checked > 100000) break;
-      continue;
-    }
-
-    uint8_t candBytes[6];
-    uint64_t tmp = candKey64;
-    for (int i = 5; i >= 0; --i) { candBytes[i] = (uint8_t)(tmp & 0xFF); tmp >>= 8; }
-    if (c.mf1CheckKey(tBlock, tKType, candBytes)) {
-      if (keyB) {
-        memcpy(_keysB[sector], candBytes, 6);
-        if (!_foundB[sector]) { _foundB[sector] = true; _recovered++; }
-      } else {
-        memcpy(_keysA[sector], candBytes, 6);
-        if (!_foundA[sector]) { _foundA[sector] = true; _recovered++; }
-      }
-      found = true;
-    }
-    if (++checked > 100000) break;
-  }
-  free(revstate);
-  return found ? 1 : 0;
-}
-
 ChameleonMfcScreen::BackdoorResult ChameleonMfcScreen::_tryBackdoorEncNested() {
-  auto& c = ChameleonClient::get();
-  ChameleonClient::NestedSample samplesA[40] = {};
-  ChameleonClient::NestedSample samplesB[40] = {};
-  uint32_t uid32 = 0;
-  int got = 0;
-  bool acquired = false;
-  uint8_t usedKey[6] = {};
-
-  ProgressView::progress("Backdoor...", 0);
-  for (uint8_t i = 0; i < kMfcBackdoorCount; ++i) {
-    char msg[40];
-    snprintf(msg, sizeof(msg), "Backdoor %u/%u...", (unsigned)(i + 1),
-             (unsigned)kMfcBackdoorCount);
-    ProgressView::progress(msg, (int)((i * 30) / kMfcBackdoorCount));
-    int n = 0;
-    uint32_t uid = 0;
-    if (!c.mf1EncNestedAcquire(kMfcBackdoorKeys[i], _sectors, 0,
-                               &uid, samplesA, samplesB, 40, &n) || n <= 0) {
-      continue;
-    }
-    acquired = true;
-    got = n;
-    uid32 = uid;
-    memcpy(usedKey, kMfcBackdoorKeys[i], 6);
-    break;
+  auto progress = [](const char* msg, int pct) {
+    ProgressView::progress(msg, pct);
+  };
+  const auto result = MfcBackdoorSENRecovery::run(
+      _sectors, _foundA, _foundB, _keysA, _keysB, progress);
+  _senAvailable = result.acquired ||
+                  result.status != MfcBackdoorSENRecovery::Status::Failed;
+  if (result.status == MfcBackdoorSENRecovery::Status::Failed) {
+    _senAvailable = false;
+    return BackdoorResult::Failed;
   }
-  if (!acquired) return BackdoorResult::Failed;
-
-  const uint8_t nsec = (uint8_t)((got < _sectors) ? got : _sectors);
-  int recovered = 0;
-  for (uint8_t s = 0; s < nsec; ++s) {
-    char msg[40];
-    snprintf(msg, sizeof(msg), "SEN S%u/%u...", (unsigned)(s + 1), (unsigned)nsec);
-    ProgressView::progress(msg, 30 + (int)((s * 70) / (nsec ? nsec : 1)));
-    recovered += _recoverKeyFromEncSample(s, false, uid32, samplesA[s].nt, samplesA[s].ntEnc);
-    recovered += _recoverKeyFromEncSample(s, true,  uid32, samplesB[s].nt, samplesB[s].ntEnc);
-  }
-  (void)usedKey;
-  return recovered > 0 ? BackdoorResult::Recovered : BackdoorResult::Acquired;
+  memcpy(_foundA, result.foundA, sizeof(_foundA));
+  memcpy(_foundB, result.foundB, sizeof(_foundB));
+  memcpy(_keysA, result.keysA, sizeof(_keysA));
+  memcpy(_keysB, result.keysB, sizeof(_keysB));
+  _recovered += result.recovered;
+  if (result.status == MfcBackdoorSENRecovery::Status::Recovered || result.success)
+    return BackdoorResult::Recovered;
+  return BackdoorResult::Acquired;
 }
 
 void ChameleonMfcScreen::_callRecoverKeys() {
+  _senAvailable = false;
   _state = STATE_RECOVER;
   _running = true;
   render();
@@ -536,7 +471,13 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   }
   if (readableEverySector) {
     ProgressView::finish();
-    _callDump();
+    const bool resumeRead = _resumeReadAfterAttack;
+    _resumeReadAfterAttack = false;
+    if (resumeRead) _callDump();
+    else {
+      _showReadPreview();
+      ShowStatusAction::show("Keys recovered", 1400);
+    }
     return;
   }
 
@@ -558,6 +499,33 @@ void ChameleonMfcScreen::_callRecoverKeys() {
       _saveKeys();
     }
   }
+
+  readableEverySector = true;
+  for (int s = 0; s < _sectors; ++s) {
+    if (!_foundA[s] && !_foundB[s]) { readableEverySector = false; break; }
+  }
+  if (readableEverySector) {
+    ProgressView::finish();
+    const bool resumeRead = _resumeReadAfterAttack;
+    _resumeReadAfterAttack = false;
+    if (resumeRead) _callDump();
+    else {
+      _showReadPreview();
+      ShowStatusAction::show("Keys recovered", 1400);
+    }
+    return;
+  }
+
+  // Static-encrypted backdoor tags already used cmd 2014. Do not send them
+  // through MF1_STATIC_NESTED_ACQUIRE (2003).
+  if (_senAvailable && ntOk && ntLevel == 1) {
+    ProgressView::finish();
+    _resumeReadAfterAttack = false;
+    _showReadPreview();
+    ShowStatusAction::show(hasKey ? "SEN incomplete" : "Backdoor read-only", 1800);
+    return;
+  }
+
   if (hasKey && ntOk && ntLevel == 1) {
     ProgressView::progress("Static Nested", 100);
     delay(200);
@@ -579,12 +547,11 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     return;
   }
   ProgressView::finish();
-  // Restore the result screen before the status overlay. ProgressView::finish()
-  // does not reconstruct the screen that was underneath the progress view.
   _showReadPreview();
   if (!hasKey) {
-    ShowStatusAction::show(ntLevel == 1 ? "Need 1 key for Static Nested" :
-                           "No key found", 1800);
+    ShowStatusAction::show(_senAvailable ? "Backdoor read-only" :
+                           (ntLevel == 1 ? "Need 1 key for Static Nested" :
+                            "No key found"), 1800);
   }
 }
 
@@ -712,34 +679,8 @@ void ChameleonMfcScreen::_loadKeys() {
 // ── Save keys (same format as ChameleonMfcDictScreen for interop) ──
 
 void ChameleonMfcScreen::_saveKeys() {
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) return;
-  Uni.Storage->makeDir("/unigeek/nfc/keys");
-
-  char uidHex[16] = {};
-  for (uint8_t i = 0; i < _uidLen && i * 2 + 2 < (int)sizeof(uidHex); i++) {
-    char h[4]; snprintf(h, sizeof(h), "%02X", _uid[i]); strcat(uidHex, h);
-  }
-  String path = String("/unigeek/nfc/keys/") + uidHex + ".txt";
-  String buf;
-  for (uint8_t s = 0; s < _sectors; s++) {
-    char line[48];
-    if (_foundA[s]) {
-      snprintf(line, sizeof(line), "S%02d A %02X%02X%02X%02X%02X%02X\n",
-               s, _keysA[s][0], _keysA[s][1], _keysA[s][2],
-               _keysA[s][3], _keysA[s][4], _keysA[s][5]);
-      buf += line;
-    }
-    if (_foundB[s]) {
-      snprintf(line, sizeof(line), "S%02d B %02X%02X%02X%02X%02X%02X\n",
-               s, _keysB[s][0], _keysB[s][1], _keysB[s][2],
-               _keysB[s][3], _keysB[s][4], _keysB[s][5]);
-      buf += line;
-    }
-  }
-  if (buf.length() > 0) {
-    Uni.Storage->writeFile(path.c_str(), buf.c_str());
-    MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, buf);
-  }
+  MfcKeyStore::saveUidKeys(Uni.Storage, _uid, _uidLen, _sectors,
+                           _foundA, _foundB, _keysA, _keysB);
 }
 
 // Helper: log a line then immediately redraw the action log so the user sees it live.

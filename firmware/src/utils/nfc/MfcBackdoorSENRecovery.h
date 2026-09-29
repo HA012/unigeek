@@ -4,7 +4,14 @@
 
 namespace MfcBackdoorSENRecovery {
 
+enum class Status : uint8_t {
+  Failed = 0,
+  Acquired = 1,
+  Recovered = 2,
+};
+
 struct Result {
+  Status status = Status::Failed;
   bool acquired = false;
   bool success = false;
   uint8_t recovered = 0;

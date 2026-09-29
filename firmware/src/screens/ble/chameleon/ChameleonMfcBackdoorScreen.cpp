@@ -50,6 +50,25 @@ void ChameleonMfcBackdoorScreen::_run() {
     _busy = false;
     return;
   }
+
+  uint8_t atqa[2] = {}, sak = 0, uid[7] = {}, uidLen = 0;
+  if (c.scan14A(uid, &uidLen, atqa, &sak) && uidLen) {
+    memcpy(_uid, uid, uidLen);
+    _uidLen = uidLen;
+    if (sak == 0x18) _sectors = 40;
+    else if (sak == 0x09) _sectors = 5;
+    else _sectors = 16;
+  } else if (!_uidLen) {
+    if (restore) c.setMode(prev);
+    ProgressView::finish();
+    _status = "Tag not detected";
+    _build();
+    render();
+    ShowStatusAction::show(_status.c_str(), 1600);
+    _busy = false;
+    return;
+  }
+
   auto progress = [](const char* msg, int pct) {
     ProgressView::progress(msg, pct);
   };
@@ -88,7 +107,8 @@ void ChameleonMfcBackdoorScreen::_run() {
       }
     }
     if (buf.length() > 0) {
-      MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, buf);
+      MfcKeyStore::saveUidKeys(Uni.Storage, _uid, _uidLen, _sectors,
+                               _foundA, _foundB, _keysA, _keysB);
     }
   }
 

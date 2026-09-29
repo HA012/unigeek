@@ -25,12 +25,30 @@ uint8_t trailerBlock(uint8_t sector) {
   return (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
 }
 
+uint8_t par8(uint8_t b) {
+  b ^= b >> 4; b ^= b >> 2; b ^= b >> 1;
+  return static_cast<uint8_t>((~b) & 1);
+}
+
+bool parityOk(uint32_t nt, uint32_t ntEnc, uint32_t ks, uint8_t parNibble) {
+  if (parNibble == 0) return true;
+  const uint8_t p0 = (parNibble >> 3) & 1;
+  const uint8_t p1 = (parNibble >> 2) & 1;
+  const uint8_t p2 = (parNibble >> 1) & 1;
+  return
+      (par8((nt >> 24) & 0xFF) == (p0 ^ par8((ntEnc >> 24) & 0xFF) ^ BIT(ks, 16))) &&
+      (par8((nt >> 16) & 0xFF) == (p1 ^ par8((ntEnc >> 16) & 0xFF) ^ BIT(ks,  8))) &&
+      (par8((nt >>  8) & 0xFF) == (p2 ^ par8((ntEnc >>  8) & 0xFF) ^ BIT(ks,  0)));
+}
+
 int recoverKey(Result& result, uint8_t sector, bool keyB,
-               uint32_t uid32, uint32_t nt, uint32_t ntEnc) {
+               uint32_t uid32, uint32_t nt, uint32_t ntEnc, uint8_t par) {
   if (sector >= 40) return 0;
   if (keyB ? result.foundB[sector] : result.foundA[sector]) return 0;
+  if (nt == 0 && ntEnc == 0) return 0;
 
   const uint32_t ks = ntEnc ^ nt;
+  if (!parityOk(nt, ntEnc, ks, par)) return 0;
   Crypto1State* revstate = lfsr_recovery32(ks, nt ^ uid32);
   if (!revstate) return 0;
 
@@ -120,21 +138,25 @@ Result run(uint8_t sectors,
     break;
   }
   result.acquired = acquired;
-  if (!acquired) return result;
+  if (!acquired) {
+    result.status = Status::Failed;
+    return result;
+  }
 
   const uint8_t nsec = static_cast<uint8_t>((got < sectors) ? got : sectors);
   for (uint8_t s = 0; s < nsec; ++s) {
     if (progress) {
       char msg[48];
-      snprintf(msg, sizeof(msg), "Recovering keys (%u/%u)...",
+      snprintf(msg, sizeof(msg), "SEN recover (%u/%u)...",
                static_cast<unsigned>(s + 1), static_cast<unsigned>(nsec));
       progress(msg, 30 + static_cast<int>((s * 70) / (nsec ? nsec : 1)));
     }
-    recoverKey(result, s, false, uid32, samplesA[s].nt, samplesA[s].ntEnc);
-    recoverKey(result, s, true, uid32, samplesB[s].nt, samplesB[s].ntEnc);
+    recoverKey(result, s, false, uid32, samplesA[s].nt, samplesA[s].ntEnc, samplesA[s].par);
+    recoverKey(result, s, true,  uid32, samplesB[s].nt, samplesB[s].ntEnc, samplesB[s].par);
   }
 
   result.success = result.recovered > 0;
+  result.status = result.success ? Status::Recovered : Status::Acquired;
   return result;
 }
 

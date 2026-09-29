@@ -54,6 +54,7 @@ private:
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
   bool _resumeReadAfterAttack = false;
+  bool _senAvailable = false;
   bool  _running = false;
 
   // Card info
@@ -124,8 +125,6 @@ private:
   void _showReadPreview();
   void _showReadActions();
   void _callRecoverKeys();
-  int  _recoverKeyFromEncSample(uint8_t sector, bool keyB,
-                                uint32_t uid32, uint32_t nt, uint32_t ntEnc);
   BackdoorResult _tryBackdoorEncNested();
   void _callAuth();
   void _showDiscoveredKeys();
