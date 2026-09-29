@@ -9,28 +9,33 @@
 
 void ChameleonMfcAttacksScreen::onInit() {
   _items[0] = {"Dictionary Attack"};
-  _items[1] = {"Static Nested"};
-  _items[2] = {"Nested Attack"};
-  _items[3] = {"Darkside"};
-  _items[4] = {"Attack Chain"};
-  _items[5] = {"Backdoor Assisted SEN"};
+  _items[1] = {"Backdoor Assisted SEN"};
+  _items[2] = {"Darkside"};
+  _items[3] = {"Nested Attack"};
+  _items[4] = {"Static Nested"};
+  _items[5] = {"Attack Chain"};
   _items[6] = {"MFKey32"};
   setItems(_items);
 }
 
+
 void ChameleonMfcAttacksScreen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_DICTIONARY));     break;
-    case 1: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_STATIC_NESTED));  break;
-    case 2: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_NESTED));         break;
-    case 3:
+    case 1:
+      Screen.push(new ChameleonMfcBackdoorScreen());
+      break;
+    case 2:
       Screen.push(new ChameleonMfcDarksideScreen());
       break;
+    case 3:
+      Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_NESTED));
+      break;
     case 4:
-      Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_RECOVER));
+      Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_STATIC_NESTED));
       break;
     case 5:
-      Screen.push(new ChameleonMfcBackdoorScreen());
+      Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_RECOVER));
       break;
     case 6: {
       auto& c = ChameleonClient::get();
