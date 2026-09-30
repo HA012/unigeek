@@ -92,6 +92,7 @@ void ChameleonScanReaderScreen::onInit() {
   if (!c.setMode(0)) {
     _setError("Failed to enter emulator mode"); _restore(); return;
   }
+  _state = WAITING;
   _lastPoll=0;
   _probeStartedAt=millis();
 }
