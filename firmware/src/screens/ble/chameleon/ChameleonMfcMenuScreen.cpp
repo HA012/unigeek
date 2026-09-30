@@ -10,7 +10,7 @@
 void ChameleonMfcMenuScreen::onInit() {
   _items[0] = {"Tag Operations"};
   _items[1] = {"NDEF Operations"};
-  _items[2] = {"Reader Detector"};
+  _items[2] = {"Detect Reader"};
   _items[3] = {"Attacks"};
   _items[4] = {"Keys"};
   setItems(_items);

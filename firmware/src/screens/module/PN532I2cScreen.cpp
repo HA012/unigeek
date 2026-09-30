@@ -1080,8 +1080,8 @@ void PN532I2cScreen::onBack() {
 void PN532I2cScreen::_doScanReader() {
   if (!_nfc || !_wire) return;
   _selMain = 1;
-  renderOperationTitle("Scan Reader");
-  renderTagPrompt("Place device on reader", bodyX(), bodyY(), bodyW(), bodyH());
+  renderOperationTitle("Scan NFC Reader");
+  renderTagPrompt("Waiting for reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   bool cancelled = false;
   auto checkBack = [&]() -> bool {
@@ -1178,7 +1178,7 @@ void PN532I2cScreen::_doScanReader() {
   _rowLabels[_rowCount]="Reader action"; _rowValues[_rowCount]=detected?action:"No command observed"; _rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]}; _rowCount++;
   _scrollView.setRows(_rows,_rowCount);
   _state=STATE_DEVICE_INFO; // generic scroll-result state; title is overridden below only during operation
-  renderOperationTitle("Scan Reader");
+  renderOperationTitle("Scan NFC Reader");
   _scrollView.render(bodyX(),bodyY(),bodyW(),bodyH());
 
   // Keep result visible and preserve standard Back semantics without adding an on-screen Back item.

@@ -18,7 +18,7 @@ public:
     switch (_state) {
       case STATE_SCANNING: return "Scan Tag";
       case STATE_SCAN_READER:
-      case STATE_SCAN_READER_RESULT: return "Scan Reader";
+      case STATE_SCAN_READER_RESULT: return "Scan NFC Reader";
       case STATE_DETAILS:
       case STATE_MFC_DETAILS: return "Tag Details";
       case STATE_MFC_MENU: return "MIFARE Classic";
@@ -176,7 +176,7 @@ private:
 
   ListItem _items[9] = {
     {"Scan Tag"},
-    {"Scan Reader"},
+    {"Scan NFC Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"DESFire (experimental)"},

@@ -4,7 +4,7 @@
 
 class ChameleonScanReaderScreen : public BaseScreen {
 public:
-  const char* title() override { return "Reader Detector"; }
+  const char* title() override { return "Detect Reader"; }
   void onInit() override;
   void onUpdate() override;
   void onRender() override;

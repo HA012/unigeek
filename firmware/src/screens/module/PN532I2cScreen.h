@@ -116,7 +116,7 @@ private:
 
   ListItem _mainItems[6] = {
     {"Scan Tag"},
-    {"Scan Reader"},
+    {"Scan NFC Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"Type B (experimental)"},
