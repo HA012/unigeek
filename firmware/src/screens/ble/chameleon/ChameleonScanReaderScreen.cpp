@@ -2,13 +2,10 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
-#include "ui/components/TagPrompt.h"
 #include "utils/ble/ChameleonClient.h"
 
 void ChameleonScanReaderScreen::_drawWaiting() {
-  auto& lcd = Uni.Lcd;
-  const int bx=bodyX(), by=bodyY(), bw=bodyW(), bh=bodyH();
-  TagPrompt::show("Waiting for reader...", bx, by, bw, bh, title());
+  ShowStatusAction::show("Waiting for reader...", 0);
 }
 void ChameleonScanReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;
