@@ -1,8 +1,8 @@
 #pragma once
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
-#include "ui/views/ScrollListView.h"
 #include "ui/views/LogView.h"
+#include "ui/views/ScrollListView.h"
 
 class ChameleonMfcDictScreen : public ListScreen {
 public:

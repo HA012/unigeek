@@ -1,11 +1,11 @@
 #include "ChameleonMfcMfkey32Screen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
-#include "utils/nfc/MfcKeyStore.h"
+#include "utils/ble/ChameleonClient.h"
 #include "utils/crypto/crapto1.h"
+#include "utils/nfc/MfcKeyStore.h"
 
 static uint32_t readBe32(const uint8_t* p) {
   return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |

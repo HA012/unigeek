@@ -1,16 +1,17 @@
-#include "ChameleonMfuToolsScreen.h"
-#include "ChameleonMfuScreen.h"
-#include "ChameleonMfuWriteScreen.h"
 #include "ChameleonMfuAdvancedScreen.h"
 #include "ChameleonMfuAuthUtils.h"
-#include "utils/ble/ChameleonClient.h"
+#include "ChameleonMfuScreen.h"
+#include "ChameleonMfuToolsScreen.h"
+#include "ChameleonMfuWriteScreen.h"
 #include "core/ScreenManager.h"
-#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputNumberAction.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/ble/ChameleonClient.h"
 #include "utils/nfc/HfDumpBuilder.h"
 
 namespace {
@@ -127,7 +128,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
 
   ChameleonClient::MfuTagInfo info = {};
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;

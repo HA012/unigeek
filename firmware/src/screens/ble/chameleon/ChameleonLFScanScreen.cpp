@@ -1,13 +1,14 @@
 #include "ChameleonLFScanScreen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
-#include "core/AchievementManager.h"
+#include "ui/actions/ShowStatusAction.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "utils/IdentityFile.h"
+#include "utils/ble/ChameleonClient.h"
 
 void ChameleonLFScanScreen::_addRow(const char* label, const String& value) {
   if (_rowCount >= kMaxRows) return;
@@ -26,7 +27,7 @@ void ChameleonLFScanScreen::_draw() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2 - 8);
+  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   sp.setTextColor(TFT_WHITE, TFT_BLACK);
   sp.drawString("[Press] Continue", bw / 2, bh / 2 + 10);
   sp.pushSprite(bx, by);

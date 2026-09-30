@@ -1,11 +1,11 @@
 #include "ChameleonMfcUidWriteScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "utils/IdentityFile.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
+#include "utils/IdentityFile.h"
+#include "utils/ble/ChameleonClient.h"
 
 namespace { void prompt(const char* m,int x,int y,int w,int h){auto&d=Uni.Lcd;d.fillRect(x,y,w,h,TFT_BLACK);d.setTextDatum(MC_DATUM);d.setTextColor(TFT_YELLOW,TFT_BLACK);d.drawString(m,x+w/2,y+h/2);} }
 ChameleonMfcUidWriteScreen::ChameleonMfcUidWriteScreen(const uint8_t* u,uint8_t n){if(u&&(n==4||n==7)){memcpy(_uid,u,n);_uidLen=n;}}

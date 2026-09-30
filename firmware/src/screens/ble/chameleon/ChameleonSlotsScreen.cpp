@@ -1,11 +1,11 @@
-#include "ChameleonSlotsScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
 #include "ChameleonSlotEditScreen.h"
+#include "ChameleonSlotsScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 #include <string.h>
 
 void ChameleonSlotsScreen::_load() {

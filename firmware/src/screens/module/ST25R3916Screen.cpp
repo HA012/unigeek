@@ -1,3 +1,4 @@
+#include "ui/components/TagPrompt.h"
 #include "ST25R3916Screen.h"
 
 #include "core/Device.h"
@@ -11,6 +12,7 @@
 #include "ui/views/LogView.h"
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "utils/nfc/NdefParser.h"
 #include "utils/nfc/HfDumpParser.h"
 #include "utils/nfc/NdefBuilder.h"
@@ -1038,13 +1040,14 @@ void ST25R3916Screen::_showMfuNdefWriteMenu() {
 }
 
 void ST25R3916Screen::_renderTagPrompt() {
+  StatusBar::refresh();
   auto& lcd = Uni.Lcd;
   const int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(_state == STATE_SCAN_READER ? "Place device on reader..." : "Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show(_state == STATE_SCAN_READER ? "Place device on reader..." : "Place tag on reader...", bx, by, bw, bh);
 }
 
 void ST25R3916Screen::_scan(uint16_t techMask) {

@@ -1,10 +1,11 @@
 #include "ChameleonT5577CleanerScreen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
+#include "utils/ble/ChameleonClient.h"
 #include "utils/rfid/T5577Dictionary.h"
 
 void ChameleonT5577CleanerScreen::_loadPicker() {

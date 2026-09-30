@@ -1,12 +1,12 @@
-#include "ChameleonScanScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
+#include "ChameleonScanScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
-#include "ui/components/StatusBar.h"
-#include "ui/actions/ShowStatusAction.h"
 #include "screens/ble/BLEMenuScreen.h"
+#include "ui/actions/ShowStatusAction.h"
+#include "ui/components/StatusBar.h"
+#include "utils/ble/ChameleonClient.h"
 #include <NimBLEDevice.h>
 #include <string.h>
 

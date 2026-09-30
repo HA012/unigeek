@@ -1,9 +1,9 @@
 #include "ChameleonHFMenuScreen.h"
-#include "ChameleonMenuScreen.h"
 #include "ChameleonHFScreen.h"
-#include "ChameleonScanReaderScreen.h"
+#include "ChameleonMenuScreen.h"
 #include "ChameleonMfcMenuScreen.h"
 #include "ChameleonMfuMenuScreen.h"
+#include "ChameleonScanReaderScreen.h"
 #include "core/ScreenManager.h"
 
 void ChameleonHFMenuScreen::onInit() {

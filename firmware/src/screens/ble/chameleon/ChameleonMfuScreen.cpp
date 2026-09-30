@@ -1,15 +1,16 @@
-#include "ChameleonMfuScreen.h"
 #include "ChameleonMfuAuthUtils.h"
-#include "ChameleonMfuWriteScreen.h"
 #include "ChameleonMfuPagesScreen.h"
+#include "ChameleonMfuScreen.h"
+#include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputSelectAction.h"
+#include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
-#include "utils/nfc/NdefParser.h"
 #include "utils/IdentityFile.h"
+#include "utils/nfc/NdefParser.h"
 
 namespace {
 void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
@@ -63,7 +64,7 @@ void ChameleonMfuScreen::_drawIdle() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2);
+  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
   sp.pushSprite(bx, by);
   sp.deleteSprite();
 }
@@ -215,7 +216,7 @@ void ChameleonMfuScreen::_read() {
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
 
   auto& c = ChameleonClient::get();
   c.setMode(1);

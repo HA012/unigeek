@@ -1,8 +1,8 @@
 #include "ChameleonMagicScreen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
+#include "utils/ble/ChameleonClient.h"
 
 void ChameleonMagicScreen::onInit() {
   _done = false;

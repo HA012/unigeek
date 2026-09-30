@@ -1,7 +1,7 @@
 #pragma once
-#include "utils/ble/ChameleonClient.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 #include <mbedtls/md.h>
 
 namespace ChameleonMfuAuthUtils {

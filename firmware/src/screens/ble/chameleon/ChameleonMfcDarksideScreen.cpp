@@ -2,8 +2,8 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
-#include "utils/nfc/MfcKeyStore.h"
 #include "utils/crypto/darkside_recover.h"
+#include "utils/nfc/MfcKeyStore.h"
 #include <cstring>
 
 static const uint8_t kCommonKeys[][6] = {

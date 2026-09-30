@@ -1,11 +1,11 @@
 #include "ChameleonMfcAttacksScreen.h"
-#include "ChameleonMfcScreen.h"
-#include "ChameleonMfcMfkey32Screen.h"
 #include "ChameleonMfcBackdoorScreen.h"
 #include "ChameleonMfcDarksideScreen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "ChameleonMfcMfkey32Screen.h"
+#include "ChameleonMfcScreen.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 void ChameleonMfcAttacksScreen::onInit() {
   _items[0] = {"Dictionary"};

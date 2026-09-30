@@ -1,6 +1,6 @@
 #pragma once
-#include "ui/templates/ListScreen.h"
 #include "core/ScreenManager.h"
+#include "ui/templates/ListScreen.h"
 
 class ChameleonMfcAttacksScreen : public ListScreen {
 public:

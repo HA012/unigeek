@@ -1,3 +1,4 @@
+#include "ui/components/TagPrompt.h"
 #include "PN532I2cScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -481,12 +482,7 @@ static bool _pn532BuildUltralightLockMasks(const char* typeName, uint16_t first,
 // ── title ──────────────────────────────────────────────────────────────────
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 
 static void renderOperationTitle(const char* title) {
@@ -2042,7 +2038,7 @@ void PN532I2cScreen::_doScan14A() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
 
   bool ok = false;
   uint32_t start = millis();

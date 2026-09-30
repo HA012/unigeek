@@ -1,5 +1,4 @@
 #pragma once
-
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"

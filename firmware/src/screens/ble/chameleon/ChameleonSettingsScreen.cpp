@@ -1,11 +1,11 @@
-#include "ChameleonSettingsScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
+#include "ChameleonSettingsScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 const char* ChameleonSettingsScreen::_animName(uint8_t v) {
   switch (v) {

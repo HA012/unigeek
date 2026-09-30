@@ -1,11 +1,12 @@
-#include "ChameleonHFScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonHFMenuScreen.h"
-#include "core/Device.h"
-#include "core/ScreenManager.h"
+#include "ChameleonHFScreen.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
+#include "utils/ble/ChameleonClient.h"
 
 const char* ChameleonHFScreen::_inferType(uint8_t sak, const uint8_t atqa[2]) {
   if (sak == 0x09) return "MF Classic Mini";
@@ -31,7 +32,7 @@ void ChameleonHFScreen::_draw() {
   sp.setTextDatum(MC_DATUM);
 
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2);
+  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   sp.pushSprite(bx, by);
   sp.deleteSprite();
@@ -51,7 +52,7 @@ void ChameleonHFScreen::_doScan() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
 
   auto& c = ChameleonClient::get();
 

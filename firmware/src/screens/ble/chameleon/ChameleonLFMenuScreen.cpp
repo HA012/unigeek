@@ -1,7 +1,7 @@
 #include "ChameleonLFMenuScreen.h"
 #include "ChameleonLFScanScreen.h"
-#include "ChameleonT5577WriteScreen.h"
 #include "ChameleonT5577CleanerScreen.h"
+#include "ChameleonT5577WriteScreen.h"
 #include "core/ScreenManager.h"
 
 void ChameleonLFMenuScreen::onInit() {

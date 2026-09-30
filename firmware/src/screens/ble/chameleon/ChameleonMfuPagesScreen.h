@@ -1,7 +1,7 @@
 #pragma once
 #include "ui/templates/BaseScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ui/views/ScrollListView.h"
+#include "utils/ble/ChameleonClient.h"
 
 class ChameleonMfuPagesScreen : public BaseScreen {
 public:

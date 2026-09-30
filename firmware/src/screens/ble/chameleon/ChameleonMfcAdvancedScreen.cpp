@@ -1,5 +1,4 @@
 #include "ChameleonMfcAdvancedScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/InputSelectAction.h"
@@ -7,7 +6,9 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/ble/ChameleonClient.h"
 
 namespace {
 static void renderOperationChrome(const char* title) {
@@ -17,12 +18,7 @@ static void renderOperationChrome(const char* title) {
 }
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 static bool scanClassicOrShow(ChameleonClient& c, uint8_t uid[7], uint8_t& uidLen,
                               uint8_t atqa[2], uint8_t& sak,

@@ -1,16 +1,16 @@
-#include "ChameleonMenuScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "ChameleonScanScreen.h"
 #include "ChameleonDeviceScreen.h"
-#include "ChameleonSlotsScreen.h"
 #include "ChameleonHFMenuScreen.h"
 #include "ChameleonLFMenuScreen.h"
+#include "ChameleonMenuScreen.h"
+#include "ChameleonScanScreen.h"
 #include "ChameleonSettingsScreen.h"
+#include "ChameleonSlotsScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
-#include "ui/components/StatusBar.h"
 #include "screens/ble/BLEMenuScreen.h"
+#include "ui/components/StatusBar.h"
+#include "utils/ble/ChameleonClient.h"
 #include <NimBLEDevice.h>
 
 void ChameleonMenuScreen::onInit()

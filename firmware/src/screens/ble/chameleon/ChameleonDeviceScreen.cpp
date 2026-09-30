@@ -1,11 +1,11 @@
 #include "ChameleonDeviceScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
-#include "core/Device.h"
-#include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 void ChameleonDeviceScreen::_load() {
   static constexpr const char* kLabels[kFields] = {

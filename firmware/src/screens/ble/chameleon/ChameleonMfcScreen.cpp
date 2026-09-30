@@ -1,22 +1,23 @@
-#include "ChameleonMfcScreen.h"
-#include "ChameleonMfcDarksideScreen.h"
 #include "ChameleonMfcBackdoorScreen.h"
-#include "utils/ble/ChameleonClient.h"
+#include "ChameleonMfcDarksideScreen.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfcUidWriteScreen.h"
+#include "ChameleonMfcWriteScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
-#include "ui/actions/ShowStatusAction.h"
-#include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputSelectAction.h"
+#include "ui/actions/InputTextAction.h"
+#include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
-#include "ChameleonMfcWriteScreen.h"
-#include "ChameleonMfcUidWriteScreen.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/nfc/MfcBackdoorSENRecovery.h"
+#include "utils/nfc/MfcKeyStore.h"
 #include "utils/nfc/NdefParser.h"
 
-#include "utils/nfc/MfcKeyStore.h"
-#include "utils/nfc/MfcBackdoorSENRecovery.h"
 #include "utils/IdentityFile.h"
 extern "C" {
 #include "utils/crypto/crapto1.h"
@@ -155,18 +156,16 @@ void ChameleonMfcScreen::_callAuth() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
 
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t atqa[2] = {}, sak = 0;
   if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {
     c.setMode(0);
     _running = false;
+    _authStatus[0] = '\0';
+    _authPct = 0;
     render();
+    StatusBar::refresh();
     ShowStatusAction::show("Tag not detected", 1200);
     Screen.goBack();
     return;

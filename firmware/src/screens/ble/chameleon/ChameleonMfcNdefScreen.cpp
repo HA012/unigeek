@@ -1,7 +1,4 @@
 #include "ChameleonMfcNdefScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "utils/nfc/NdefBuilder.h"
-#include "utils/nfc/NdefParser.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
@@ -9,18 +6,17 @@
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/nfc/NdefBuilder.h"
+#include "utils/nfc/NdefParser.h"
 
 #include <cstring>
 #include <ctype.h>
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 
 namespace {

@@ -1,11 +1,11 @@
-#include "ChameleonSlotViewScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "utils/rfid/LFCodec.h"
 #include "ChameleonSlotEditScreen.h"
+#include "ChameleonSlotViewScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 
 void ChameleonSlotViewScreen::_addRow(const char* label, const String& value) {
   if (_rowCount >= MAX_ROWS) return;

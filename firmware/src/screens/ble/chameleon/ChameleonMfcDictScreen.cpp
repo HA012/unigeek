@@ -1,11 +1,11 @@
-#include "ChameleonMfcDictScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonHFMenuScreen.h"
-#include "core/Device.h"
-#include "core/ScreenManager.h"
+#include "ChameleonMfcDictScreen.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 #include "utils/nfc/MfcKeyStore.h"
 // Builtin default Mifare Classic key list (trimmed from upstream gMifareClassicKeysList)

@@ -1,9 +1,9 @@
-#include "ChameleonMfcMenuScreen.h"
-#include "ChameleonMfcToolsScreen.h"
-#include "ChameleonMfcScreen.h"
-#include "ChameleonMfcNdefScreen.h"
 #include "ChameleonMfcAttacksScreen.h"
 #include "ChameleonMfcKeysScreen.h"
+#include "ChameleonMfcMenuScreen.h"
+#include "ChameleonMfcNdefScreen.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfcToolsScreen.h"
 #include "core/ScreenManager.h"
 
 void ChameleonMfcMenuScreen::onInit() {

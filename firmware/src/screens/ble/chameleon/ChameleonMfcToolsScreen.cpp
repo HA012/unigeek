@@ -1,18 +1,19 @@
-#include "ChameleonMfcToolsScreen.h"
-#include "ChameleonMfcScreen.h"
-#include "ChameleonMfcWriteScreen.h"
-#include "ChameleonMfcUidWriteScreen.h"
 #include "ChameleonMagicScreen.h"
 #include "ChameleonMfcAdvancedScreen.h"
-#include "utils/IdentityFile.h"
-#include "utils/ble/ChameleonClient.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfcToolsScreen.h"
+#include "ChameleonMfcUidWriteScreen.h"
+#include "ChameleonMfcWriteScreen.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
-#include "utils/nfc/HfDumpParser.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/IdentityFile.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/nfc/HfDumpParser.h"
 
 
 namespace {
@@ -201,7 +202,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
   bool found = false;
