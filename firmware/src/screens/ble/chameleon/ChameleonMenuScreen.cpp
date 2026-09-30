@@ -22,12 +22,11 @@ void ChameleonMenuScreen::onInit()
     return;
   }
 
-  _items[0] = {"Disconnect"};
-  _items[1] = {"Slot Manager"};
-  _items[2] = {"HF Tools"};
-  _items[3] = {"LF Tools"};
-  _items[4] = {"Settings"};
-  _items[5] = {"Device Info"};
+  _items[0] = {"Slot Manager"};
+  _items[1] = {"HF Tools"};
+  _items[2] = {"LF Tools"};
+  _items[3] = {"Settings"};
+  _items[4] = {"Device Info"};
   setItems(_items);
 }
 
@@ -51,19 +50,12 @@ void ChameleonMenuScreen::onItemSelected(uint8_t index)
 {
   auto& c = ChameleonClient::get();
 
-  if (index == 0) {
-    c.disconnect();
-    StatusBar::bleConnected() = false;
-    Screen.push(new ChameleonScanScreen());
-    return;
-  }
-
   switch (index) {
-    case 1: Screen.push(new ChameleonSlotsScreen());    break;
-    case 2: Screen.push(new ChameleonHFMenuScreen());   break;
-    case 3: Screen.push(new ChameleonLFMenuScreen());   break;
-    case 4: Screen.push(new ChameleonSettingsScreen()); break;
-    case 5: Screen.push(new ChameleonDeviceScreen());   break;
+    case 0: Screen.push(new ChameleonSlotsScreen());    break;
+    case 1: Screen.push(new ChameleonHFMenuScreen());   break;
+    case 2: Screen.push(new ChameleonLFMenuScreen());   break;
+    case 3: Screen.push(new ChameleonSettingsScreen()); break;
+    case 4: Screen.push(new ChameleonDeviceScreen());   break;
   }
 }
 

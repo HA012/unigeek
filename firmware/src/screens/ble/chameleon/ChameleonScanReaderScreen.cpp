@@ -29,6 +29,7 @@ void ChameleonScanReaderScreen::_restore() {
   _armed=false;
 }
 void ChameleonScanReaderScreen::onInit() {
+  ShowStatusAction::show("Loading...", 0);
   _state=WAITING; _rowCount=0; _armed=false;
   auto& c=ChameleonClient::get();
   _restoreMode=c.getMode(&_previousMode);
@@ -102,7 +103,6 @@ void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
   }
   _state=RESULT; _rowCount=0;
   _labels[_rowCount]="Technology"; _values[_rowCount]="MIFARE Classic"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
-  _labels[_rowCount]="Likely tag"; _values[_rowCount]="MIFARE Classic"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   _labels[_rowCount]="Confidence"; _values[_rowCount]="High"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   // Detection records are proof that a Classic authentication exchange reached the emulator.
   _labels[_rowCount]="Action"; _values[_rowCount]="Authentication"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;

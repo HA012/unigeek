@@ -103,7 +103,7 @@ void ChameleonScanScreen::onInit() {
   _devChanged = false;
   _state      = STATE_EMPTY;
   _startScan();
-  render();
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onUpdate() {
@@ -131,11 +131,7 @@ void ChameleonScanScreen::onRender() {
     return;
   }
 
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString("Looking for Chameleon Ultra...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onItemSelected(uint8_t index) {
@@ -144,13 +140,7 @@ void ChameleonScanScreen::onItemSelected(uint8_t index) {
 
   _stopScan();
 
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Connecting...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 8);
-  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString(_devices[index].name, bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 + 8);
+  ShowStatusAction::show("Connecting...", 0);
 
   bool ok = ChameleonClient::get().connect(_devices[index].bleAddr);
 
