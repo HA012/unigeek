@@ -447,7 +447,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   if (missing) {
     ProgressView::progress("Backdoor / SEN...", 80);
     const auto backdoorResult = _tryBackdoorEncNested();
-    if (backdoorResult != BackdoorResult::Failed) {
+    if (backdoorResult == BackdoorResult::Recovered) {
       hasKey = false;
       missing = false;
       for (uint8_t s = 0; s < _sectors; ++s) {
@@ -518,11 +518,14 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   // Backdoor Assisted SEN tags already use cmd 2014. Do not send them
   // through MF1_STATIC_NESTED_ACQUIRE (2003).
   if (_senAvailable && ntOk && ntLevel == 1) {
-    ProgressView::finish();
-    _resumeReadAfterAttack = false;
-    _showReadPreview();
-    ShowStatusAction::show(hasKey ? "SEN incomplete" : "Backdoor read-only", 1800);
-    return;
+    // Backdoor Assisted SEN uses the 2014 path. Do not route acquired
+    // backdoor-only states through the legacy Static Nested attack.
+    // Only finish here when there is no possible continuation.
+    if (!hasKey) {
+      // Backdoor was acquired but no key was recovered.
+      // Keep the chain alive: Acquired is not the same as Recovered.
+      // Continue with other applicable recovery paths.
+    }
   }
 
   if (hasKey && ntOk && ntLevel == 1) {
@@ -548,9 +551,8 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   ProgressView::finish();
   _showReadPreview();
   if (!hasKey) {
-    ShowStatusAction::show(_senAvailable ? "Backdoor read-only" :
-                           (ntLevel == 1 ? "Need 1 key for Static Nested" :
-                            "No key found"), 1800);
+    ShowStatusAction::show(ntLevel == 1 ? "Need 1 key for Static Nested" :
+                           "No key found", 1800);
   }
 }
 
