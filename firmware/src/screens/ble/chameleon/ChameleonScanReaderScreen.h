@@ -10,7 +10,7 @@ public:
   void onRender() override;
   ~ChameleonScanReaderScreen() override;
 private:
-  enum State { WAITING, RESULT, ERROR } _state = WAITING;
+  enum State { STARTING, WAITING, RESULT, ERROR } _state = STARTING;
   bool _armed = false;
   bool _restoreMode = false;
   bool _restoreSlot = false;
@@ -31,6 +31,7 @@ private:
   ScrollListView::Row _rows[6];
   String _labels[6], _values[6];
   uint8_t _rowCount = 0;
+  void _drawLoading();
   void _drawWaiting();
   void _setError(const char* msg);
   void _showRecord(uint32_t index);

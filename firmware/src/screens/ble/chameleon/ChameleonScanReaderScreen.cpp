@@ -7,6 +7,9 @@
 void ChameleonScanReaderScreen::_drawWaiting() {
   ShowStatusAction::show("Waiting for reader...", 0);
 }
+void ChameleonScanReaderScreen::_drawLoading() {
+  ShowStatusAction::show("Loading...", 0);
+}
 void ChameleonScanReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;
   _labels[0]="Status"; _values[0]=msg; _rows[0]={_labels[0].c_str(),_values[0]}; _rowCount=1;
@@ -26,8 +29,7 @@ void ChameleonScanReaderScreen::_restore() {
   _armed=false;
 }
 void ChameleonScanReaderScreen::onInit() {
-  ShowStatusAction::show("Loading...", 0);
-  _state=WAITING; _rowCount=0; _armed=false;
+  _state=STARTING; _rowCount=0; _armed=false;
   auto& c=ChameleonClient::get();
   _restoreMode=c.getMode(&_previousMode);
   _restoreSlot=c.getActiveSlot(&_previousSlot);
@@ -106,6 +108,10 @@ void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
   _scroll.setRows(_rows,_rowCount);
 }
 void ChameleonScanReaderScreen::onUpdate() {
+  if (_state == STARTING) {
+    _state = WAITING;
+    return;
+  }
   if (Uni.Nav->wasPressed()) {
     auto d=Uni.Nav->readDirection();
     if (d==INavigation::DIR_BACK ||
@@ -130,6 +136,7 @@ void ChameleonScanReaderScreen::onUpdate() {
   }
 }
 void ChameleonScanReaderScreen::onRender() {
-  if (_state==WAITING) _drawWaiting(); else _scroll.render(bodyX(),bodyY(),bodyW(),bodyH());
+  if (_state==STARTING) _drawLoading();
+  else if (_state==WAITING) _drawWaiting(); else _scroll.render(bodyX(),bodyY(),bodyW(),bodyH());
 }
 ChameleonScanReaderScreen::~ChameleonScanReaderScreen() { _restore(); }
