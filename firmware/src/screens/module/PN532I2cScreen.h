@@ -131,7 +131,7 @@ private:
   };
 
   ListItem _mfAttackItems[1] = {
-    {"Dictionary Attack"},
+    {"Dictionary"},
   };
 
   ListItem _mfKeysItems[2] = {

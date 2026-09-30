@@ -8,10 +8,10 @@
 #include "ui/actions/ShowStatusAction.h"
 
 void ChameleonMfcAttacksScreen::onInit() {
-  _items[0] = {"Dictionary Attack"};
+  _items[0] = {"Dictionary"};
   _items[1] = {"Backdoor Assisted SEN"};
   _items[2] = {"Darkside"};
-  _items[3] = {"Nested Attack"};
+  _items[3] = {"Nested"};
   _items[4] = {"Static Nested"};
   _items[5] = {"Attack Chain"};
   _items[6] = {"MFKey32"};

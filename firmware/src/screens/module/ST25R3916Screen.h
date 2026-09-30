@@ -192,7 +192,7 @@ private:
     {"Keys"},
   };
   ListItem _mfcAttackItems[1] = {
-    {"Dictionary Attack"},
+    {"Dictionary"},
   };
   ListItem _mfcKeysItems[2] = {
     {"Check Known Keys"},

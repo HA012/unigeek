@@ -83,7 +83,7 @@ private:
     {"Authenticate"},
     {"Dump Memory"},
     {"Discovered Keys"},
-    {"Dictionary Attack"},
+    {"Dictionary"},
   };
 
   ListItem _ulItems[2] = {
