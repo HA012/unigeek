@@ -4,7 +4,7 @@
 
 class ChameleonScanReaderScreen : public BaseScreen {
 public:
-  const char* title() override { return "Scan Reader"; }
+  const char* title() override { return "MF1 Detector"; }
   void onInit() override;
   void onUpdate() override;
   void onRender() override;
@@ -18,6 +18,9 @@ private:
   bool _previousDetection = false;
   bool _restoreHfEnable = false;
   bool _previousHfEnable = false;
+  bool _restoreHfType = false;
+  uint16_t _previousHfType = 0;
+  bool _initedDefault = false;
   uint8_t _previousMode = 0;
   uint8_t _previousSlot = 0;
   uint32_t _baseline = 0;

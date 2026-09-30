@@ -3,6 +3,7 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/Header.h"
 #include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
@@ -237,6 +238,8 @@ void ChameleonMfuWriteScreen::_detectTarget() {
   if (!_restoreMode && c.getMode(&_previousMode)) _restoreMode = true;
   c.setMode(1);
 
+  Header header;
+  header.render(title());
   renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
   bool found = false;

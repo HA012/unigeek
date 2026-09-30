@@ -143,6 +143,7 @@ void ChameleonMfcScreen::_callAuth() {
 
   _authLog.clear();
   _authPct = 0;
+  _waitingForTag = true;
   strncpy(_authStatus, "Waiting for tag...", sizeof(_authStatus) - 1);
 
   // STATE_AUTH renders the LogView, including its progress/status strip.
@@ -156,10 +157,25 @@ void ChameleonMfcScreen::_callAuth() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
 
-  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH(), title());
 
   uint8_t atqa[2] = {}, sak = 0;
-  if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {
+  bool found = false;
+  const uint32_t waitStart = millis();
+  while (millis() - waitStart < ChameleonClient::kTagWaitMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      c.setMode(0);
+      _running = false;
+      _authStatus[0] = '\0';
+      _authPct = 0;
+      Screen.goBack();
+      return;
+    }
+    if (c.scan14A(_uid, &_uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  if (!found) {
     c.setMode(0);
     _running = false;
     _authStatus[0] = '\0';
@@ -170,6 +186,8 @@ void ChameleonMfcScreen::_callAuth() {
     Screen.goBack();
     return;
   }
+
+  _waitingForTag = false;
 
   _sak = sak;
   memcpy(_atqa, atqa, sizeof(_atqa));
@@ -1853,6 +1871,10 @@ void ChameleonMfcScreen::onUpdate() {
 
 void ChameleonMfcScreen::onRender() {
   if (_state == STATE_AUTH) {
+    if (_waitingForTag) {
+      TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+      return;
+    }
     _authLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _authStatusBarCb, this);
     return;
   }

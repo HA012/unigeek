@@ -128,7 +128,7 @@ void ChameleonMfuToolsScreen::_eraseTag() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh, "Erase Tag");
 
   ChameleonClient::MfuTagInfo info = {};
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;

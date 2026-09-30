@@ -8,7 +8,7 @@
 void ChameleonScanReaderScreen::_drawWaiting() {
   auto& lcd = Uni.Lcd;
   const int bx=bodyX(), by=bodyY(), bw=bodyW(), bh=bodyH();
-  TagPrompt::show("Place device on reader", bx, by, bw, bh);
+  TagPrompt::show("Waiting for reader...", bx, by, bw, bh, title());
 }
 void ChameleonScanReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;
@@ -19,6 +19,10 @@ void ChameleonScanReaderScreen::_restore() {
   if (!_armed) return;
   auto& c=ChameleonClient::get();
   if (_restoreDetection) c.mf1SetDetectEnable(_previousDetection);
+  if (_restoreHfType) {
+    c.setSlotTagType(_probeSlot, _previousHfType);
+    if (_previousHfType != 0) c.setSlotDataDefault(_probeSlot, _previousHfType);
+  }
   if (_restoreHfEnable) c.setSlotEnable(_probeSlot, 2, _previousHfEnable);
   if (_restoreSlot) c.setActiveSlot(_previousSlot);
   if (_restoreMode) c.setMode(_previousMode);
@@ -30,21 +34,40 @@ void ChameleonScanReaderScreen::onInit() {
   _restoreMode=c.getMode(&_previousMode);
   _restoreSlot=c.getActiveSlot(&_previousSlot);
   _restoreDetection=c.mf1GetDetectEnable(&_previousDetection);
-  // Scan Reader temporarily mutates all three states.  If any original state
-  // cannot be read, fail before changing the Chameleon so Back can never leave
-  // the device in a different configuration.
-  if (!_restoreMode || !_restoreSlot || !_restoreDetection) {
-    _setError("Unable to save device state"); return;
+  // Detection enable query is optional on older firmware; assume off.
+  if (!_restoreDetection) _previousDetection = false;
+  // MF1 Detector temporarily mutates slot/mode/detection state. Preserve
+  // available state and restore it when leaving the screen.
+  if (!_restoreMode || !_restoreSlot) {
+    _setError("Failed to read device state"); return;
   }
   ChameleonClient::SlotTypes types[8] = {};
   if (!c.getSlotTypes(types)) { _setError("Unable to read slots"); return; }
+  auto isClassic = [](uint16_t t) {
+    return t==1000 || t==1001 || t==1002 || t==1003;
+  };
   bool found=false;
   for (uint8_t i=0;i<8;i++) {
-    if (types[i].hfType==1000 || types[i].hfType==1001 || types[i].hfType==1002 || types[i].hfType==1003) {
+    if (isClassic(types[i].hfType)) {
       _probeSlot=i; found=true; break;
     }
   }
-  if (!found) { _setError("No MIFARE Classic slot"); return; }
+  if (!found) {
+    // Provision a temporary MF-1K emulator so the detector works even when
+    // no Classic slot is already configured.
+    int8_t empty = -1;
+    for (uint8_t i=0;i<8;i++) {
+      if (types[i].hfType==0) { empty = (int8_t)i; break; }
+    }
+    _probeSlot = (empty >= 0) ? (uint8_t)empty : (uint8_t)7;
+    _previousHfType = types[_probeSlot].hfType;
+    _restoreHfType = true;
+    if (!c.setSlotTagType(_probeSlot, 1001) ||
+        !c.setSlotDataDefault(_probeSlot, 1001)) {
+      _setError("Failed to prepare MIFARE slot"); return;
+    }
+    _initedDefault = true;
+  }
   bool hfEn[8] = {}, lfEn[8] = {};
   if (!c.getEnabledSlots(hfEn, lfEn)) {
     _setError("Unable to read slot state"); return;
@@ -52,10 +75,21 @@ void ChameleonScanReaderScreen::onInit() {
   _previousHfEnable = hfEn[_probeSlot];
   _restoreHfEnable = true;
   _armed=true; // from here on, every exit path must restore slot/mode/detection state
-  if (!c.setActiveSlot(_probeSlot) ||
-      (_restoreHfEnable && !_previousHfEnable && !c.setSlotEnable(_probeSlot, 2, true)) ||
-      !c.mf1GetDetectCount(&_baseline) || !c.mf1SetDetectEnable(true) || !c.setMode(0)) {
-    _setError("Probe unavailable"); _restore(); return;
+  if (!c.setActiveSlot(_probeSlot)) {
+    _setError("Failed to select MIFARE slot"); _restore(); return;
+  }
+  if (!_previousHfEnable && !c.setSlotEnable(_probeSlot, 2, true)) {
+    _setError("Failed to enable slot"); _restore(); return;
+  }
+  if (!c.mf1SetDetectEnable(true)) {
+    _setError("Failed to enable MF1 detector"); _restore(); return;
+  }
+  // Official firmware clears the detection log when enabling it, so the
+  // baseline is always 0. Skip GET_DETECTION_COUNT here: CHANGE_MODE can
+  // stall the next BLE command and produced "Failed to read detector state".
+  _baseline = 0;
+  if (!c.setMode(0)) {
+    _setError("Failed to enter emulator mode"); _restore(); return;
   }
   _lastPoll=0;
   _probeStartedAt=millis();
@@ -63,15 +97,15 @@ void ChameleonScanReaderScreen::onInit() {
 void ChameleonScanReaderScreen::_showRecord(uint32_t index) {
   uint8_t rec[18] = {};
   if (!ChameleonClient::get().mf1GetDetectRecord(index,rec)) {
-    _setError("Reader not detected");
+    _setError("MIFARE Classic reader not detected");
     return;
   }
   _state=RESULT; _rowCount=0;
-  _labels[_rowCount]="Technology"; _values[_rowCount]="ISO 14443-A"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
+  _labels[_rowCount]="Technology"; _values[_rowCount]="MIFARE Classic"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   _labels[_rowCount]="Likely tag"; _values[_rowCount]="MIFARE Classic"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   _labels[_rowCount]="Confidence"; _values[_rowCount]="High"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   // Detection records are proof that a Classic authentication exchange reached the emulator.
-  _labels[_rowCount]="Reader action"; _values[_rowCount]="Authentication"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
+  _labels[_rowCount]="Action"; _values[_rowCount]="Authentication"; _rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]}; _rowCount++;
   _scroll.setRows(_rows,_rowCount);
 }
 void ChameleonScanReaderScreen::onUpdate() {
@@ -88,7 +122,7 @@ void ChameleonScanReaderScreen::onUpdate() {
   if (_state!=WAITING || !_armed) return;
   if (millis()-_probeStartedAt >= 15000) {
     _restore();
-    ShowStatusAction::show("Reader not detected", 1200);
+    ShowStatusAction::show("MIFARE Classic reader not detected", 1200);
     Screen.goBack();
     return;
   }

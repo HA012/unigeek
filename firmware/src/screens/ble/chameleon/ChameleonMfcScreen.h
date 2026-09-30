@@ -91,6 +91,7 @@ private:
   LogView _authLog;
   char    _authStatus[48] = {};
   int     _authPct = 0;
+  bool    _waitingForTag = true;
   static void _authStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Action log (dump + dict)

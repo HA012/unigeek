@@ -4,7 +4,7 @@
 
 class ChameleonScanScreen : public ListScreen {
 public:
-  const char* title() override { return "Scan Chameleon"; }
+  const char* title() override { return "Chameleon Ultra"; }
   bool inhibitPowerOff()  override { return true; }
   bool inhibitPowerSave() override { return true; }
 

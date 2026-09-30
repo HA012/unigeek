@@ -148,6 +148,9 @@ public:
   bool saveSlotNicks();
   bool deleteSlot(uint8_t slot, uint8_t freq);
 
+  // Shared wait window used by HF tag-present loops (Read/Write/Erase).
+  static constexpr uint32_t kTagWaitMs = 5000;
+
   // ── 14A / MF Classic ──
   bool scan14A(uint8_t uid[7], uint8_t* uidLen, uint8_t atqa[2], uint8_t* sak);
   // Read-only Magic MIFARE Classic classification. Leaves the target in a
