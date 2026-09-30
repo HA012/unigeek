@@ -2,10 +2,11 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
 #include "utils/ble/ChameleonClient.h"
 
 void ChameleonScanReaderScreen::_drawWaiting() {
-  ShowStatusAction::show("Waiting for reader...", 0);
+  TagPrompt::show("Waiting for reader...", bodyX(), bodyY(), bodyW(), bodyH(), title());
 }
 void ChameleonScanReaderScreen::_drawLoading() {
   ShowStatusAction::show("Loading...", 0);

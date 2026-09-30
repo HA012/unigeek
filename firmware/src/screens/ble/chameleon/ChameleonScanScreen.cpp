@@ -6,6 +6,7 @@
 #include "screens/ble/BLEMenuScreen.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "utils/ble/ChameleonClient.h"
 #include <NimBLEDevice.h>
 #include <string.h>
@@ -103,7 +104,7 @@ void ChameleonScanScreen::onInit() {
   _devChanged = false;
   _state      = STATE_EMPTY;
   _startScan();
-  ShowStatusAction::show("Scanning...", 0);
+  TagPrompt::show("Scanning...", bodyX(), bodyY(), bodyW(), bodyH(), title());
 }
 
 void ChameleonScanScreen::onUpdate() {
@@ -131,7 +132,7 @@ void ChameleonScanScreen::onRender() {
     return;
   }
 
-  ShowStatusAction::show("Scanning...", 0);
+  TagPrompt::show("Scanning...", bodyX(), bodyY(), bodyW(), bodyH(), title());
 }
 
 void ChameleonScanScreen::onItemSelected(uint8_t index) {
