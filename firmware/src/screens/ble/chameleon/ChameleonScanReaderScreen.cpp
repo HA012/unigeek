@@ -30,6 +30,7 @@ void ChameleonScanReaderScreen::_restore() {
 }
 void ChameleonScanReaderScreen::onInit() {
   _state=STARTING; _rowCount=0; _armed=false;
+  render();
   auto& c=ChameleonClient::get();
   _restoreMode=c.getMode(&_previousMode);
   _restoreSlot=c.getActiveSlot(&_previousSlot);
