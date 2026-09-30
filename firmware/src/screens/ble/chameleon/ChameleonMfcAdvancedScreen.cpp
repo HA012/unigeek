@@ -24,7 +24,7 @@ static bool scanClassicOrShow(ChameleonClient& c, uint8_t uid[7], uint8_t& uidLe
                               uint8_t atqa[2], uint8_t& sak,
                               int bx, int by, int bw, int bh,
                               uint32_t timeoutMs = 5000) {
-  renderTagPrompt("Place tag on reader...", bx, by, bw, bh);
+  renderTagPrompt("Waiting for tag...", bx, by, bw, bh);
   const uint32_t start = millis();
   while (millis() - start < timeoutMs) {
     Uni.update();

@@ -133,7 +133,7 @@ bool ChameleonMfuNdefScreen::readImage(uint8_t*& img, size_t& len, uint8_t uid[7
   c.setMode(1);
 
   ChameleonClient::MfuTagInfo info = {};
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
@@ -266,7 +266,7 @@ bool ChameleonMfuNdefScreen::writeRecord(const uint8_t* ndef, size_t nl, const c
   c.setMode(1);
 
   ChameleonClient::MfuTagInfo info = {};
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);
@@ -371,7 +371,7 @@ void ChameleonMfuNdefScreen::format() {
   c.setMode(1);
 
   ChameleonClient::MfuTagInfo info = {};
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   bool tagPresent = false;
   if (!waitForMfuTag(c, info, tagPresent)) {
     if (restoreMode) c.setMode(previousMode);

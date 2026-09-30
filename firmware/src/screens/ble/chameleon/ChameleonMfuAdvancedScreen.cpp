@@ -74,7 +74,7 @@ DetectResult _detect(ChameleonClient& c, ChameleonClient::MfuTagInfo& info) {
   const int bh = lcd.height() - Header::HEIGHT - 4;
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM); lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   const uint32_t start = millis();
   while (millis() - start < 5000) {

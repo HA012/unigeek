@@ -1081,7 +1081,7 @@ void PN532I2cScreen::_doScanReader() {
   if (!_nfc || !_wire) return;
   _selMain = 1;
   renderOperationTitle("Scan Reader");
-  renderTagPrompt("Place device on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Place device on reader", bodyX(), bodyY(), bodyW(), bodyH());
 
   bool cancelled = false;
   auto checkBack = [&]() -> bool {
@@ -1664,7 +1664,7 @@ const char* PN532I2cScreen::_inferType2Variant() {
 // ── scan helper ────────────────────────────────────────────────────────────
 
 bool PN532I2cScreen::_scanCardOrShow(uint32_t timeoutMs) {
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint32_t start = millis();
   while (millis() - start < timeoutMs) {
     Uni.update();
@@ -1777,7 +1777,7 @@ void PN532I2cScreen::_showTypeBDetails(bool scanAgainHint) {
 
 void PN532I2cScreen::_doTypeBReadTag() {
   renderOperationTitle("Read Tag");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   const uint32_t start = millis();
   bool otherTagDetected = false;
   while (millis() - start < 3000) {
@@ -1831,7 +1831,7 @@ void PN532I2cScreen::_doTypeBSendApdu(bool rawMode) {
   }
 
   renderOperationTitle(rawMode ? "Raw Response" : "APDU Response");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   const uint32_t start = millis();
   bool found = false;
   bool otherTagDetected = false;
@@ -1905,7 +1905,7 @@ bool PN532I2cScreen::_typeBSelectNdef(size_t& capacity, bool& writable) {
 
 void PN532I2cScreen::_doTypeBReadNdef() {
   renderOperationTitle("Read NDEF");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   const uint32_t start = millis();
   bool found = false;
   bool otherTagDetected = false;
@@ -1949,7 +1949,7 @@ void PN532I2cScreen::_doTypeBReadNdef() {
 bool PN532I2cScreen::_writeTypeBNdefRecord(const uint8_t* ndef, size_t ndefLen) {
   if ((!ndef && ndefLen) || ndefLen > MAX_NDEF_BYTES || ndefLen > 0xFFFFU) { ShowStatusAction::show("NDEF too large"); return false; }
   renderOperationTitle("Write NDEF");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   const uint32_t start = millis(); bool found = false; bool otherTagDetected = false;
   while (millis() - start < 3000) {
     Uni.update();
@@ -2038,7 +2038,7 @@ void PN532I2cScreen::_doScan14A() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   bool ok = false;
   uint32_t start = millis();
@@ -2924,7 +2924,7 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
   if (!dump || len != kBytes) return false;
 
   renderOperationTitle("Write Dump to Tag");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || pages != 135 ||
       !typeName || strcmp(typeName, "NTAG215") != 0) {
@@ -3033,7 +3033,7 @@ void PN532I2cScreen::_showUltralightDumpActions() {
 
 void PN532I2cScreen::_doUltralightReadTag() {
   renderOperationTitle("Read Tag");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
     ShowStatusAction::show("Tag not supported", 1600);
@@ -3079,7 +3079,7 @@ void PN532I2cScreen::_doUltralightWriteTag() {
 
 void PN532I2cScreen::_doUltralightEraseTag() {
   renderOperationTitle("Erase Tag");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || pages != 135 ||
       !typeName || strcmp(typeName, "NTAG215") != 0) {
@@ -3177,7 +3177,7 @@ void PN532I2cScreen::_doMifareEditMemory() {
 
 void PN532I2cScreen::_doUltralightReadPages() {
   renderOperationTitle("Read Memory");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
     ShowStatusAction::show("Tag not supported", 1600);
@@ -3229,7 +3229,7 @@ void PN532I2cScreen::_doUltralightReadPages() {
 
 void PN532I2cScreen::_doUltralightWritePage() {
   renderOperationTitle("Edit Memory");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
     ShowStatusAction::show("Tag not supported", 1600);
@@ -3272,7 +3272,7 @@ void PN532I2cScreen::_doUltralightWritePage() {
 
 void PN532I2cScreen::_doUltralightLockTag() {
   renderOperationTitle("Lock Tag");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || !typeName ||
       strcmp(typeName, "Ultralight C") == 0 ||
@@ -3321,7 +3321,7 @@ void PN532I2cScreen::_doUltralightLockTag() {
 
 void PN532I2cScreen::_doUltralightSetPassword() {
   renderOperationTitle("Set Password");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || _ultralightConfig0(typeName) == 0xFFFF) {
     ShowStatusAction::show("Password not supported", 1600); _goUltralightAdvanced(); return;
@@ -3403,7 +3403,7 @@ void PN532I2cScreen::_doUltralightSetPassword() {
 
 void PN532I2cScreen::_doUltralightRemovePassword() {
   renderOperationTitle("Remove Password");
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName) || _ultralightConfig0(typeName) == 0xFFFF) {
     ShowStatusAction::show("Password not supported", 1600); _goUltralightAdvanced(); return;
@@ -3455,7 +3455,7 @@ void PN532I2cScreen::_doReadNdef() {
   _hasNdef = false;
   _ndefLen = 0;
   _ndefCapacity = 0;
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint16_t pages = 0;
   const char* typeName = nullptr;
@@ -4338,7 +4338,7 @@ bool PN532I2cScreen::_writeUltralightNdefRecord(const uint8_t* ndef, size_t ndef
     return false;
   }
 
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t uid[7];
   uint8_t uidLen = 0;
@@ -4881,7 +4881,7 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
 void PN532I2cScreen::_doEraseNdef() {
   renderOperationTitle("Erase NDEF");
   _ndefTarget = NDEF_TARGET_ULTRALIGHT;
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint16_t pages = 0;
   const char* typeName = nullptr;
@@ -4921,7 +4921,7 @@ void PN532I2cScreen::_doEraseNdef() {
 void PN532I2cScreen::_doFormatNdef() {
   renderOperationTitle("Format NDEF");
   _ndefTarget = NDEF_TARGET_ULTRALIGHT;
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint16_t pages = 0;
   const char* typeName = nullptr;
@@ -5494,7 +5494,7 @@ bool PN532I2cScreen::_doWriteDumpToTag(const uint8_t* dump, size_t len,
   if (!dump || (len != 320 && len != 1024 && len != 4096)) {
     ShowStatusAction::show("Invalid dump"); return false;
   }
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   if (!_scanCardOrShow(5000)) { render(); return false; }
   auto dims = _mfDims(_sak);
   if (dims.second * 16u != len) { ShowStatusAction::show("Tag size mismatch"); render(); return false; }

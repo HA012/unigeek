@@ -378,7 +378,7 @@ void ChameleonMfcWriteScreen::_write() {
   _busy = true; auto& c = ChameleonClient::get();
   if (!_restoreMode && c.getMode(&_previousMode)) _restoreMode = true;
   c.setMode(1);
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
   bool found = false;

@@ -27,7 +27,7 @@ void ChameleonLFScanScreen::_draw() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   sp.setTextColor(TFT_WHITE, TFT_BLACK);
   sp.drawString("[Press] Continue", bw / 2, bh / 2 + 10);
   sp.pushSprite(bx, by);

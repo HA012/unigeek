@@ -143,7 +143,7 @@ void ChameleonMfcScreen::_callAuth() {
 
   _authLog.clear();
   _authPct = 0;
-  strncpy(_authStatus, "Place tag on reader...", sizeof(_authStatus) - 1);
+  strncpy(_authStatus, "Waiting for tag...", sizeof(_authStatus) - 1);
 
   // STATE_AUTH renders the LogView, including its progress/status strip.
   // Drawing that intermediate state before the initial tag prompt can leave
@@ -156,7 +156,7 @@ void ChameleonMfcScreen::_callAuth() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
 
-  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t atqa[2] = {}, sak = 0;
   if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {

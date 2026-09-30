@@ -1047,7 +1047,7 @@ void ST25R3916Screen::_renderTagPrompt() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show(_state == STATE_SCAN_READER ? "Place device on reader..." : "Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show(_state == STATE_SCAN_READER ? "Place device on reader" : "Waiting for tag...", bx, by, bw, bh);
 }
 
 void ST25R3916Screen::_scan(uint16_t techMask) {

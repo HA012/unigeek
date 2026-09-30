@@ -167,7 +167,7 @@ uint16_t ChameleonMfcNdefScreen::_firstBlock(uint8_t sector) const {
 bool ChameleonMfcNdefScreen::_scanClassic() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint8_t atqa[2] = {}, sak = 0;
   bool found = false;
   const uint32_t start = millis();

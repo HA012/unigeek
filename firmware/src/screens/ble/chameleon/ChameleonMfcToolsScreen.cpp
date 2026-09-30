@@ -202,7 +202,7 @@ void ChameleonMfcToolsScreen::_eraseTag() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
   bool found = false;

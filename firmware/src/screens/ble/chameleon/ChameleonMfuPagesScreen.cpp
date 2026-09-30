@@ -86,7 +86,7 @@ void ChameleonMfuPagesScreen::_read() {
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   bool tagPresent = false;
   if (!waitForMfuTag(c, _info, tagPresent)) {

@@ -8,7 +8,7 @@
 void ChameleonScanReaderScreen::_drawWaiting() {
   auto& lcd = Uni.Lcd;
   const int bx=bodyX(), by=bodyY(), bw=bodyW(), bh=bodyH();
-  TagPrompt::show("Place device on reader...", bx, by, bw, bh);
+  TagPrompt::show("Place device on reader", bx, by, bw, bh);
 }
 void ChameleonScanReaderScreen::_setError(const char* msg) {
   _state=ERROR; _rowCount=0;

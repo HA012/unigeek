@@ -32,7 +32,7 @@ void ChameleonHFScreen::_draw() {
   sp.setTextDatum(MC_DATUM);
 
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   sp.pushSprite(bx, by);
   sp.deleteSprite();
@@ -52,7 +52,7 @@ void ChameleonHFScreen::_doScan() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Place tag on reader...", bx, by, bw, bh);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   auto& c = ChameleonClient::get();
 

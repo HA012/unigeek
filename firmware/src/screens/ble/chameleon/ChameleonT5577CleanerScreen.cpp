@@ -103,7 +103,7 @@ void ChameleonT5577CleanerScreen::_drawPrompt() {
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW,TFT_BLACK);
-  lcd.drawString("Place tag on reader...",bx+bw/2,by+bh/2-8);
+  lcd.drawString("Waiting for tag...",bx+bw/2,by+bh/2-8);
   lcd.setTextColor(TFT_WHITE,TFT_BLACK);
   lcd.drawString("[Press] Continue",bx+bw/2,by+bh/2+10);
 }

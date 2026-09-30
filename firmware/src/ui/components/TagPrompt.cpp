@@ -13,6 +13,7 @@ void TagPrompt::show(const char* message, int16_t x, int16_t y, int16_t w, int16
   lcd.fillRect(x, y, w, h, TFT_BLACK);
 
   if (message) {
+    lcd.setTextColor(TFT_WHITE, TFT_BLACK);
     lcd.setTextDatum(MC_DATUM);
     lcd.drawString(message, x + w / 2, y + h / 2);
     lcd.setTextDatum(TL_DATUM);
