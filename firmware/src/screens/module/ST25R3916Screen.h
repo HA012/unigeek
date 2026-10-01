@@ -29,8 +29,9 @@ public:
       case STATE_MFU_READING: return "Read Tag";
       case STATE_MFU_DETAILS: return "Tag Details";
       case STATE_MFU_DUMP_HEX: return "Memory Dump";
-      case STATE_MFU_DUMP_SELECT: return "Write to Tag";
+      case STATE_MFU_DUMP_SELECT: return _mfuDumpPickerForEmulation ? "Emulate Tag" : "Write to Tag";
       case STATE_MFU_WRITE_PREVIEW: return "Write to Tag";
+      case STATE_MFU_EMULATE_PREVIEW: return "Emulate Tag";
       case STATE_MFU_WRITING: return "Write to Tag";
       case STATE_MFU_ERASING: return "Erase Tag";
       case STATE_MFU_NDEF_MENU: return "NDEF Operations";
@@ -137,6 +138,7 @@ private:
     STATE_MFU_DUMP_HEX,
     STATE_MFU_DUMP_SELECT,
     STATE_MFU_WRITE_PREVIEW,
+    STATE_MFU_EMULATE_PREVIEW,
     STATE_MFU_WRITING,
     STATE_MFU_ERASING,
     STATE_MFU_NDEF_MENU,
@@ -288,6 +290,7 @@ private:
   String _advancedOperationTitle;
   bool _writePreviewFromFile = false;
   bool _mfuWritePreviewFromFile = false;
+  bool _mfuDumpPickerForEmulation = false;
   bool _mfcDumpFromCompleteRead = false;
   uint8_t _writeSourceUid[4] = {};
   static constexpr size_t kMaxNdefBytes = 254;
@@ -383,9 +386,10 @@ private:
   void _eraseMfuNdef();
   void _readMfuTag();
   void _showMfuDumpActions();
-  void _openMfuDumpPicker();
+  void _openMfuDumpPicker(bool forEmulation = false);
   void _openMfuDumpFile(uint8_t index);
   void _showMfuWritePreview(bool fromFile);
+  void _showMfuEmulatePreview();
   bool _writeMfuDumpToTag();
   void _eraseMfuTag();
   void _saveMfuUid();

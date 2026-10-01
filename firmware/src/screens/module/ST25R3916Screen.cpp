@@ -518,6 +518,10 @@ void ST25R3916Screen::onUpdate() {
     _writeMfuDumpToTag();
     return;
   }
+  if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_EMULATE_PREVIEW) {
+    _emulateMfuTag();
+    return;
+  }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_WRITE_PREVIEW) {
     _writeMfcDumpToTag();
     return;
@@ -627,7 +631,7 @@ void ST25R3916Screen::onBack() {
     return;
   }
   if (_state == STATE_MFU_DETAILS || _state == STATE_MFU_READING || _state == STATE_MFU_WRITE_PREVIEW ||
-      _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING || _state == STATE_MFU_DUMP_SELECT) {
+      _state == STATE_MFU_EMULATE_PREVIEW || _state == STATE_MFU_WRITING || _state == STATE_MFU_ERASING || _state == STATE_MFU_DUMP_SELECT) {
     _showMfuTagMenu();
     return;
   }
@@ -766,8 +770,8 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFU_TAG_MENU) {
     _selMfuTag = index;
     if (index == 0) _readMfuTag();
-    else if (index == 1) _openMfuDumpPicker();
-    else if (index == 2) _emulateMfuTag();
+    else if (index == 1) _openMfuDumpPicker(false);
+    else if (index == 2) _openMfuDumpPicker(true);
     else if (index == 3) _eraseMfuTag();
     else if (index == 4) _showMfuAdvancedMenu();
     return;
@@ -2808,7 +2812,8 @@ void ST25R3916Screen::_showMfuDumpActions() {
 }
 
 
-void ST25R3916Screen::_openMfuDumpPicker() {
+void ST25R3916Screen::_openMfuDumpPicker(bool forEmulation) {
+  _mfuDumpPickerForEmulation = forEmulation;
   _state = STATE_MFU_DUMP_SELECT;
   if (_dumpPickDir.length() == 0) _dumpPickDir = "/unigeek/nfc/dumps";
   _browser.root = "/unigeek/nfc/dumps";
@@ -2824,7 +2829,7 @@ void ST25R3916Screen::_openMfuDumpPicker() {
 void ST25R3916Screen::_openMfuDumpFile(uint8_t index) {
   if (index >= _browser.count()) return;
   const auto& e = _browser.entry(index);
-  if (e.isDir) { _dumpPickDir = e.path; _openMfuDumpPicker(); return; }
+  if (e.isDir) { _dumpPickDir = e.path; _openMfuDumpPicker(_mfuDumpPickerForEmulation); return; }
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable"); _showMfuTagMenu(); return;
   }
@@ -2835,6 +2840,23 @@ void ST25R3916Screen::_openMfuDumpFile(uint8_t index) {
   f.close();
   if (got != 540) { ShowStatusAction::show("Failed to read dump"); _showMfuTagMenu(); return; }
   _mfuDumpLen = 540; _mfuPages = 135; _mfuType = "NTAG215";
+  // A file-selected dump is self-contained. Do not reuse identity metadata
+  // left by a previously read physical tag.
+  _mfuUidLen = 0;
+  memset(_mfuUid, 0, sizeof(_mfuUid));
+  memset(_mfuAtqa, 0, sizeof(_mfuAtqa));
+  _mfuSak = 0;
+
+  if (_mfuDumpPickerForEmulation) {
+    const HfDumpParser::Info info = HfDumpParser::inspect(_mfuDump, _mfuDumpLen);
+    if (info.type != HfDumpParser::TYPE_NTAG215 || !info.uidValid || info.uidLen == 0) {
+      ShowStatusAction::show("Invalid NTAG215 dump", 1500);
+      _showMfuTagMenu();
+      return;
+    }
+    _showMfuEmulatePreview();
+    return;
+  }
   _showMfuWritePreview(true);
 }
 
@@ -2873,6 +2895,44 @@ void ST25R3916Screen::_showMfuWritePreview(bool fromFile) {
   addRow("[Press]", "Write to Tag");
   _scrollView.resetScroll(); _scrollView.setRows(_rows, _rowCount);
   _state = STATE_MFU_WRITE_PREVIEW; render();
+}
+
+void ST25R3916Screen::_showMfuEmulatePreview() {
+  const HfDumpParser::Info info = HfDumpParser::inspect(_mfuDump, _mfuDumpLen);
+  if (info.type != HfDumpParser::TYPE_NTAG215 || !info.uidValid || info.uidLen == 0 ||
+      _mfuPages != 135 || _mfuDumpLen != 540) {
+    ShowStatusAction::show("Invalid NTAG215 dump", 1500);
+    _showMfuTagMenu();
+    return;
+  }
+  _rowCount = 0;
+  auto addRow = [&](const String& label, const String& value) {
+    if (_rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = label; _rowValues[_rowCount] = value;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]}; ++_rowCount;
+  };
+  addRow("Source", "File");
+  addRow("Type", "NTAG215");
+  String uid;
+  for (uint8_t i = 0; i < info.uidLen; ++i) { char h[4]; snprintf(h, sizeof(h), "%s%02X", i ? ":" : "", info.uid[i]); uid += h; }
+  addRow("UID", uid);
+  addRow("Pages", "135");
+  addRow("Dump", "540 bytes");
+  uint8_t* ndef = nullptr; size_t ndefLen = 0; NdefParser::Result parsed;
+  if (HfDumpParser::extractNdef(_mfuDump, _mfuDumpLen, &ndef, &ndefLen) && NdefParser::parse(ndef, ndefLen, parsed)) {
+    switch (parsed.kind) {
+      case NdefParser::RECORD_TEXT: addRow("NDEF", "Text"); break;
+      case NdefParser::RECORD_URL: addRow("NDEF", "URL"); break;
+      case NdefParser::RECORD_PHONE: addRow("NDEF", "Phone"); break;
+      case NdefParser::RECORD_EMAIL: addRow("NDEF", "Email"); break;
+      case NdefParser::RECORD_VCARD: addRow("NDEF", "vCard"); break;
+      default: addRow("NDEF", "Unsupported"); break;
+    }
+  } else addRow("NDEF", "Not found");
+  delete[] ndef;
+  addRow("[Press]", "Emulate Tag");
+  _scrollView.resetScroll(); _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_MFU_EMULATE_PREVIEW; render();
 }
 
 bool ST25R3916Screen::_writeMfuDumpToTag() {
