@@ -1214,8 +1214,7 @@ void ChameleonMfcScreen::_callDump() {
 void ChameleonMfcScreen::_loadDictPicker() {
   if (_dictPickDir.length() == 0) _dictPickDir = _kDictDir;
   _browser.root = _kDictDir;
-  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED,
-                            _dictPickDir == _kDictDir ? "discovered.txt" : nullptr);
+  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
 
   uint8_t baseOffset = 0;
   if (_dictPickDir == _kDictDir) {

@@ -2596,7 +2596,7 @@ void PN532I2cScreen::_doDictionaryPicker() {
   _state = STATE_DICT_SELECT;
   if (_dictPickDir.length() == 0) _dictPickDir = _dictPath;
   _browser.root = _dictPath;
-  uint8_t n = _browser.load(this, _dictPickDir, ".txt");
+  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
   if (n == 0 && _dictPickDir == _dictPath) {
     ShowStatusAction::show("No dictionary files");
     _goMifareAttacks();
