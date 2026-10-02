@@ -466,6 +466,14 @@ void ST25R3916Screen::onInit() {
 }
 
 void ST25R3916Screen::onUpdate() {
+  // Resume MIFARE Classic reads only after the dictionary attack has fully
+  // unwound. _runMfcDictionaryAttack() has a large stack frame; calling
+  // _readMfcTag() from inside it can overflow the ESP32 task stack.
+  if (_mfcReadAfterDict) {
+    _readMfcTag();
+    return;
+  }
+
   if (_state == STATE_EMULATING) {
 #if defined(DEVICE_HAS_ST25R3916)
     if (_emuDev) _emuDev->emulationWorker();
@@ -4309,8 +4317,9 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   ShowStatusAction::show(msg, 1600);
   if (_resumeMfcReadAfterDict) {
     _resumeMfcReadAfterDict = false;
+    // Defer the resumed read until onUpdate(), after this dictionary attack
+    // returns and releases its large local buffers from the task stack.
     _mfcReadAfterDict = true;
-    _readMfcTag();
   } else {
     _showMfcAttacksMenu();
   }

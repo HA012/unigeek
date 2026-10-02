@@ -547,6 +547,14 @@ void PN532I2cScreen::onInit() {
 }
 
 void PN532I2cScreen::onUpdate() {
+  // Resume Read Tag only after the Dictionary Attack frame has returned.
+  // _doDictionaryAttackWithFile() keeps sizeable local buffers on the stack;
+  // starting the dump synchronously there needlessly stacks both operations.
+  if (_pendingDumpAfterDict) {
+    _pendingDumpAfterDict = false;
+    _doDumpMemory();
+    return;
+  }
   if (_state == STATE_SCAN_14A) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
@@ -2730,7 +2738,12 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   ShowStatusAction::show(msg, 1600);
   if (_resumeReadAfterDict) {
     _resumeReadAfterDict = false;
-    _doDumpMemory();
+    if (_hasReadableKeyForEverySector()) {
+      _pendingDumpAfterDict = true;
+    } else {
+      ShowStatusAction::show("Keys still missing", 1600);
+      _goMifareTag();
+    }
   } else {
     _goMifareAttacks();
   }

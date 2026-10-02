@@ -233,6 +233,7 @@ private:
   bool     _dumpComplete = false;
   size_t   _dumpReadBlocks = 0;
   bool     _resumeReadAfterDict = false;
+  bool     _pendingDumpAfterDict = false;
   String   _dumpPickDir;
   String   _uidPickDir;
   uint8_t  _uidWriteSource[7] = {};
