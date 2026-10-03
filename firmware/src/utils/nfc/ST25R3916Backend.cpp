@@ -135,7 +135,8 @@ bool ST25R3916Backend::scan(uint16_t techMask, ScanResult& result, uint32_t time
   const uint32_t started = millis();
   while ((uint32_t)(millis() - started) < timeoutMs) {
     _nfc->rfalNfcWorker();
-    if (_nfc->rfalNfcGetState() == RFAL_NFC_STATE_ACTIVATED) {
+    const auto state = _nfc->rfalNfcGetState();
+    if (state == RFAL_NFC_STATE_ACTIVATED) {
       rfalNfcDevice* dev = nullptr;
       _lastScanCode = _nfc->rfalNfcGetActiveDevice(&dev);
       if (_lastScanCode != ST_ERR_NONE || !dev) break;
@@ -165,6 +166,20 @@ bool ST25R3916Backend::scan(uint16_t techMask, ScanResult& result, uint32_t time
         deactivate();
       }
       return true;
+    }
+
+    // RFAL discovery may complete a poll cycle and return to IDLE before the
+    // UI-level timeout expires.  Restart discovery for the remaining window
+    // so a tag presented after the operation starts is still detected.  This
+    // matches the repeated short-poll behaviour used by the PN532 screens.
+    if (state == RFAL_NFC_STATE_IDLE) {
+      const uint32_t elapsed = (uint32_t)(millis() - started);
+      if (elapsed >= timeoutMs) break;
+      const uint32_t remaining = timeoutMs - elapsed;
+      params.totalDuration =
+          (uint16_t)((remaining > 0xFFFFU) ? 0xFFFFU : remaining);
+      _lastScanCode = _nfc->rfalNfcDiscover(&params);
+      if (_lastScanCode != ST_ERR_NONE) break;
     }
     delay(5);
   }
