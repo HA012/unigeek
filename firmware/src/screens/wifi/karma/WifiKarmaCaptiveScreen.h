@@ -64,6 +64,8 @@ private:
   static void _promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t type);
   void _onProbe(const char* ssid);
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _startAttack();
   void _stopAttack();

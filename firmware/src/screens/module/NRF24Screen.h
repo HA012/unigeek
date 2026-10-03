@@ -35,6 +35,7 @@ private:
   int8_t _csnPin = -1;
   char   _titleBuf[22] = "NRF24L01";
   bool   _chromeDrawn  = false;
+  uint8_t _menuReturnIndex = 0;
 
   // ─── Main menu ──────────────────────────────────────────────────
   ListItem _mainItems[3] = {{"Spectrum"}, {"Jammer"}, {"MouseJack"}};

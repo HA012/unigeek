@@ -110,6 +110,11 @@ private:
   // Lifecycle / nav helpers
   bool _initModule();
   void _cleanup();
+  uint8_t _mainMenuIndex = 0;
+  uint8_t _mifareMenuIndex = 0;
+  uint8_t _ultralightMenuIndex = 0;
+  uint8_t _magicMenuIndex = 0;
+
   void _goMain();
   void _goMifare();
   void _goUltralight();

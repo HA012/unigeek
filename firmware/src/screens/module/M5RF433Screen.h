@@ -45,6 +45,7 @@ private:
     {"Mfcodes"},
   };
   String _mfcodesSub;
+  uint8_t _menuReturnIndex = 0;
   void _updateMfcodesSub();
   void _reloadMfcodes();
 };

@@ -77,6 +77,7 @@ void WifiEvilTwinScreen::onInit()
 void WifiEvilTwinScreen::onItemSelected(uint8_t index)
 {
   if (_state == STATE_MENU) {
+    _menuIndex = index;
     switch (index) {
       case 0: _selectWifi();    break;
       case 1:
@@ -202,7 +203,7 @@ void WifiEvilTwinScreen::_showMenu()
   _menuItems[2] = {"Check Password", _checkPwdSub.c_str()};
   _menuItems[3] = {"Portal",         _portalSub.c_str()};
   _menuItems[4] = {"Start"};
-  setItems(_menuItems, 5);
+  setItems(_menuItems, 5, _menuIndex);
 }
 
 // ── WiFi Scan ───────────────────────────────────────────────────────────────

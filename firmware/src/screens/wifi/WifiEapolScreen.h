@@ -142,7 +142,8 @@ private:
   static constexpr int MAX_MENU = 6;
   ListItem      _menuItems[MAX_MENU] = {};
   uint8_t       _menuCount       = 0;
-  uint8_t       _menuMap[MAX_MENU] = {};   // each entry → action id (see _showMenu)
+  uint8_t       _menuMap[MAX_MENU] = {};
+  uint8_t       _menuAction = ACT_MODE;   // each entry → action id (see _showMenu)
   String        _modeSub;
   String        _targetSub;
   String        _discoverySub;

@@ -126,6 +126,7 @@ void KeyboardScreen::onItemSelected(uint8_t index)
   if (_state != STATE_MENU && _state != STATE_SELECT_FILE) return;
 
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     // Resolve which item was actually selected
     // Items are: [Keyboard (HAS_KEYBOARD)?], Ducky Script, Mouse Jiggle, Media / Camera, Password Manager, [Reset Pair (BLE)?]
     uint8_t idx = 0;
@@ -225,7 +226,7 @@ void KeyboardScreen::_goMenu()
   if (_mode == MODE_BLE)
     _menuItems[_menuCount++] = {"Reset Pair", nullptr};
 
-  setItems(_menuItems, _menuCount);
+  setItems(_menuItems, _menuCount, _menuReturnIndex);
 }
 
 void KeyboardScreen::_goConnected()

@@ -154,7 +154,7 @@ bool NRF24Screen::inhibitPowerOff() {
 void NRF24Screen::_showMenu() {
   _state = STATE_MENU;
   snprintf(_titleBuf, sizeof(_titleBuf), "NRF24L01");
-  setItems(_mainItems);
+  setItems(_mainItems, 3, _menuReturnIndex);
 }
 
 bool NRF24Screen::_radioBegin() {
@@ -172,6 +172,7 @@ void NRF24Screen::_radioEnd() {
 
 void NRF24Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     if (index == 0) {
       // ── Spectrum ──────────────────────────────────────────
       if (!_radioBegin()) {

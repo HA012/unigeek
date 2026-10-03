@@ -62,6 +62,7 @@ void WifiKarmaCaptiveScreen::onItemSelected(uint8_t index)
     return;
   }
   if (_state != STATE_MENU) return;
+  _menuIndex = index;
   switch (index) {
     case 0: { // Save WiFi List
       _saveList = !_saveList;
@@ -205,7 +206,7 @@ void WifiKarmaCaptiveScreen::_showMenu()
   _menuItems[2] = {"Waiting Time",   _waitConnectSub.c_str()};
   _menuItems[3] = {"Wait Input",     _waitInputSub.c_str()};
   _menuItems[4] = {"Start"};
-  setItems(_menuItems, 5);
+  setItems(_menuItems, 5, _menuIndex);
 }
 
 // ── Probe Sniffer ────────────────────────────────────────────────────────────

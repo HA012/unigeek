@@ -67,6 +67,7 @@ void DownloadScreen::onItemSelected(uint8_t index) {
     return;
   }
 
+  _menuIndex = index;
   switch (index) {
     case 0: _downloadWebPage();      break;
     case 1: _downloadSampleData();   break;
@@ -92,7 +93,7 @@ void DownloadScreen::_showMenu() {
   _menuItems[2] = {"Infrared Files"};
   _menuItems[3] = {"BadUSB Scripts"};
   _menuItems[4] = {"Lua Scripts"};
-  setItems(_menuItems, 5);
+  setItems(_menuItems, 5, _menuIndex);
 }
 
 // ── Download Web File Manager Page ────────────────────────

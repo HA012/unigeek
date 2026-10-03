@@ -102,6 +102,7 @@ void PN532UartScreen::onRender() {
 void PN532UartScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
+      _mainMenuIndex = index;
       switch (index) {
         case 0: _doScan14A();         break;
         case 1: _doScan15();          break;
@@ -115,6 +116,7 @@ void PN532UartScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_MENU:
+      _mifareMenuIndex = index;
       switch (index) {
         case 0: _doAuthenticate();    break;
         case 1: _doDumpMemory();      break;
@@ -123,12 +125,14 @@ void PN532UartScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_ULTRALIGHT_MENU:
+      _ultralightMenuIndex = index;
       switch (index) {
         case 0: _doUltralightDump();  break;
         case 1: _doUltralightWrite(); break;
       }
       break;
     case STATE_MAGIC_MENU:
+      _magicMenuIndex = index;
       switch (index) {
         case 0: _doDetectGen1a();     break;
         case 1: _doGen3SetUid();      break;
@@ -231,25 +235,25 @@ void PN532UartScreen::_cleanup() {
 
 void PN532UartScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, _isKiller ? 9 : 7);
+  setItems(_mainItems, _isKiller ? 9 : 7, _mainMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goMifare() {
   _state = STATE_MIFARE_MENU;
-  setItems(_mfItems);
+  setItems(_mfItems, sizeof(_mfItems) / sizeof(_mfItems[0]), _mifareMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goUltralight() {
   _state = STATE_ULTRALIGHT_MENU;
-  setItems(_ulItems);
+  setItems(_ulItems, sizeof(_ulItems) / sizeof(_ulItems[0]), _ultralightMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goMagic() {
   _state = STATE_MAGIC_MENU;
-  setItems(_magicItems);
+  setItems(_magicItems, sizeof(_magicItems) / sizeof(_magicItems[0]), _magicMenuIndex);
   render();
 }
 

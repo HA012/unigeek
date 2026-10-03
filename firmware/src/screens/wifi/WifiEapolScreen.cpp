@@ -142,7 +142,11 @@ void WifiEapolScreen::_showMenu() {
   add("Start",      nullptr,            ACT_START);
   add("Unigotchi",  "auto pwn mode",    ACT_UNIGOTCHI);
 
-  setItems(_menuItems, _menuCount);
+  uint8_t selected = 0;
+  for (uint8_t i = 0; i < _menuCount; ++i) {
+    if (_menuMap[i] == _menuAction) { selected = i; break; }
+  }
+  setItems(_menuItems, _menuCount, selected);
 }
 
 void WifiEapolScreen::onItemSelected(uint8_t index) {
@@ -167,6 +171,7 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
   if (_phase != PHASE_MENU) return;
 
   if (index >= _menuCount) return;
+  _menuAction = _menuMap[index];
   switch (_menuMap[index]) {
     case ACT_MODE:
       _mode = (_mode == MODE_TARGET) ? MODE_ALL : MODE_TARGET;

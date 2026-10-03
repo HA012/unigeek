@@ -279,6 +279,7 @@ void PN532I2cScreen::onRender() {
 void PN532I2cScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
+      _mainMenuIndex = index;
       switch (index) {
         case 0: _doScan14A();         break;
         case 1: _goMifare();          break;
@@ -288,6 +289,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_MENU:
+      _mifareMenuIndex = index;
       switch (index) {
         case 0: _goMifareTag(); break;
         case 1: _goMifareNdef(); break;
@@ -296,9 +298,11 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_ATTACKS_MENU:
+      _mifareAttacksIndex = index;
       if (index == 0) { _resumeReadAfterDict = false; _doDictionaryPicker(); }
       break;
     case STATE_MIFARE_KEYS_MENU:
+      _mifareKeysIndex = index;
       if (index == 0) _doShowKeys();
       else if (index == 1) { _keyDbPickDir = _dictPath; _openKeyDatabases(); }
       break;
@@ -306,6 +310,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       _openKeyDatabase(index);
       break;
     case STATE_MIFARE_TAG_MENU:
+      _mifareTagIndex = index;
       switch (index) {
         case 0: _doReadTag(); break;
         case 1: _doWriteDumpFromFilePicker(); break;
@@ -313,6 +318,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_NDEF_MENU:
+      _mifareNdefIndex = index;
       switch (index) {
         case 0:
           _ndefTarget = NDEF_TARGET_MIFARE_CLASSIC;
@@ -337,14 +343,17 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_ULTRALIGHT_MENU:
+      _ultralightMenuIndex = index;
       if (index == 0) _goUltralightTag();
       else if (index == 1) _goUltralightNdef();
       break;
     case STATE_ULTRALIGHT_TAG_MENU:
+      _ultralightTagIndex = index;
       if (index == 0) _doUltralightDump();
       else if (index == 1) _doUltralightWrite();
       break;
     case STATE_ULTRALIGHT_NDEF_MENU:
+      _ultralightNdefIndex = index;
       switch (index) {
         case 0:
           _ndefTarget = NDEF_TARGET_ULTRALIGHT;
@@ -586,25 +595,25 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5);
+  setItems(_mainItems, 5, _mainMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifare() {
   _state = STATE_MIFARE_MENU;
-  setItems(_mfItems);
+  setItems(_mfItems, sizeof(_mfItems) / sizeof(_mfItems[0]), _mifareMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareAttacks() {
   _state = STATE_MIFARE_ATTACKS_MENU;
-  setItems(_mfAttackItems);
+  setItems(_mfAttackItems, sizeof(_mfAttackItems) / sizeof(_mfAttackItems[0]), _mifareAttacksIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareKeys() {
   _state = STATE_MIFARE_KEYS_MENU;
-  setItems(_mfKeysItems);
+  setItems(_mfKeysItems, sizeof(_mfKeysItems) / sizeof(_mfKeysItems[0]), _mifareKeysIndex);
   render();
 }
 
@@ -621,31 +630,31 @@ void PN532I2cScreen::_goScan14A() {
 
 void PN532I2cScreen::_goMifareTag() {
   _state = STATE_MIFARE_TAG_MENU;
-  setItems(_mfTagItems);
+  setItems(_mfTagItems, sizeof(_mfTagItems) / sizeof(_mfTagItems[0]), _mifareTagIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareNdef() {
   _state = STATE_MIFARE_NDEF_MENU;
-  setItems(_mfNdefItems);
+  setItems(_mfNdefItems, sizeof(_mfNdefItems) / sizeof(_mfNdefItems[0]), _mifareNdefIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralight() {
   _state = STATE_ULTRALIGHT_MENU;
-  setItems(_ulItems);
+  setItems(_ulItems, sizeof(_ulItems) / sizeof(_ulItems[0]), _ultralightMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralightTag() {
   _state = STATE_ULTRALIGHT_TAG_MENU;
-  setItems(_ulTagItems);
+  setItems(_ulTagItems, sizeof(_ulTagItems) / sizeof(_ulTagItems[0]), _ultralightTagIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralightNdef() {
   _state = STATE_ULTRALIGHT_NDEF_MENU;
-  setItems(_ulNdefItems);
+  setItems(_ulNdefItems, sizeof(_ulNdefItems) / sizeof(_ulNdefItems[0]), _ultralightNdefIndex);
   render();
 }
 

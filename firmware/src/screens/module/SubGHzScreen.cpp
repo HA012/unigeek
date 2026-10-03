@@ -150,7 +150,7 @@ void SubGHzScreen::_showMenu() {
   _chromeDrawn = false;
   strcpy(_titleBuf, "Sub-GHz");
   _updateSublabels();
-  setItems(_menuItems, kMenuCount);
+  setItems(_menuItems, kMenuCount, min<uint8_t>(_menuSelectedIndex, kMenuCount - 1));
 }
 
 void SubGHzScreen::_updateSublabels() {
@@ -184,6 +184,11 @@ void SubGHzScreen::_reloadMfcodes() {
 }
 
 void SubGHzScreen::_onMenuSelected(uint8_t index) {
+  // Keep the main-menu cursor anchored to the item that opened the current
+  // operation/submenu.  Several child screens reuse _selectedIndex for their
+  // own lists, so the parent selection must be tracked independently.
+  if (index < kMenuCount) _menuSelectedIndex = index;
+
   switch (index) {
     case 0: { // Frequency
       _selectFrequency();

@@ -17,7 +17,7 @@ void BarcodeScreen::onBack() {
     if (_currentPath == _barcodePath || _currentPath.length() == 0) {
       _state = STATE_MENU;
       _refreshMenu();
-      setItems(_menuItems);
+      setItems(_menuItems, 3, 2);
       return;
     }
     int last = _currentPath.lastIndexOf('/');

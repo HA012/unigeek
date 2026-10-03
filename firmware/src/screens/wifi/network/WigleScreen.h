@@ -47,6 +47,8 @@ private:
   bool _fileUploaded[WigleUtil::MAX_FILES];
   uint8_t _fileCount = 0;
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _editToken();
   void _showStats();

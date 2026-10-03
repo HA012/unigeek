@@ -26,11 +26,12 @@ void TotpScreen::_reloadMenu() {
   for (uint8_t i = 0; i < _accountCount; i++) _items[i] = { _accounts[i].name, nullptr };
   _items[_accountCount] = { "Add New", nullptr };
   _state = STATE_MENU;
-  setItems(_items, _accountCount + 1);
+  setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
 }
 
 void TotpScreen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_ADD) {
+    if (_state == STATE_MENU) _menuIndex = _selectedIndex;
     if (_state == STATE_MENU && _selectedIndex < _accountCount) {
       if (!Uni.Nav->isPressed()) _holdFired = false;
       if (!_holdFired && Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 700) {
@@ -55,7 +56,7 @@ void TotpScreen::onUpdate() {
   auto dir = Uni.Nav->readDirection();
   if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
     _state = STATE_MENU;
-    setItems(_items, _accountCount + 1);
+    setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
     render();
   }
 }
@@ -71,7 +72,7 @@ void TotpScreen::onRender() {
 void TotpScreen::onBack() {
   if (_state == STATE_ADD) {
     _state = STATE_MENU;
-    setItems(_items, _accountCount + 1);
+    setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
     render();
     return;
   }

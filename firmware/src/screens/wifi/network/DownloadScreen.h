@@ -25,6 +25,8 @@ private:
   // Main menu
   ListItem _menuItems[5];
   String   _wfmVersionSub;
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _downloadWebPage();
   void _downloadSampleData();

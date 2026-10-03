@@ -88,6 +88,7 @@ private:
   };
   String _freqSub;
   String _mfcodesSub;
+  uint8_t _menuSelectedIndex = 0;  // restore the originating item when returning to this menu
   void _updateSublabels();
   void _selectFrequency();
   void _selectRssiThreshold();

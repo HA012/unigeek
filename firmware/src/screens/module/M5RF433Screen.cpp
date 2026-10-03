@@ -53,7 +53,7 @@ void M5RF433Screen::_showMenu() {
   _chromeDrawn = false;
   strcpy(_titleBuf, "M5 RF433");
   _updateMfcodesSub();
-  setItems(_menuItems, kMenuCount);
+  setItems(_menuItems, kMenuCount, _menuReturnIndex);
 }
 
 void M5RF433Screen::_updateMfcodesSub() {
@@ -81,6 +81,7 @@ void M5RF433Screen::_reloadMfcodes() {
 }
 
 void M5RF433Screen::_onMenuSelected(uint8_t index) {
+  _menuReturnIndex = index;
   switch (index) {
     case 0: { // Receive
       if (_rxPin < 0) {
