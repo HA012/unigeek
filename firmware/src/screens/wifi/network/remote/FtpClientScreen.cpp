@@ -244,7 +244,10 @@ void FtpClientScreen::onBack() {
     return;
   }
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath != ".") {
+      _remoteRestoreName = _baseName(_remotePath);
+      _requestList(_parentRemotePath(_remotePath));
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       _state = STATE_LOCAL_BROWSER;
       render();
     } else {
@@ -253,7 +256,14 @@ void FtpClientScreen::onBack() {
     return;
   }
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalUploadDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
   Screen.goBack();
@@ -386,11 +396,17 @@ void FtpClientScreen::_beginUpload() {
   _loadLocalUploadDir("/");
 }
 
-void FtpClientScreen::_loadLocalUploadDir(const String& path) {
+void FtpClientScreen::_loadLocalUploadDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -398,7 +414,12 @@ void FtpClientScreen::_selectLocalUpload(uint8_t index) {
   if (index >= _localBrowser.count()) return;
   const auto& e = _localBrowser.entry(index);
   if (e.isDir) {
-    _loadLocalUploadDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalUploadDir(e.path, child);
+    } else {
+      _loadLocalUploadDir(e.path);
+    }
     return;
   }
   _chooseUploadSource(e.path, e.name, false);
@@ -510,7 +531,14 @@ void FtpClientScreen::_copyRemoteListing() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void FtpClientScreen::_selectRemote(uint8_t index) {
@@ -520,12 +548,14 @@ void FtpClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       _requestList(_remotePaths[index]);
     }
     return;
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     _requestList(_remotePaths[index]);
     return;
   }

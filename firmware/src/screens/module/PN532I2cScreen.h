@@ -194,6 +194,7 @@ private:
   String         _dictPickDir;   // current dir in the dict picker
   String         _keyDbPickDir;  // current dir in the key database browser
   String         _keyDbViewTitle;
+  String         _pickerRestoreName;
 
   bool _initModule();
   void _cleanup();

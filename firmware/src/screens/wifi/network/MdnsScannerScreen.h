@@ -27,6 +27,7 @@ private:
 
   MdnsScanUtil::Service _results[MdnsScanUtil::MAX_RESULTS];
   uint8_t _resultCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
   ListItem _resultItems[MdnsScanUtil::MAX_RESULTS];
   String   _resultSubs[MdnsScanUtil::MAX_RESULTS];

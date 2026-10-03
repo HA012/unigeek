@@ -77,6 +77,7 @@ void PrinterScannerScreen::onItemSelected(uint8_t index)
   }
 
   if (_state == STATE_RESULTS && index < _printerCount) {
+    _resultSelectedIndex = index;
     _showDetails(index);
   }
 }
@@ -140,6 +141,7 @@ void PrinterScannerScreen::_scan()
 
   _state = STATE_SCANNING;
   _printerCount = 0;
+  _resultSelectedIndex = 0;
   memset(_printers, 0, sizeof(_printers));
 
   render();
@@ -329,7 +331,8 @@ void PrinterScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _printerCount);
+  setItems(_resultItems, _printerCount,
+           (_resultSelectedIndex < _printerCount) ? _resultSelectedIndex : 0);
 }
 
 void PrinterScannerScreen::_showDetails(uint8_t index)

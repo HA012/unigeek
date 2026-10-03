@@ -64,6 +64,7 @@ private:
   };
 
   BrowseFileView _localBrowser;
+  String _localBrowsePath = "/";
   String _uploadLocalPath;
   String _uploadName;
   bool _uploadIsDir = false;
@@ -78,6 +79,7 @@ private:
   uint8_t _entryCount = 0;
   uint8_t _remoteCount = 0;
   String _remotePath;
+  String _remoteRestoreName;
   bool _holdHandled = false;
 
   bool _cancelTransfer = false;
@@ -102,7 +104,7 @@ private:
   void _beginDownload();
   void _beginUpload();
 
-  void _loadLocalDir(const String& path);
+  void _loadLocalDir(const String& path, const String& restoreName = "");
   void _selectLocal(uint8_t index);
   void _holdLocal(uint8_t index);
   void _chooseUploadSource(const String& path, const String& name, bool isDir);

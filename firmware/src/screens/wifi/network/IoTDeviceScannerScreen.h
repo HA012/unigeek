@@ -61,6 +61,7 @@ private:
   ListItem _resultItems[IoTScanUtil::MAX_DEVICES];
   String _resultSubs[IoTScanUtil::MAX_DEVICES];
   uint8_t _deviceCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
   ListItem _detailItems[DETAIL_ROWS];
   String _detailSubs[DETAIL_ROWS];

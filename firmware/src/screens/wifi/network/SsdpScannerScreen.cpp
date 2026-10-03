@@ -30,6 +30,7 @@ void SsdpScannerScreen::onBack()
 void SsdpScannerScreen::onItemSelected(uint8_t index)
 {
   if (_state == STATE_RESULTS && index < _deviceCount) {
+    _resultSelectedIndex = index;
     _showDetails(index);
   }
 }
@@ -38,6 +39,7 @@ void SsdpScannerScreen::_scan()
 {
   _state = STATE_SCANNING;
   _deviceCount = 0;
+  _resultSelectedIndex = 0;
   memset(_devices, 0, sizeof(_devices));
 
   render();
@@ -81,7 +83,8 @@ void SsdpScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _deviceCount);
+  setItems(_resultItems, _deviceCount,
+           (_resultSelectedIndex < _deviceCount) ? _resultSelectedIndex : 0);
 }
 
 void SsdpScannerScreen::_showDetails(uint8_t index)

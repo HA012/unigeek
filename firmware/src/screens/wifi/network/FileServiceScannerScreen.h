@@ -63,6 +63,7 @@ private:
   ListItem _resultItems[FileServiceScanUtil::MAX_RESULTS];
   String _resultSubs[FileServiceScanUtil::MAX_RESULTS];
   uint8_t _resultCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
   ListItem _detailItems[DETAIL_ROWS];
   String _detailSubs[DETAIL_ROWS];

@@ -49,7 +49,7 @@ void CctvSnifferScreen::onBack()
       break;
 
     case STATE_CAMERA_MENU:
-      _showCameraList();
+      _showCameraList(_selectedCamera);
       break;
 
     case STATE_CAMERA_LIST:
@@ -435,7 +435,7 @@ void CctvSnifferScreen::_scanHost(const char* ip, const char* label)
 
 // ── Results ─────────────────────────────────────────────────────────────────
 
-void CctvSnifferScreen::_showCameraList()
+void CctvSnifferScreen::_showCameraList(uint8_t selectedIndex)
 {
   _state = STATE_CAMERA_LIST;
 
@@ -456,7 +456,8 @@ void CctvSnifferScreen::_showCameraList()
     _cameraItems[i] = {_cameraLabels[i], _cameras[i].brand};
   }
 
-  setItems(_cameraItems, _cameraCount);
+  setItems(_cameraItems, _cameraCount,
+           (selectedIndex < _cameraCount) ? selectedIndex : 0);
 }
 
 void CctvSnifferScreen::_showCameraMenu(uint8_t camIdx)

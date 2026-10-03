@@ -108,6 +108,7 @@ void FileServiceScannerScreen::onItemSelected(uint8_t index)
   }
 
   if (_state == STATE_RESULTS && index < _resultCount) {
+    _resultSelectedIndex = index;
     _showDetails(index);
     return;
   }
@@ -225,6 +226,7 @@ void FileServiceScannerScreen::_scan()
 
   _state = STATE_SCANNING;
   _resultCount = 0;
+  _resultSelectedIndex = 0;
   memset(_results, 0, sizeof(_results));
 
   render();
@@ -402,7 +404,8 @@ void FileServiceScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _resultCount);
+  setItems(_resultItems, _resultCount,
+           (_resultSelectedIndex < _resultCount) ? _resultSelectedIndex : 0);
 }
 
 void FileServiceScannerScreen::_showDetails(uint8_t index)

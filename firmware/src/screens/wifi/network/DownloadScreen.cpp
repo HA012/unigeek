@@ -578,7 +578,9 @@ void DownloadScreen::_showBadUSBOSFromCache() {
   _state = STATE_BADUSB_OS;
   strcpy(_titleBuf, "BadUSB Scripts");
   _navReadyAt = millis() + 200;   // drain ghost-presses from HTTP wait
-  setItems(_badusbOSItems, _badusbOSCount);
+  uint8_t selected = (_badusbSelectedOSIndex < _badusbOSCount)
+    ? _badusbSelectedOSIndex : 0;
+  setItems(_badusbOSItems, _badusbOSCount, selected);
 }
 
 void DownloadScreen::_showBadUSBCategoriesForOS(uint8_t osIndex) {
@@ -850,6 +852,7 @@ void DownloadScreen::_luaSelect(uint8_t index) {
 
 void DownloadScreen::_luaPopPath() {
   int slash = _luaPath.lastIndexOf('/');
+  String child = slash < 0 ? _luaPath : _luaPath.substring(slash + 1);
   String parent = slash < 0 ? String("") : _luaPath.substring(0, slash);
   if (!_populateLuaLevel(parent)) return;
   _luaPath = parent;
@@ -863,7 +866,15 @@ void DownloadScreen::_luaPopPath() {
     _titleBuf[sizeof(_titleBuf) - 1] = '\0';
   }
   _navReadyAt = millis() + 200;
-  setItems(_luaItems, _luaCount);
+
+  uint8_t selected = 0;
+  for (uint8_t i = 0; i < _luaCount; ++i) {
+    if (_luaIsFolder[i] && _luaNames[i] == child) {
+      selected = i;
+      break;
+    }
+  }
+  setItems(_luaItems, _luaCount, selected);
 }
 
 void DownloadScreen::_downloadLuaScript(uint8_t index) {

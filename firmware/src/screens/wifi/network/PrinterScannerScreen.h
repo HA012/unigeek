@@ -65,6 +65,7 @@ private:
 
   Printer _printers[MAX_PRINTERS];
   uint8_t _printerCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
   ListItem _resultItems[MAX_PRINTERS];
   String _resultSubs[MAX_PRINTERS];

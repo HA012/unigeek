@@ -331,7 +331,22 @@ void SftpClientScreen::onBack() {
     return;
   }
 
-  if (_state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
+  if (_state == STATE_SELECT_KEY) {
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadKeyDir(parent, child);
+    } else {
+      _state = STATE_CONFIG;
+      _updateLabels();
+      _rebuildConfig();
+      render();
+    }
+    return;
+  }
+
+  if (_state == STATE_SELECT_AUTH) {
     _state = STATE_CONFIG;
     _updateLabels();
     _rebuildConfig();
@@ -340,7 +355,10 @@ void SftpClientScreen::onBack() {
   }
 
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath != ".") {
+      _remoteRestoreName = _baseName(_remotePath);
+      _requestList(_parentRemotePath(_remotePath));
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       // Cancel destination selection and return to the local upload browser.
       _state = STATE_LOCAL_BROWSER;
       render();
@@ -352,7 +370,14 @@ void SftpClientScreen::onBack() {
   }
 
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalUploadDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
 
@@ -535,10 +560,16 @@ void SftpClientScreen::_openKeyPicker() {
   _loadKeyDir(_localBrowsePath);
 }
 
-void SftpClientScreen::_loadKeyDir(const String& path) {
+void SftpClientScreen::_loadKeyDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "KEY");
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -547,7 +578,12 @@ void SftpClientScreen::_selectKey(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadKeyDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadKeyDir(e.path, child);
+    } else {
+      _loadKeyDir(e.path);
+    }
     return;
   }
 
@@ -560,11 +596,17 @@ void SftpClientScreen::_selectKey(uint8_t index) {
 }
 
 
-void SftpClientScreen::_loadLocalUploadDir(const String& path) {
+void SftpClientScreen::_loadLocalUploadDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -573,7 +615,12 @@ void SftpClientScreen::_selectLocalUpload(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadLocalUploadDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalUploadDir(e.path, child);
+    } else {
+      _loadLocalUploadDir(e.path);
+    }
     return;
   }
 
@@ -1086,7 +1133,14 @@ void SftpClientScreen::_copyRemoteListing() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void SftpClientScreen::_selectRemote(uint8_t index) {
@@ -1098,12 +1152,14 @@ void SftpClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       _requestList(_remotePaths[index]);
     }
     return;
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     _requestList(_remotePaths[index]);
     return;
   }

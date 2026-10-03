@@ -260,7 +260,11 @@ void WebDavClientScreen::onBack() {
   }
 
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath.length()) {
+      _remoteRestoreName = _baseName(_remotePath);
+      if (!_loadRemote(_parentRemote(_remotePath)))
+        ShowStatusAction::show(_lastError.length() ? _lastError.c_str() : "Failed to list remote files", 1500);
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       _state = STATE_LOCAL_BROWSER;
       render();
     } else {
@@ -270,7 +274,14 @@ void WebDavClientScreen::onBack() {
   }
 
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
 
@@ -394,10 +405,17 @@ void WebDavClientScreen::_beginUpload() {
   _loadLocalDir("/");
 }
 
-void WebDavClientScreen::_loadLocalDir(const String& path) {
+void WebDavClientScreen::_loadLocalDir(const String& path, const String& restoreName) {
+  _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -406,7 +424,12 @@ void WebDavClientScreen::_selectLocal(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadLocalDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalDir(e.path, child);
+    } else {
+      _loadLocalDir(e.path);
+    }
     return;
   }
   _chooseUploadSource(e.path, e.name, false);
@@ -517,7 +540,14 @@ void WebDavClientScreen::_buildRemoteItems() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void WebDavClientScreen::_selectRemote(uint8_t index) {
@@ -527,6 +557,7 @@ void WebDavClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       if (!_loadRemote(_remotePaths[index]))
         ShowStatusAction::show(
         _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
@@ -536,6 +567,7 @@ void WebDavClientScreen::_selectRemote(uint8_t index) {
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     if (!_loadRemote(_remotePaths[index]))
       ShowStatusAction::show(
         _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
