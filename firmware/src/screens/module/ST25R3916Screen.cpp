@@ -769,6 +769,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     return;
   }
   if (_state == STATE_MFU_NDEF_WRITE_MENU) {
+    _selMfuNdefWrite = index;
     if (index < 4) _writeNdefBuilt(index);
     else if (index == 4) _writeNdefVcard();
     else if (index == 5) _openNdefFilePicker();
@@ -834,6 +835,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     return;
   }
   if (_state == STATE_MFC_NDEF_WRITE_MENU) {
+    _selMfcNdefWrite = index;
     if (index < 4) _writeNdefBuilt(index);
     else if (index == 4) _writeNdefVcard();
     else if (index == 5) _openNdefFilePicker();
@@ -1005,7 +1007,7 @@ void ST25R3916Screen::_showMfcNdefMenu() {
 void ST25R3916Screen::_showMfcNdefWriteMenu() {
   _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
   _state = STATE_MFC_NDEF_WRITE_MENU;
-  setItems(_mfcNdefWriteItems, 6);
+  setItems(_mfcNdefWriteItems, 6, _selMfcNdefWrite);
   render();
 }
 
@@ -1048,7 +1050,7 @@ void ST25R3916Screen::_showMfuNdefMenu() {
 
 void ST25R3916Screen::_showMfuNdefWriteMenu() {
   _ndefMfuTarget = true; _ndefWritePreview = false; _ndefWritePreviewFromFile = false;
-  _state = STATE_MFU_NDEF_WRITE_MENU; setItems(_mfcNdefWriteItems, 6); render();
+  _state = STATE_MFU_NDEF_WRITE_MENU; setItems(_mfcNdefWriteItems, 6, _selMfuNdefWrite); render();
 }
 
 void ST25R3916Screen::_renderTagPrompt() {

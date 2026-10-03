@@ -136,6 +136,7 @@ void WikipediaScreen::onBack() {
 
 void WikipediaScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuIndex = index;
     if (_readOnly) {
       switch (index) {
         case 0: _showFavorites();  break;
@@ -236,7 +237,7 @@ void WikipediaScreen::_showMenu() {
   }
 
   _menuItems[6] = { "Language", _langSub.c_str() };
-  setItems(_menuItems, 7);
+  setItems(_menuItems, 7, _menuIndex);
 }
 
 void WikipediaScreen::_chooseLanguage() {

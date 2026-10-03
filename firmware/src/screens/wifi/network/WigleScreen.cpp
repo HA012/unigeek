@@ -69,6 +69,7 @@ void WigleScreen::onBack() {
 
 void WigleScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuIndex = index;
     switch (index) {
       case 0:
         _editToken();
@@ -99,7 +100,7 @@ void WigleScreen::_showMenu() {
   _state = STATE_MENU;
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
   _menuItems[0] = {"Wigle Token", _tokenSub.c_str()};
-  setItems(_menuItems);
+  setItems(_menuItems, 4, _menuIndex);
 }
 
 void WigleScreen::_editToken() {

@@ -67,6 +67,7 @@ void WifiKarmaEapolScreen::onInit()
 void WifiKarmaEapolScreen::onItemSelected(uint8_t index)
 {
   if (_state != STATE_MENU) return;
+  _menuIndex = index;
   switch (index) {
     case 0: { // Save WiFi List
       _saveList = !_saveList;
@@ -321,7 +322,7 @@ void WifiKarmaEapolScreen::_showMenu()
   _menuItems[1] = {"Waiting Time",   _waitConnectSub.c_str()};
   _menuItems[2] = {"Support Device", _supportDevSub.c_str()};
   _menuItems[3] = {"Start"};
-  setItems(_menuItems, 4);
+  setItems(_menuItems, 4, _menuIndex);
 }
 
 // ── Probe Sniffer ─────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ private:
   enum State { MENU, UID_FORM, UID_FILE_PICKER, UID_DUMP_PICKER, DUMP_FILE_PICKER } _state = MENU;
   enum UidSource { UID_MANUAL, UID_FILE, UID_DUMP } _uidSource = UID_MANUAL;
   ListItem _items[6];
+  uint8_t _menuIndex = 0;
   ListItem _uidItems[3]; String _uidValues[3]; uint8_t _uidCount=0;
   uint8_t _uid[7]={}; uint8_t _uidLen=0; String _uidFile, _uidDumpFile;
   BrowseFileView _browser;

@@ -81,6 +81,8 @@ private:
 
   LogView _log;
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _start();
   void _stop(const char* reason);

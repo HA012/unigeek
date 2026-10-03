@@ -64,7 +64,7 @@ void ChameleonMfcToolsScreen::onInit() {
   _items[3] = {"Write Dump to Tag"};
   _items[4] = {"Erase Tag"};
   _items[5] = {"Advanced"};
-  setItems(_items, 6);
+  setItems(_items, 6, _menuIndex);
 }
 
 
@@ -332,6 +332,7 @@ void ChameleonMfcToolsScreen::onItemSelected(uint8_t index) {
     memcpy(_uid,info.uid,info.uidLen);_uidLen=info.uidLen;_uidDumpFile=entry.path;_rebuildUidForm(1);
     return;
   }
+  _menuIndex = index;
   if (index == 0) Screen.push(new ChameleonMagicScreen());
   else if (index == 1) Screen.push(new ChameleonMfcScreen());
   else if (index == 2) _writeUid();

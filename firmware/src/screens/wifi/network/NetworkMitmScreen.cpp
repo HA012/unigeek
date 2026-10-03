@@ -38,11 +38,12 @@ void NetworkMitmScreen::_showMenu() {
   _menuItems[0] = {"ARP Spoof",       _arpSub.c_str()};
   _menuItems[1] = {"Network Sniffer", _snifferSub.c_str()};
   _menuItems[2] = {"Start"};
-  setItems(_menuItems, 3);
+  setItems(_menuItems, 3, _menuIndex);
 }
 
 void NetworkMitmScreen::onItemSelected(uint8_t index) {
   if (_state != STATE_MENU) return;
+  _menuIndex = index;
 
   switch (index) {
     case 0:

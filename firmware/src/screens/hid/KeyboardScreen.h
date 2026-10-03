@@ -53,6 +53,7 @@ private:
   static constexpr uint8_t kMaxMenu = 6;
   ListItem _menuItems[kMaxMenu];
   uint8_t  _menuCount = 0;
+  uint8_t  _menuReturnIndex = 0;
 
   // Media / Consumer Control submenu
   static constexpr uint8_t kMediaCount = 14;

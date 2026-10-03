@@ -150,6 +150,7 @@ void WifiPacketMonitorScreen::onItemSelected(uint8_t index)
   }
 
   if (_state != STATE_MENU) return;
+  _menuIndex = index;
   switch (index) {
     case 0: _showChannels();       break;
     case 1: _selectBssid();        break;
@@ -190,7 +191,7 @@ void WifiPacketMonitorScreen::_showMenu()
   _menuItems[1] = {"Access Points", _bssidSub.c_str()};
   _menuItems[2] = {"Clients", _clientSub.c_str()};
   _menuItems[3] = {"Start"};
-  setItems(_menuItems, 4);
+  setItems(_menuItems, 4, _menuIndex);
   render();
 }
 

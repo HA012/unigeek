@@ -228,6 +228,7 @@ void GPSScreen::onBack() {
 
 void GPSScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     switch (index) {
       case 0:
         _state = STATE_INFO;
@@ -319,7 +320,7 @@ void GPSScreen::_showMenu() {
   _wigleTokenSub = WigleUtil::tokenSublabel(Uni.Storage);
   _menuItems[5] = {"Wigle Token", _wigleTokenSub.c_str()};
 
-  setItems(_menuItems);
+  setItems(_menuItems, 9, _menuReturnIndex);
 }
 
 void GPSScreen::_selectScanMode() {

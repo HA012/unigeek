@@ -87,7 +87,7 @@ void IRScreen::_showMenu() {
   // Re-read pins in case they were changed under Settings > Pin Setting.
   _txPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_TX, PIN_CONFIG_IR_TX_DEFAULT);
   _rxPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_RX, PIN_CONFIG_IR_RX_DEFAULT);
-  setItems(_menuItems);
+  setItems(_menuItems, 3, _menuReturnIndex);
 }
 
 void IRScreen::onUpdate() {
@@ -173,6 +173,7 @@ void IRScreen::onBack() {
 
 void IRScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     switch (index) {
       case 0: { // Receive
         if (_rxPin < 0) {
