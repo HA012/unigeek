@@ -163,6 +163,7 @@ private:
   void _drawChrome() {
     auto& lcd = Uni.Lcd;
     int w = _overlayW();
+    int h = _overlayH();
     int x = _overlayX();
     int y = _overlayY();
 
@@ -234,7 +235,7 @@ private:
       sp.drawRoundRect(0, 0, innerW, ITEM_H, 3, TFT_WHITE);
     }
 
-    uint16_t labelColor = isCancel ? TFT_RED
+    uint16_t labelColor = isCancel ? (isSel ? TFT_WHITE : TFT_RED)
                           : (opt && opt->hasRssi ? _rssiColor(opt->rssi)
                                                 : (isSel ? TFT_WHITE : TFT_LIGHTGREY));
     sp.setTextColor(labelColor, isSel ? (isCancel ? TFT_RED : themeColor) : TFT_BLACK);
