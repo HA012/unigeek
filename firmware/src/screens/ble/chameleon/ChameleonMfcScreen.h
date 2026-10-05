@@ -27,10 +27,24 @@ public:
   void onBack()                      override;
 
 private:
-  enum class BackdoorResult {
-    Failed,
-    Acquired,
-    Recovered,
+  // Shared dictionary engine control.
+  enum class DictControl {
+    Continue,
+    Cancel,
+    ObjectiveMet,
+  };
+
+  struct DictAttempt {
+    uint8_t sector;
+    char type;
+    uint32_t index;       // key index within the current dictionary
+    uint32_t total;       // number of keys in the current dictionary
+    uint32_t workIndex;   // authentication attempts completed/planned
+    uint32_t workTotal;
+    const uint8_t* key;
+    int slot;
+    int slotTotal;
+    bool authed;
   };
 
   enum State {
@@ -54,8 +68,9 @@ private:
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
   bool _resumeReadAfterAttack = false;
-  bool _senAvailable = false;
   bool  _running = false;
+  char _chainStage[24] = {};
+  int  _dictNewFound = 0;
 
   // Card info
   uint8_t _uid[7]  = {};
@@ -126,7 +141,19 @@ private:
   void _showReadPreview();
   void _showReadActions();
   void _callRecoverKeys();
-  BackdoorResult _tryBackdoorEncNested();
+  bool _hasAnyKey() const;
+  bool _hasMissingKeys() const;
+  bool _hasKeyForEverySector() const;
+  bool _hasAllKeys() const;
+  bool _recoverObjectiveMet() const;
+  void _setChainStage(const char* name);
+  void _finishRecover(bool success, const char* status, bool restoreMode,
+                      uint8_t previousMode, bool havePreviousMode);
+  DictControl _applyDictionaryKeys(const uint8_t keys[][6], uint16_t keyCount,
+                                   DictControl (*hook)(ChameleonMfcScreen*, const DictAttempt&, bool pre));
+  DictControl _runChainDictionaries();
+  static DictControl _standaloneDictHook(ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre);
+  static DictControl _chainDictHook(ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre);
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();

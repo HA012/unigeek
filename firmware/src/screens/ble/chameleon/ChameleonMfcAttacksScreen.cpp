@@ -1,5 +1,4 @@
 #include "ChameleonMfcAttacksScreen.h"
-#include "ChameleonMfcBackdoorScreen.h"
 #include "ChameleonMfcDarksideScreen.h"
 #include "ChameleonMfcMfkey32Screen.h"
 #include "ChameleonMfcScreen.h"
@@ -9,12 +8,11 @@
 
 void ChameleonMfcAttacksScreen::onInit() {
   _items[0] = {"Dictionary"};
-  _items[1] = {"Backdoor Assisted SEN"};
-  _items[2] = {"Darkside"};
-  _items[3] = {"Nested"};
-  _items[4] = {"Static Nested"};
-  _items[5] = {"Attack Chain"};
-  _items[6] = {"MFKey32"};
+  _items[1] = {"Darkside"};
+  _items[2] = {"Nested"};
+  _items[3] = {"Static Nested"};
+  _items[4] = {"Attack Chain"};
+  _items[5] = {"MFKey32"};
   setItems(_items);
 }
 
@@ -23,21 +21,18 @@ void ChameleonMfcAttacksScreen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_DICTIONARY));     break;
     case 1:
-      Screen.push(new ChameleonMfcBackdoorScreen());
-      break;
-    case 2:
       Screen.push(new ChameleonMfcDarksideScreen());
       break;
-    case 3:
+    case 2:
       Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_NESTED));
       break;
-    case 4:
+    case 3:
       Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_STATIC_NESTED));
       break;
-    case 5:
+    case 4:
       Screen.push(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_RECOVER));
       break;
-    case 6: {
+    case 5: {
       auto& c = ChameleonClient::get();
       ChameleonClient::SlotTypes types[8] = {};
       if (!c.getSlotTypes(types)) {

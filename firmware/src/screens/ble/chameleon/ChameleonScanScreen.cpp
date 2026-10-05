@@ -104,7 +104,7 @@ void ChameleonScanScreen::onInit() {
   _devChanged = false;
   _state      = STATE_EMPTY;
   _startScan();
-  TagPrompt::show("Scanning...", bodyX(), bodyY(), bodyW(), bodyH(), title());
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onUpdate() {
@@ -132,7 +132,7 @@ void ChameleonScanScreen::onRender() {
     return;
   }
 
-  TagPrompt::show("Scanning...", bodyX(), bodyY(), bodyW(), bodyH(), title());
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onItemSelected(uint8_t index) {

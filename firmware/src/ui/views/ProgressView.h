@@ -125,18 +125,31 @@ private:
       int textRegionH = MAX_LINES * LINE_H;
       int textRegionY = (barLocalY - textRegionH) / 2;
       Sprite textSpr(&lcd);
-      textSpr.createSprite(_bw, textRegionH);
-      textSpr.fillSprite(TFT_BLACK);
-      textSpr.setTextSize(1);
-      textSpr.setTextColor(TFT_WHITE, TFT_BLACK);
-      textSpr.setTextDatum(MC_DATUM);
       int localStartY = (textRegionH - lineCount * LINE_H) / 2;
-      for (int i = 0; i < lineCount; i++) {
-        int ly = localStartY + i * LINE_H + LINE_H / 2;
-        textSpr.drawString(lines[i], _bw / 2, ly);
+      if (textSpr.createSprite(_bw, textRegionH)) {
+        textSpr.fillSprite(TFT_BLACK);
+        textSpr.setTextSize(1);
+        textSpr.setTextColor(TFT_WHITE, TFT_BLACK);
+        textSpr.setTextDatum(MC_DATUM);
+        for (int i = 0; i < lineCount; i++) {
+          int ly = localStartY + i * LINE_H + LINE_H / 2;
+          textSpr.drawString(lines[i], _bw / 2, ly);
+        }
+        textSpr.pushSprite(_bx, _by + textRegionY);
+        textSpr.deleteSprite();
+      } else {
+        // Large dictionaries (notably Community) consume enough heap that the
+        // temporary text sprite may not fit. Keep progress text visible by
+        // drawing the same two-line region directly as a low-memory fallback.
+        lcd.fillRect(_bx, _by + textRegionY, _bw, textRegionH, TFT_BLACK);
+        lcd.setTextSize(1);
+        lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+        lcd.setTextDatum(MC_DATUM);
+        for (int i = 0; i < lineCount; i++) {
+          int ly = localStartY + i * LINE_H + LINE_H / 2;
+          lcd.drawString(lines[i], _bx + _bw / 2, _by + textRegionY + ly);
+        }
       }
-      textSpr.pushSprite(_bx, _by + textRegionY);
-      textSpr.deleteSprite();
 
       _lastMessage = msg;
     }

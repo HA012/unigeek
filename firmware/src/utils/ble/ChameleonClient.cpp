@@ -1403,44 +1403,6 @@ bool ChameleonClient::mf1StaticNestedAcquire(uint8_t keyType, uint8_t block,
   return n > 0;
 }
 
-bool ChameleonClient::mf1EncNestedAcquire(const uint8_t backdoorKey[6],
-                                          uint8_t sectorCount, uint8_t startingSector,
-                                          uint32_t* uidOut,
-                                          NestedSample* outA, NestedSample* outB,
-                                          int maxSectors, int* gotSectors) {
-  if (!backdoorKey || !outA || !outB || maxSectors <= 0) return false;
-  uint8_t p[8] = {
-    backdoorKey[0], backdoorKey[1], backdoorKey[2],
-    backdoorKey[3], backdoorKey[4], backdoorKey[5],
-    sectorCount, startingSector
-  };
-  uint8_t buf[700] = {};
-  uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_ENC_NESTED_ACQ, p, 8, buf, &len, &st,
-                   30000, sizeof(buf))) return false;
-  if (st != 0 || len < 4) return false;
-  if (uidOut) *uidOut = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
-                      | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
-  auto reconstruct = [](const uint8_t* hi) -> uint32_t {
-    const uint32_t nt16 = ((uint32_t)hi[0] << 8) | hi[1];
-    return (nt16 << 16) | prng_successor(nt16, 16);
-  };
-  int n = 0;
-  for (uint16_t i = 4; i + 14 <= len && n < maxSectors; i += 14) {
-    outA[n].nt    = reconstruct(buf + i);
-    outA[n].par   = buf[i + 2];
-    outA[n].ntEnc = ((uint32_t)buf[i + 3] << 24) | ((uint32_t)buf[i + 4] << 16)
-                  | ((uint32_t)buf[i + 5] <<  8) |  (uint32_t)buf[i + 6];
-    outB[n].nt    = reconstruct(buf + i + 7);
-    outB[n].par   = buf[i + 9];
-    outB[n].ntEnc = ((uint32_t)buf[i + 10] << 24) | ((uint32_t)buf[i + 11] << 16)
-                  | ((uint32_t)buf[i + 12] <<  8) |  (uint32_t)buf[i + 13];
-    n++;
-  }
-  if (gotSectors) *gotSectors = n;
-  return n > 0;
-}
-
 bool ChameleonClient::mf1DarksideAcquire(uint8_t keyType, uint8_t block,
                                           bool firstRecover, uint8_t syncMax,
                                           DarksideSample* out) {
