@@ -1330,7 +1330,7 @@ void ST25R3916Screen::_readMfcTag() {
   ProgressView::init();
   for (size_t sector = 0; sector < sectors; ++sector) {
     char msg[42];
-    snprintf(msg, sizeof(msg), "Reading sectors (%u/%u)...",
+    snprintf(msg, sizeof(msg), "Authenticating sectors (%u/%u)...",
              (unsigned)(sector + 1), (unsigned)sectors);
     ProgressView::progress(msg, (int)(sector * 100U / sectors));
 
@@ -4277,7 +4277,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
         _mfcRecoverChainActive = false;
         _resumeMfcReadAfterDict = false;
         char finalMsg[40];
-        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_mfcRecoverChainNewKeys);
+        snprintf(finalMsg, sizeof(finalMsg), "%s", _mfcRecoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
         ShowStatusAction::show(finalMsg, 1400);
         _mfcReadAfterDict = true;
       }
@@ -4452,12 +4452,12 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   }
 
   ui.pct = 100;
-  snprintf(liveStatus, sizeof(liveStatus), "%d keys recovered", recovered);
+  snprintf(liveStatus, sizeof(liveStatus), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
   actionLog.addLine(liveStatus, recovered > 0 ? TFT_GREEN : TFT_RED);
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   char msg[48];
-  snprintf(msg, sizeof(msg), "%d keys recovered", recovered);
+  snprintf(msg, sizeof(msg), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
   if (!_mfcRecoverChainActive) ShowStatusAction::show(msg, 1600);
   if (_mfcRecoverChainActive) {
     _mfcRecoverChainNewKeys += recovered;
@@ -4471,7 +4471,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
       _mfcRecoverChainActive = false;
       _resumeMfcReadAfterDict = false;
       char finalMsg[40];
-      snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_mfcRecoverChainNewKeys);
+      snprintf(finalMsg, sizeof(finalMsg), "%s", _mfcRecoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
       ShowStatusAction::show(finalMsg, 1400);
       // Always return through Read Tag; incomplete coverage becomes a partial
       // read rather than reopening the recovery prompt.

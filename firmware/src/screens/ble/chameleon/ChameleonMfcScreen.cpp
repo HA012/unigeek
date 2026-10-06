@@ -220,7 +220,7 @@ void ChameleonMfcScreen::_callAuth() {
   int totalWork = _sectors * 2;
   int progress  = 0;
   ProgressView::init();
-  snprintf(_authStatus, sizeof(_authStatus), "Authenticating keys (1/%u)...", (unsigned)_sectors);
+  snprintf(_authStatus, sizeof(_authStatus), "Authenticating sectors (1/%u)...", (unsigned)_sectors);
   ProgressView::progress(_authStatus, 0);
 
   for (uint8_t s = 0; s < _sectors; s++) {
@@ -231,7 +231,7 @@ void ChameleonMfcScreen::_callAuth() {
       _authPct = (progress * 100) / totalWork;
 
       bool hadSaved = (kt == 0) ? _foundA[s] : _foundB[s];
-      snprintf(_authStatus, sizeof(_authStatus), "Authenticating keys (%u/%u)...",
+      snprintf(_authStatus, sizeof(_authStatus), "Authenticating sectors (%u/%u)...",
                (unsigned)(s + 1u), (unsigned)_sectors, keyTypeCh);
       ProgressView::progress(_authStatus, _authPct);
 
@@ -262,7 +262,7 @@ void ChameleonMfcScreen::_callAuth() {
     }
   }
 
-  snprintf(msg, sizeof(msg), "Authenticating keys (%d/%d)...", totalWork, totalWork);
+  snprintf(msg, sizeof(msg), "Authenticating sectors (%d/%d)...", totalWork, totalWork);
   ProgressView::progress(msg, 100);
   ProgressView::finish();
 
@@ -432,7 +432,7 @@ void ChameleonMfcScreen::_finishRecover(bool success, const char* status,
   char recoveredMsg[40];
   if (success) {
     const uint16_t newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
-    snprintf(recoveredMsg, sizeof(recoveredMsg), "%u keys recovered", (unsigned)newlyRecovered);
+    snprintf(recoveredMsg, sizeof(recoveredMsg), "%s", newlyRecovered > 0 ? "Keys recovered" : "No keys recovered");
     status = recoveredMsg;
   }
   if (status && status[0]) ShowStatusAction::show(status, success ? 1400 : 1800);
@@ -531,7 +531,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (_resumeReadAfterAttack) {
       const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
       char finalMsg[40];
-      snprintf(finalMsg, sizeof(finalMsg), "%d keys recovered", newlyRecovered);
+      snprintf(finalMsg, sizeof(finalMsg), "%s", newlyRecovered > 0 ? "Keys recovered" : "No keys recovered");
       _resumeReadAfterAttack = false;
       ShowStatusAction::show(finalMsg, 1400);
       _callDump();
@@ -548,7 +548,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (_resumeReadAfterAttack) {
       const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
       char finalMsg[40];
-      snprintf(finalMsg, sizeof(finalMsg), "%d keys recovered", newlyRecovered);
+      snprintf(finalMsg, sizeof(finalMsg), "%s", newlyRecovered > 0 ? "Keys recovered" : "No keys recovered");
       _resumeReadAfterAttack = false;
       ShowStatusAction::show(finalMsg, 1400);
       _callDump();
@@ -1495,7 +1495,7 @@ void ChameleonMfcScreen::_runDictAttack() {
   const int newFound = _dictNewFound;
 
   char msg[64];
-  snprintf(msg, sizeof(msg), "%d keys recovered", newFound);
+  snprintf(msg, sizeof(msg), "%s", newFound > 0 ? "Keys recovered" : "No keys recovered");
   strncpy(_actionStatus, msg, sizeof(_actionStatus) - 1);
   _actionPct = 100;
   _actionLog.addLine(msg, newFound > 0 ? TFT_GREEN : TFT_RED);

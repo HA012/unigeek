@@ -2670,7 +2670,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
       else {
         _recoverChainActive = false;
         char finalMsg[40];
-        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
+        snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
         ShowStatusAction::show(finalMsg, 1400);
         _readAfterRecovery = true;
       }
@@ -2698,7 +2698,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
       else {
         _recoverChainActive = false;
         char finalMsg[40];
-        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
+        snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
         ShowStatusAction::show(finalMsg, 1400);
         _readAfterRecovery = true;
       }
@@ -2812,7 +2812,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   }
 
   ui.pct = 100;
-  snprintf(liveStatus, sizeof(liveStatus), "%d keys recovered", recovered);
+  snprintf(liveStatus, sizeof(liveStatus), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
   actionLog.addLine(liveStatus, recovered > 0 ? TFT_GREEN : TFT_RED);
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
   if (recovered > 0) {
@@ -2821,7 +2821,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     if (n == 1) Achievement.unlock("nfc_dict_attack");
   }
   char msg[48];
-  snprintf(msg, sizeof(msg), "%d keys recovered", recovered);
+  snprintf(msg, sizeof(msg), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
   if (!_recoverChainActive) ShowStatusAction::show(msg, 1600);
   if (_recoverChainActive) {
     _recoverChainNewKeys += recovered;
@@ -2832,7 +2832,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     } else {
       _recoverChainActive = false;
       char finalMsg[40];
-      snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
+      snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
       ShowStatusAction::show(finalMsg, 1400);
       // Always return through Read Tag, even with incomplete coverage, so the
       // user still gets the best partial dump available.
