@@ -1,5 +1,7 @@
+#include <new>
 #include "ChameleonMfuAuthUtils.h"
 #include "ChameleonMfuPagesScreen.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
@@ -33,43 +35,10 @@ static bool waitForMfuTag(ChameleonClient& c, ChameleonClient::MfuTagInfo& info,
 }
 }
 
-void ChameleonMfuPagesScreen::_addRow(const String& label, const String& value) {
-  if (_rowCount >= MAX_ROWS) return;
-  _labels[_rowCount] = label;
-  _rows[_rowCount] = {_labels[_rowCount].c_str(), value};
-  ++_rowCount;
-}
-
 void ChameleonMfuPagesScreen::_freeDump() {
   if (_dump && _ownsDump) free(_dump);
   _dump = nullptr;
   _dumpLen = 0;
-}
-
-void ChameleonMfuPagesScreen::_buildRows() {
-  _rowCount = 0;
-  _addRow("Type", ChameleonClient::mfuTagTypeName(_info.type));
-  String uidText;
-  for (uint8_t i = 0; i < _info.uidLen; ++i) {
-    char b[4]; snprintf(b, sizeof(b), "%s%02X", i ? ":" : "", _info.uid[i]); uidText += b;
-  }
-  _addRow("UID", uidText);
-  _addRow("Pages", String(_info.pages));
-  const uint16_t pages = min<uint16_t>(_info.pages, _dumpLen / 4u);
-  for (uint16_t page = 0; page < pages; ++page) {
-    const uint8_t* d = _dump + page * 4u;
-    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C && page >= 44) {
-      char label[8]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-      _addRow(label, "Unreadable (key)");
-    } else {
-      char label[8]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-      char value[9]; snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
-      _addRow(label, value);
-    }
-  }
-  _view.resetScroll();
-  _view.setRows(_rows, _rowCount);
-  _ready = true;
 }
 
 void ChameleonMfuPagesScreen::_read() {
@@ -99,7 +68,7 @@ void ChameleonMfuPagesScreen::_read() {
   }
 
   const uint32_t bytes = (uint32_t)_info.pages * 4u;
-  _dump = (uint8_t*)malloc(bytes);
+  _dump = (uint8_t*)calloc(1, bytes);
   if (!_dump) {
     if (restoreMode) c.setMode(previousMode);
     _busy = false;
@@ -137,31 +106,40 @@ void ChameleonMfuPagesScreen::_read() {
   }
 
   _dumpLen = got;
-  _buildRows();
-  render();
-}
-
-void ChameleonMfuPagesScreen::onInit() {
-  if (_viewOnly) {
-    _buildRows();
-    render();
-  } else {
-    _read();
-  }
-}
-
-void ChameleonMfuPagesScreen::onUpdate() {
-  if (_busy) return;
-  if (!Uni.Nav->wasPressed()) return;
-  auto dir = Uni.Nav->readDirection();
-  if (dir == INavigation::DIR_BACK) {
+  const uint16_t pages = (uint16_t)(bytes / 4u);
+  uint8_t* valid = new(std::nothrow) uint8_t[pages];
+  if (!valid) {
     _freeDump();
+    ShowStatusAction::show("Out of memory", 1200);
     Screen.goBack();
     return;
   }
-  if (_ready) _view.onNav(dir);
+  memset(valid, 0, pages);
+  const uint16_t gotPages = min<uint16_t>(pages, got / 4u);
+  memset(valid, 1, gotPages);
+  if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C)
+    for (uint16_t page = 44; page < pages; ++page) valid[page] = 0;
+  _viewerPushed = true;
+  Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2,
+                                      ChameleonClient::mfuTagTypeName(_info.type),
+                                      _info.uid, _info.uidLen, _dump, bytes, valid));
+  delete[] valid;
 }
 
-void ChameleonMfuPagesScreen::onRender() {
-  if (_ready) _view.render(bodyX(), bodyY(), bodyW(), bodyH());
+void ChameleonMfuPagesScreen::onInit() { _read(); }
+
+void ChameleonMfuPagesScreen::onUpdate() {
+  if (_busy) return;
+  if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+    Screen.goBack();
+}
+
+void ChameleonMfuPagesScreen::onRender() {}
+
+void ChameleonMfuPagesScreen::onRestore() {
+  if (_viewerPushed) {
+    _viewerPushed = false;
+    _freeDump();
+    Screen.goBack();
+  }
 }

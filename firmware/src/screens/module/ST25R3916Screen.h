@@ -29,7 +29,7 @@ public:
       case STATE_MFU_MEMORY: return _advancedOperationTitle.length() ? _advancedOperationTitle.c_str() : "Read Memory";
       case STATE_MFU_READING: return "Read Tag";
       case STATE_MFU_DETAILS: return "Tag Details";
-      case STATE_MFU_DUMP_HEX: return "Memory Dump";
+      case STATE_MFU_DUMP_HEX: return "Read Memory";
       case STATE_MFU_DUMP_SELECT: return _mfuDumpPickerForEmulation ? "Emulate Tag" : "Write to Tag";
       case STATE_MFU_WRITE_PREVIEW: return "Write to Tag";
       case STATE_MFU_EMULATE_PREVIEW: return "Emulate Tag";
@@ -72,7 +72,7 @@ public:
       case STATE_MFC_NDEF_WRITING: return "Write NDEF";
       case STATE_MFC_NDEF_DETAILS: return "NDEF Details";
       case STATE_MFC_READING: return "Read Tag";
-      case STATE_MFC_DUMP_HEX: return "Memory Dump";
+      case STATE_MFC_DUMP_HEX: return "Read Memory";
       case STATE_MFC_DUMP_SELECT: return "Write Dump to Tag";
       case STATE_MFC_WRITE_PREVIEW: return "Write Dump to Tag";
       case STATE_MFC_WRITING: return "Write Dump to Tag";

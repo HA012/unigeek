@@ -1,4 +1,6 @@
+#include <new>
 #include "ChameleonMfcAdvancedScreen.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/InputSelectAction.h"
@@ -52,7 +54,6 @@ static bool findKey(ChameleonClient& c,uint8_t block,uint8_t out[6],uint8_t& typ
   if(c.mf1CheckKeysOfBlock(block,0x61,&kKeys[0][0],count,out)){type=0x61;return true;}
   return false;
 }
-static String hex8(const uint8_t* d){ String s; char b[3]; for(int i=0;i<8;++i){snprintf(b,sizeof(b),"%02X",d[i]);s+=b;} return s; }
 }
 
 void ChameleonMfcAdvancedScreen::onInit(){
@@ -61,16 +62,14 @@ void ChameleonMfcAdvancedScreen::onInit(){
   _items[2] = {"Lock UID (Gen3)"};
   setItems(_items, 3, _selMenu);
 }
-void ChameleonMfcAdvancedScreen::_addRow(const String& l,const String& v){ if(_rowCount>=MAX_ROWS)return; _labels[_rowCount]=l;_values[_rowCount]=v;_rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount].c_str()};++_rowCount; }
 void ChameleonMfcAdvancedScreen::onItemSelected(uint8_t i){
   _selMenu = i;
   if (i == 0) _readMemory();
   else if (i == 1) _editMemory();
   else if (i == 2) _lockUidGen3();
 }
-void ChameleonMfcAdvancedScreen::onBack(){ if(_showingMemory){_showingMemory=false;setItems(_items, 3, _selMenu);render();} else Screen.goBack(); }
-void ChameleonMfcAdvancedScreen::onUpdate(){ if(!_showingMemory){ListScreen::onUpdate();return;} if(Uni.Nav->wasPressed()){auto d=Uni.Nav->readDirection();if(d==INavigation::DIR_BACK)onBack();else _view.onNav(d);} }
-void ChameleonMfcAdvancedScreen::onRender(){ if(_showingMemory){_view.render(bodyX(),bodyY(),bodyW(),bodyH());return;} ListScreen::onRender(); }
+
+void ChameleonMfcAdvancedScreen::onBack(){ Screen.goBack(); }
 
 void ChameleonMfcAdvancedScreen::_readMemory(){
   renderOperationChrome("Read Memory");
@@ -82,24 +81,25 @@ void ChameleonMfcAdvancedScreen::_readMemory(){
     restore(); render(); return;
   }
   const uint16_t blocks=sak==0x18?256:64; uint8_t keys[40][6]={},types[40]={}; bool have[40]={};
-  _rowCount=0; _addRow("Type",sak==0x18?"MF Classic 4K":"MF Classic 1K");
-  String uidText; for(uint8_t i=0;i<ul;++i){char b[4];snprintf(b,sizeof(b),"%s%02X",i?":":"",uid[i]);uidText+=b;} _addRow("UID",uidText);
-  _addRow("Blocks", String(blocks));
+  uint8_t* dump = new(std::nothrow) uint8_t[(size_t)blocks * 16u]();
+  uint8_t* valid = new(std::nothrow) uint8_t[blocks]();
+  if (!dump || !valid) {
+    delete[] dump; delete[] valid; restore(); render();
+    ShowStatusAction::show("Out of memory", 1200); return;
+  }
   ProgressView::init();
   for(uint16_t b=0;b<blocks;++b){
     uint8_t sec=sectorForBlock(b); if(!have[sec])have[sec]=findKey(c,(uint8_t)b,keys[sec],types[sec]);
-    uint8_t data[16]={}; bool ok=have[sec]&&c.mf1ReadBlock((uint8_t)b,types[sec],keys[sec],data);
-    char msg[36];snprintf(msg,sizeof(msg),"Reading blocks (%u/%u)...",(unsigned)(b+1),(unsigned)blocks);ProgressView::progress(msg,(int)((uint32_t)b*100u/blocks));
-    if(ok){
-      _addRow("B"+String(b)+" 0-7",hex8(data));
-      _addRow("B"+String(b)+" 8-F",hex8(data+8));
-    } else {
-      _addRow("B"+String(b),"Unreadable (key)");
-    }
+    uint8_t* data=dump+(size_t)b*16u; bool ok=have[sec]&&c.mf1ReadBlock((uint8_t)b,types[sec],keys[sec],data);
+    valid[b]=ok?1:0;
+    char msg[36];snprintf(msg,sizeof(msg),"Reading blocks (%u/%u)...",(unsigned)(b+1),(unsigned)blocks);ProgressView::progress(msg,(int)((uint32_t)(b+1u)*100u/blocks));
   }
-  ProgressView::finish(); restore(); _view.resetScroll(); _view.setRows(_rows,_rowCount); _showingMemory=true; render();
+  ProgressView::finish(); restore(); render();
+  Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC,
+                                      sak==0x18?"MF Classic 4K":"MF Classic 1K",
+                                      uid, ul, dump, (size_t)blocks*16u, valid));
+  delete[] dump; delete[] valid;
 }
-
 void ChameleonMfcAdvancedScreen::_editMemory(){
   renderOperationChrome("Edit Memory");
   auto& c=ChameleonClient::get();

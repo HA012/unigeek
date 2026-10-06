@@ -55,7 +55,6 @@ private:
     STATE_SHOW_KEYS,
     STATE_DUMP,
     STATE_DUMP_RESULT,
-    STATE_DUMP_HEX,
     STATE_DICT_SEL,
     STATE_DICT_RUN,
     STATE_DICT_LOG,
@@ -92,6 +91,7 @@ private:
   uint16_t _dumpLen    = 0;
   uint16_t _dumpBlocks = 0;
   uint16_t _dumpReadBlocks = 0;
+  uint8_t  _dumpValidBlocks[256] = {};
 
   // Discovered keys
   uint8_t _keysA[40][6] = {};
@@ -167,7 +167,6 @@ private:
   void _showDiscoveredKeys();
   void _callDump();
   void _buildDumpPreview();
-  void _buildDumpHex();
   void _showDumpActions();
   void _loadDumpToSlot();
   void _saveDump();

@@ -1,5 +1,6 @@
 #include "ChameleonMfcDarksideScreen.h"
 #include "ChameleonMfcScreen.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "ChameleonMfcUidWriteScreen.h"
 #include "ChameleonMfcWriteScreen.h"
 #include "core/AchievementManager.h"
@@ -60,7 +61,6 @@ const char* ChameleonMfcScreen::title() {
     case STATE_SHOW_KEYS:          return "Check Known Keys";
     case STATE_DUMP:               return "Read Tag";
     case STATE_DUMP_RESULT:        return "Tag Details";
-    case STATE_DUMP_HEX:           return "Memory Dump";
     case STATE_DICT_SEL:
     case STATE_DICT_RUN:
     case STATE_DICT_LOG:           return "Dictionary Attack";
@@ -997,30 +997,6 @@ void ChameleonMfcScreen::_buildDumpPreview() {
   _scrollView.setRows(_rows, _rowCount);
 }
 
-void ChameleonMfcScreen::_buildDumpHex() {
-  _rowCount = 0;
-  if (!_dump || !_dumpLen) return;
-  for (uint16_t block = 0; block < _dumpBlocks && _rowCount + 1 < MAX_ROWS; ++block) {
-    for (uint8_t half = 0; half < 2; ++half) {
-      char label[16];
-      snprintf(label, sizeof(label), "B%u %s", (unsigned)block, half ? "8-F" : "0-7");
-      String value;
-      const uint8_t* data = _dump + (size_t)block * 16u + half * 8u;
-      for (uint8_t i = 0; i < 8; ++i) {
-        char b[3];
-        snprintf(b, sizeof(b), "%02X", data[i]);
-        value += b;
-      }
-      _rowLabels[_rowCount] = label;
-      _rowValues[_rowCount] = value;
-      _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount].c_str()};
-      ++_rowCount;
-    }
-  }
-  _scrollView.setRows(_rows, _rowCount);
-  _scrollView.resetScroll();
-}
-
 void ChameleonMfcScreen::_loadDumpToSlot() {
   Header header; header.render("Load Dump to Slot");
   if (!_dump || !_dumpLen) return;
@@ -1094,7 +1070,7 @@ void ChameleonMfcScreen::_loadDumpToSlot() {
 
 void ChameleonMfcScreen::_showDumpActions() {
   static const InputSelectAction::Option opts[] = {
-    {"View Dump",          "view"},
+    {"Read Memory",        "view"},
     {"Save UID",           "uid"},
     {"Save Dump",          "save"},
     {"Load Dump to Slot",  "slot"},
@@ -1105,9 +1081,11 @@ void ChameleonMfcScreen::_showDumpActions() {
   if (!r) { render(); return; }
   render();
   if (strcmp(r, "view") == 0) {
-    _buildDumpHex();
-    _state = STATE_DUMP_HEX;
-    render();
+    const char* typeName = ChameleonClient::tagTypeName(
+        _sectors == 5 ? 1000 : (_sectors == 40 ? 1003 : 1001));
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC,
+                                        typeName, _uid, _uidLen, _dump, _dumpLen,
+                                        _dumpValidBlocks));
   } else if (strcmp(r, "uid") == 0) {
     _saveUid();
   } else if (strcmp(r, "save") == 0) {
@@ -1214,6 +1192,7 @@ void ChameleonMfcScreen::_callDump() {
 
   _dumpBlocks = _totalBlocks();
   _dumpReadBlocks = 0;
+  memset(_dumpValidBlocks, 0, sizeof(_dumpValidBlocks));
   _dumpLen = (uint16_t)(_dumpBlocks * 16u);
   _dump = (uint8_t*)malloc(_dumpLen);
   if (!_dump) {
@@ -1240,7 +1219,7 @@ void ChameleonMfcScreen::_callDump() {
     if (_foundA[s]) ok = c.mf1ReadBlock(block, 0x60, _keysA[s], data);
     if (!ok && _foundB[s]) ok = c.mf1ReadBlock(block, 0x61, _keysB[s], data);
     if (!ok) memset(data, 0, 16);
-    else ++_dumpReadBlocks;
+    else { ++_dumpReadBlocks; _dumpValidBlocks[block] = 1; }
 
     if (block == _trailerBlock(s)) {
       if (_foundA[s]) memcpy(data, _keysA[s], 6);
@@ -2150,19 +2129,6 @@ void ChameleonMfcScreen::onUpdate() {
     return;
   }
 
-  if (_state == STATE_DUMP_HEX) {
-    if (Uni.Nav->wasPressed()) {
-      auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) {
-        _state = STATE_DUMP_RESULT;
-        _buildDumpPreview();
-        render();
-        return;
-      }
-      _scrollView.onNav(dir);
-    }
-    return;
-  }
 
   if (_state == STATE_DICT_LOG) {
     if (Uni.Nav->wasPressed()) {
@@ -2204,7 +2170,7 @@ void ChameleonMfcScreen::onRender() {
     return;
   }
   if (_state == STATE_SHOW_KEYS || _state == STATE_DUMP_RESULT ||
-      _state == STATE_DUMP_HEX || _state == STATE_READ_PREVIEW) {
+      _state == STATE_READ_PREVIEW) {
     _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
     return;
   }

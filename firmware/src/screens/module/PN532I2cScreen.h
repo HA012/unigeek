@@ -37,7 +37,6 @@ private:
     STATE_MIFARE_KEY_DB_SELECT,
     STATE_MIFARE_KEY_DB_VIEW,
     STATE_MIFARE_DUMP,
-    STATE_MIFARE_DUMP_HEX,
     STATE_MIFARE_KEYS,
     STATE_MIFARE_DUMP_SELECT,
     STATE_MIFARE_UID_SOURCE_FORM,
@@ -58,7 +57,6 @@ private:
     STATE_MAGIC_DETECT,
     STATE_RAW_RESULT,
     STATE_ULTRALIGHT_DUMP,
-    STATE_ULTRALIGHT_DUMP_HEX,
     STATE_NDEF_WRITE_MENU,
     STATE_NDEF_RESULT,
     STATE_NDEF_FILE_SELECT,
@@ -233,6 +231,7 @@ private:
   bool     _hasDump = false;
   bool     _dumpComplete = false;
   size_t   _dumpReadBlocks = 0;
+  uint8_t  _dumpValidBlocks[256] = {};
   bool     _resumeReadAfterDict = false;
   bool     _recoverChainActive = false;
   uint8_t  _recoverChainIndex = 0;
@@ -326,7 +325,6 @@ private:
   void _showTagDetails();
   void _appendDumpNdefDetails();
   void _appendDumpNdefDetails(const uint8_t* dump, size_t dumpLen, size_t totalSectors);
-  void _showDumpHex();
   void _showDumpActions();
   bool _doWriteDumpToTag(const uint8_t* dump, size_t len,
                          const uint8_t* sourceUid = nullptr, uint8_t sourceUidLen = 0);
@@ -365,12 +363,11 @@ private:
   void _doUltralightSetPassword();
   void _doUltralightRemovePassword();
   bool _detectUltralightTag(uint16_t& pages, const char*& typeName);
-  bool _readUltralightDump(uint16_t pages);
+  bool _readUltralightDump(uint16_t pages, const char* typeName);
   bool _writeUltralightNtag215Dump(const uint8_t* dump, size_t len);
   void _showUltralightTagDetails(const char* typeName, uint16_t pages);
   void _showUltralightDumpActions();
   void _saveUid(const char* typeName);
-  void _showUltralightDumpHex();
   void _saveUltralightDump(const char* typeName);
   void _doReadNdef();
   void _doReadClassicNdef();

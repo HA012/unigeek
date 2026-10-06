@@ -20,6 +20,7 @@
 #include "utils/nfc/MagicCard.h"
 #include "utils/nfc/MfcKeyStore.h"
 #include "utils/IdentityFile.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include <mbedtls/md.h>
 
 #if defined(DEVICE_HAS_ST25R3916)
@@ -1542,7 +1543,7 @@ void ST25R3916Screen::_showMfcDumpActions() {
   }
 
   static const InputSelectAction::Option opts[] = {
-    {"View Dump", "view"},
+    {"Read Memory", "view"},
     {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write UID to Tag", "writeuid"},
@@ -1554,9 +1555,10 @@ void ST25R3916Screen::_showMfcDumpActions() {
 
   render();
   if (strcmp(r, "view") == 0) {
-    _mfcDumpOffset = 0;
-    _state = STATE_MFC_DUMP_HEX;
-    render();
+    const char* type = _mfcDumpBlocks == 20 ? "MF Classic Mini" :
+                       _mfcDumpBlocks == 256 ? "MF Classic 4K" : "MF Classic 1K";
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC, type,
+                                        _mfcUid, _mfcUidLen, _mfcDump, _mfcDumpLen));
   } else if (strcmp(r, "uid") == 0) {
     _saveMfcUid();
   } else if (strcmp(r, "save") == 0) {
@@ -2862,7 +2864,7 @@ void ST25R3916Screen::_showMfuDumpActions() {
   }
 
   static const InputSelectAction::Option opts[] = {
-    {"View Dump", "view"},
+    {"Read Memory", "view"},
     {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
@@ -2873,9 +2875,8 @@ void ST25R3916Screen::_showMfuDumpActions() {
 
   render();
   if (strcmp(r, "view") == 0) {
-    _mfuDumpOffset = 0;
-    _state = STATE_MFU_DUMP_HEX;
-    render();
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2, _mfuType,
+                                        _mfuUid, _mfuUidLen, _mfuDump, _mfuDumpLen));
   } else if (strcmp(r, "uid") == 0) {
     _saveMfuUid();
   } else if (strcmp(r, "save") == 0) {
@@ -3945,7 +3946,10 @@ void ST25R3916Screen::_readMfuMemory() {
   if (!complete || _mfuDumpLen != (size_t)pages * 4U) {
     _mfuDumpLen = 0; render(); ShowStatusAction::show("Failed"); _showMfuAdvancedMenu(); return;
   }
-  render();
+  _mfuUidLen = tag.nfcidLen;
+  memcpy(_mfuUid, tag.nfcid, tag.nfcidLen);
+  Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2, _mfuType,
+                                      _mfuUid, _mfuUidLen, _mfuDump, _mfuDumpLen));
 #endif
 }
 
@@ -4713,9 +4717,10 @@ void ST25R3916Screen::_readMfcMemory() {
 #if defined(DEVICE_HAS_ST25R3916)
   _readMfcTag();
   if (_state == STATE_MFC_DETAILS && _mfcDumpLen && _mfcDumpBlocks) {
-    _mfcDumpOffset = 0;
-    _state = STATE_MFC_MEMORY;
-    render();
+    const char* type = _mfcDumpBlocks == 20 ? "MF Classic Mini" :
+                       _mfcDumpBlocks == 256 ? "MF Classic 4K" : "MF Classic 1K";
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC, type,
+                                        _mfcUid, _mfcUidLen, _mfcDump, _mfcDumpLen));
     return;
   }
 #endif

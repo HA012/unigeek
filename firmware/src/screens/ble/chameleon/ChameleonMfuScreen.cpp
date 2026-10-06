@@ -1,6 +1,8 @@
+#include <new>
 #include "ChameleonMfuAuthUtils.h"
 #include "ChameleonMfuPagesScreen.h"
 #include "ChameleonMfuScreen.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
@@ -361,7 +363,7 @@ void ChameleonMfuScreen::_saveUid() {
 
 void ChameleonMfuScreen::_resultActions() {
   static const InputSelectAction::Option opts[] = {
-    {"View Dump",          "view"},
+    {"Read Memory",          "view"},
     {"Save UID",           "uid"},
     {"Save Dump",          "save"},
     {"Write to Tag",       "write"},
@@ -371,7 +373,16 @@ void ChameleonMfuScreen::_resultActions() {
   if (!r) { render(); return; }
 
   if (strcmp(r, "view") == 0) {
-    Screen.push(new ChameleonMfuPagesScreen(_info, _dump, _dumpLen));
+    const uint16_t pages = _dumpLen / 4u;
+    uint8_t* valid = new(std::nothrow) uint8_t[pages];
+    if (!valid) { ShowStatusAction::show("Out of memory", 1200); render(); return; }
+    memset(valid, 1, pages);
+    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C)
+      for (uint16_t page = 44; page < pages; ++page) valid[page] = 0;
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2,
+                                        ChameleonClient::mfuTagTypeName(_info.type),
+                                        _info.uid, _info.uidLen, _dump, _dumpLen, valid));
+    delete[] valid;
     return;
   }
 

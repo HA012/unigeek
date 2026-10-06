@@ -1,3 +1,4 @@
+#include <new>
 #include "ui/components/TagPrompt.h"
 #include "PN532I2cScreen.h"
 #include "core/Device.h"
@@ -10,6 +11,7 @@
 #include "ui/actions/InputSelectAction.h"
 #include "ui/views/ProgressView.h"
 #include "ui/views/LogView.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "../../utils/nfc/NdefBuilder.h"
 #include "../../utils/nfc/NdefParser.h"
 #include "../../utils/nfc/HfDumpBuilder.h"
@@ -508,7 +510,6 @@ const char* PN532I2cScreen::title() {
     case STATE_MIFARE_KEY_DB_SELECT:return "Dictionaries";
     case STATE_MIFARE_KEY_DB_VIEW:return _keyDbViewTitle.length() ? _keyDbViewTitle.c_str() : "Dictionary";
     case STATE_MIFARE_DUMP:     return "Tag Details";
-    case STATE_MIFARE_DUMP_HEX: return "Memory Dump";
     case STATE_MIFARE_KEYS:     return "Check Known Keys";
     case STATE_MIFARE_DUMP_SELECT:return "Dump Files";
     case STATE_MIFARE_UID_SOURCE_FORM:return "Write UID to Tag";
@@ -531,7 +532,6 @@ const char* PN532I2cScreen::title() {
       if (_rawResultTypeB) return _rawResultTypeBRaw ? "Raw Response" : "APDU Response";
       return "Read Memory";
     case STATE_ULTRALIGHT_DUMP: return "Tag Details";
-    case STATE_ULTRALIGHT_DUMP_HEX: return "Memory Dump";
     case STATE_NDEF_WRITE_MENU: return "Write NDEF";
     case STATE_NDEF_RESULT:     return "NDEF Details";
     case STATE_NDEF_FILE_SELECT:return "NDEF Files";
@@ -610,17 +610,13 @@ void PN532I2cScreen::onUpdate() {
     }
     return;
   }
-  if (_state == STATE_MIFARE_DUMP || _state == STATE_MIFARE_DUMP_HEX) {
+  if (_state == STATE_MIFARE_DUMP) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        if (_state == STATE_MIFARE_DUMP_HEX) {
-          _showTagDetails();
-        } else {
-          _hasDump = false;
-          _dumpComplete = false;
-          _goMifareTag();
-        }
+        _hasDump = false;
+        _dumpComplete = false;
+        _goMifareTag();
       } else if (dir == INavigation::DIR_PRESS && _state == STATE_MIFARE_DUMP && _hasDump) {
         _showDumpActions();
       } else {
@@ -733,14 +729,11 @@ void PN532I2cScreen::onUpdate() {
     return;
   }
 
-  if (_state == STATE_ULTRALIGHT_DUMP || _state == STATE_ULTRALIGHT_DUMP_HEX) {
+  if (_state == STATE_ULTRALIGHT_DUMP) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
-        if (_state == STATE_ULTRALIGHT_DUMP_HEX)
-          _showUltralightTagDetails(_ulTypeName.c_str(), _ulPages);
-        else
-          _goUltralightTag();
+        _goUltralightTag();
       } else if (dir == INavigation::DIR_PRESS && _state == STATE_ULTRALIGHT_DUMP) {
         _showUltralightDumpActions();
       } else {
@@ -774,7 +767,7 @@ void PN532I2cScreen::onRender() {
     return;
   }
   if (_state == STATE_DEVICE_INFO || _state == STATE_SCAN_RESULT ||
-      _state == STATE_MIFARE_DUMP || _state == STATE_MIFARE_DUMP_HEX ||
+      _state == STATE_MIFARE_DUMP ||
       _state == STATE_MIFARE_WRITE_PREVIEW || _state == STATE_MIFARE_UID_WRITE_PREVIEW ||
       _state == STATE_MIFARE_KEYS || _state == STATE_MIFARE_KEY_DB_VIEW ||
       _state == STATE_RAW_RESULT || _state == STATE_ULTRALIGHT_DUMP || _state == STATE_NDEF_RESULT ||
@@ -2319,6 +2312,7 @@ void PN532I2cScreen::_doDumpMemory() {
   _hasDump = false;
   _dumpComplete = false;
   _dumpReadBlocks = 0;
+  memset(_dumpValidBlocks, 0, sizeof(_dumpValidBlocks));
   const size_t totalSectors = dims.first;
   const size_t totalBlocks = dims.second;
   _dumpLen = totalBlocks * 16u;
@@ -2382,6 +2376,7 @@ void PN532I2cScreen::_doDumpMemory() {
     if (!blockRead) continue;
 
     readCount++;
+    _dumpValidBlocks[blk] = 1;
     memcpy(&_dumpImg[blk * 16], data, 16);
   }
 
@@ -2514,26 +2509,6 @@ void PN532I2cScreen::_appendDumpNdefDetails(const uint8_t* dump, size_t dumpLen,
   }
 
   delete[] ndef;
-}
-
-void PN532I2cScreen::_showDumpHex() {
-  if (!_hasDump) { _showTagDetails(); return; }
-
-  _state = STATE_MIFARE_DUMP_HEX;
-  _resetRows();
-  _scrollView.resetScroll();
-  const size_t blocks = _dumpLen / 16u;
-  for (size_t blk = 0; blk < blocks; blk++) {
-    // A full 16-byte block does not fit beside the row label in
-    // ScrollListView. Split it into two 8-byte rows so View Dump always
-    // shows every byte instead of clipping the left side of the hex string.
-    _pushRow("B" + String((unsigned)blk) + " 0-7",
-             _hexBlock(&_dumpImg[blk * 16], 8));
-    _pushRow("B" + String((unsigned)blk) + " 8-F",
-             _hexBlock(&_dumpImg[blk * 16 + 8], 8));
-  }
-  _scrollView.setRows(_rows, _rowCount);
-  render();
 }
 
 void PN532I2cScreen::_doShowKeys() {
@@ -2950,7 +2925,7 @@ bool PN532I2cScreen::_detectUltralightTag(uint16_t& pages, const char*& typeName
   return pages != 0;
 }
 
-bool PN532I2cScreen::_readUltralightDump(uint16_t pages) {
+bool PN532I2cScreen::_readUltralightDump(uint16_t pages, const char* typeName) {
   const size_t bytes = (size_t)pages * 4u;
   if (!pages || bytes > sizeof(_dumpImg)) return false;
   memset(_dumpImg, 0, bytes);
@@ -2965,7 +2940,7 @@ bool PN532I2cScreen::_readUltralightDump(uint16_t pages) {
     if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, page, pages, data)) {
       // Ultralight C pages 44..47 contain the 3DES key and are intentionally
       // unreadable. Preserve a complete image with zeroes in that region.
-      if (pages == 48 && page >= 44) continue;
+      if (typeName && strcmp(typeName, "Ultralight C") == 0 && page >= 44 && page < 48) continue;
       ProgressView::finish();
       _dumpLen = 0;
       _hasDump = false;
@@ -3117,25 +3092,6 @@ bool PN532I2cScreen::_writeUltralightNtag215Dump(const uint8_t* dump, size_t len
   return ok;
 }
 
-void PN532I2cScreen::_showUltralightDumpHex() {
-  if (!_hasDump || !_dumpLen) { _showUltralightTagDetails(_ulTypeName.c_str(), _ulPages); return; }
-
-  _state = STATE_ULTRALIGHT_DUMP_HEX;
-  _resetRows();
-  _scrollView.resetScroll();
-  const size_t pages = _dumpLen / 4u;
-  for (size_t page = 0; page < pages; ++page) {
-    char label[12];
-    snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-    const uint8_t* d = &_dumpImg[page * 4u];
-    char value[9];
-    snprintf(value, sizeof(value), "%02X%02X%02X%02X", d[0], d[1], d[2], d[3]);
-    _pushRow(label, value);
-  }
-  _scrollView.setRows(_rows, _rowCount);
-  render();
-}
-
 void PN532I2cScreen::_saveUid(const char* typeName) {
   if (!_uidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
     ShowStatusAction::show("Storage unavailable");
@@ -3161,7 +3117,7 @@ void PN532I2cScreen::_saveUid(const char* typeName) {
 
 void PN532I2cScreen::_showUltralightDumpActions() {
   static const InputSelectAction::Option opts[] = {
-    {"View Dump", "view"},
+    {"Read Memory", "view"},
     {"Save UID", "uid"},
     {"Save Dump", "save"},
     {"Write to Tag", "write"},
@@ -3169,7 +3125,14 @@ void PN532I2cScreen::_showUltralightDumpActions() {
   const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "view") == 0) {
-    _showUltralightDumpHex();
+    uint8_t valid[256];
+    const size_t units = min<size_t>(_dumpLen / 4u, sizeof(valid));
+    memset(valid, 1, units);
+    if (_ulTypeName == "Ultralight C") {
+      for (size_t page = 44; page < units && page < 48; ++page) valid[page] = 0;
+    }
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2, _ulTypeName,
+                                        _uid, _uidLen, _dumpImg, _dumpLen, valid));
     return;
   }
   render();
@@ -3210,7 +3173,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
     _goUltralightTag();
     return;
   }
-  if (!_readUltralightDump(pages)) {
+  if (!_readUltralightDump(pages, typeName)) {
     ShowStatusAction::show("Failed");
     _goUltralightTag();
     return;
@@ -3292,12 +3255,16 @@ void PN532I2cScreen::_doMifareReadMemory() {
   auto dims = _mfDims(_sak);
   if (!dims.first || !dims.second) { ShowStatusAction::show("Tag not supported", 1600); _goMifareAdvanced(); return; }
 
-  // Use the same persisted/default key discovery used by Read Tag.
   _discoverDefaultKeys(true);
   if (_keyCheckCancelled) { ShowStatusAction::show("Cancelled",1000); _goMifareAdvanced(); return; }
   const uint16_t blocks = dims.second;
-  _state = STATE_RAW_RESULT; _rawResultMifare = true; _resetRows();
-  _pushRow("Type", _inferType(_sak, _atqa)); _pushRow("UID", _hexUid(_uid, _uidLen)); _pushRow("Blocks", String(blocks));
+  uint8_t* dump = new(std::nothrow) uint8_t[(size_t)blocks * 16u]();
+  uint8_t* valid = new(std::nothrow) uint8_t[blocks]();
+  if (!dump || !valid) {
+    delete[] dump; delete[] valid;
+    ShowStatusAction::show("Out of memory", 1200); _goMifareAdvanced(); return;
+  }
+
   ProgressView::init();
   for (uint16_t block=0; block<blocks; ++block) {
     const uint8_t sector = block < 128 ? block/4 : 32 + (block-128)/16;
@@ -3305,23 +3272,22 @@ void PN532I2cScreen::_doMifareReadMemory() {
     const bool useKeyB=!keyA && (bool)keyB; auto& slot=useKeyB?keyB:keyA;
     char msg[36]; snprintf(msg,sizeof(msg),"Reading blocks (%u/%u)...",(unsigned)(block+1),(unsigned)blocks);
     ProgressView::progress(msg,(int)((uint32_t)block*100u/blocks));
-    uint8_t data[16]={}; bool ok=false;
+    uint8_t* data = dump + (size_t)block * 16u; bool ok=false;
     if (slot) {
       const auto key=slot.value(); uint8_t uid[7]={},ul=0;
       if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,uid,&ul,250) && ul==_uidLen && memcmp(uid,_uid,ul)==0 &&
           _nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,useKeyB?1:0,const_cast<uint8_t*>(key.data())))
         ok=_nfc->mifareclassic_ReadDataBlock(block,data);
     }
-    if (ok) {
-      String first,second; char hex[3];
-      for(uint8_t i=0;i<8;++i){snprintf(hex,sizeof(hex),"%02X",data[i]);first+=hex;}
-      for(uint8_t i=8;i<16;++i){snprintf(hex,sizeof(hex),"%02X",data[i]);second+=hex;}
-      _pushRow("B"+String(block)+" 0-7",first); _pushRow("B"+String(block)+" 8-F",second);
-    } else _pushRow("B"+String(block),"Unreadable (key)");
+    valid[block] = ok ? 1 : 0;
   }
-  ProgressView::finish(); _scrollView.resetScroll(); _scrollView.setRows(_rows,_rowCount); render();
+  ProgressView::finish();
+  const String type = _inferType(_sak, _atqa);
+  _goMifareAdvanced();
+  Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC, type,
+                                      _uid, _uidLen, dump, (size_t)blocks * 16u, valid));
+  delete[] dump; delete[] valid;
 }
-
 void PN532I2cScreen::_doMifareEditMemory() {
   renderOperationTitle("Edit Memory");
   if (!_scanCardOrShow(5000)) { _goMifareAdvanced(); return; }
@@ -3347,53 +3313,43 @@ void PN532I2cScreen::_doUltralightReadPages() {
   renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
-    ShowStatusAction::show("Tag not supported", 1600);
-    _goUltralightAdvanced();
-    return;
+    ShowStatusAction::show("Tag not supported", 1600); _goUltralightAdvanced(); return;
   }
 
   bool authenticated = false;
   if (!_pn532EnsureUltralightAuthForRange(
           _nfc, _wire, typeName, pages, 0, pages - 1, true, &authenticated)) {
-    _goUltralightAdvanced();
-    return;
+    _goUltralightAdvanced(); return;
   }
 
-  _state = STATE_RAW_RESULT;
-  _rawResultMifare = false;
-  _resetRows();
-  _pushRow("Type", typeName);
-  _pushRow("UID", _hexUid(_uid, _uidLen));
-  _pushRow("Pages", String(pages));
+  uint8_t* dump = new(std::nothrow) uint8_t[(size_t)pages * 4u]();
+  uint8_t* valid = new(std::nothrow) uint8_t[pages]();
+  if (!dump || !valid) {
+    delete[] dump; delete[] valid;
+    ShowStatusAction::show("Out of memory", 1200); _goUltralightAdvanced(); return;
+  }
 
-  // Authentication may have used an input overlay. Rebuild the operation
-  // chrome before progress, matching the MFC/working MFU lifecycle.
   renderOperationTitle("Read Memory");
   ProgressView::init();
   for (uint16_t page = 0; page < pages; ++page) {
     char msg[36];
-    snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...",
-             (unsigned)(page + 1), (unsigned)pages);
+    snprintf(msg, sizeof(msg), "Reading pages (%u/%u)...", (unsigned)(page + 1), (unsigned)pages);
     ProgressView::progress(msg, (int)((uint32_t)page * 100u / pages));
-    uint8_t data[4] = {};
+    uint8_t* data = dump + (size_t)page * 4u;
     if (!_pn532Type2ReadPageTailSafe(_nfc, _wire, page, pages, data)) {
-      if (pages == 48 && page >= 44) {
-        char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-        _pushRow(label, "Unreadable (key)");
-        continue;
-      }
-      char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-      _pushRow(label, "Failed");
-      break;
+      valid[page] = 0;
+      if (!(strcmp(typeName, "Ultralight C") == 0 && page >= 44)) break;
+      continue;
     }
-    char label[12]; snprintf(label, sizeof(label), "P%03u", (unsigned)page);
-    _pushRow(label, _hexBlock(data, 4));
+    valid[page] = 1;
   }
   ProgressView::finish();
-  _scrollView.setRows(_rows, _rowCount);
-  render();
+  const String type = typeName;
+  _goUltralightAdvanced();
+  Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2, type,
+                                      _uid, _uidLen, dump, (size_t)pages * 4u, valid));
+  delete[] dump; delete[] valid;
 }
-
 void PN532I2cScreen::_doUltralightWritePage() {
   renderOperationTitle("Edit Memory");
   renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
@@ -5430,7 +5386,7 @@ void PN532I2cScreen::_showDumpActions() {
     // its normal actions below.
   }
   static const InputSelectAction::Option opts[] = {
-    {"View Dump",    "view"},
+    {"Read Memory",    "view"},
     {"Save UID",     "uid"},
     {"Save Dump",    "save"},
     {"Write UID to Tag", "writeuid"},
@@ -5439,7 +5395,9 @@ void PN532I2cScreen::_showDumpActions() {
   const char* r = InputSelectAction::popup("Dump Actions", opts, 5, nullptr);
   if (!r) { render(); return; }
   if (strcmp(r, "view") == 0) {
-    _showDumpHex();
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::MIFARE_CLASSIC,
+                                        _inferType(_sak, _atqa), _uid, _uidLen,
+                                        _dumpImg, _dumpLen, _dumpValidBlocks));
     return;
   }
 
