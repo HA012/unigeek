@@ -2746,13 +2746,20 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   // attempts with a status/progress bar, rather than a progress-only screen.
   LogView actionLog;
   actionLog.clear();
-  struct DictUiCtx { const char* status; const char* attempt; size_t keyIndex,keyTotal; int dictIndex,dictTotal,partialPct,totalPct; } ui = {"Starting...", "", 0,0,1,1,0,0};
+  struct DictUiCtx { const char* status; const char* attempt; int pct; } ui = {"Starting...", "", 0};
   auto statusCb = [](Sprite& sp, int barY, int width, void* userData) {
-    auto* ctx = static_cast<DictUiCtx*>(userData); char left[72], pct[8];
-    snprintf(left,sizeof(left),"%s (%u/%u)",ctx->attempt,(unsigned)ctx->keyIndex,(unsigned)ctx->keyTotal);
-    snprintf(pct,sizeof(pct),"%d%%",ctx->partialPct); sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(left,2,barY); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY);
-    snprintf(left,sizeof(left),"%s (%d/%d)",ctx->status,ctx->dictIndex,ctx->dictTotal); snprintf(pct,sizeof(pct),"%d%%",ctx->totalPct);
-    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_WHITE); sp.drawString(left,2,barY+11); sp.setTextDatum(TR_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(pct,width-2,barY+11);
+    auto* ctx = static_cast<DictUiCtx*>(userData);
+    sp.setTextDatum(TL_DATUM);
+    sp.setTextColor(TFT_WHITE);
+    sp.drawString(ctx->status, 2, barY);
+    char pctBuf[8];
+    snprintf(pctBuf, sizeof(pctBuf), "%d%%", ctx->pct);
+    sp.setTextDatum(TR_DATUM);
+    sp.setTextColor(TFT_CYAN);
+    sp.drawString(pctBuf, width - 2, barY);
+    const int pctW = sp.textWidth(pctBuf);
+    sp.setTextColor(TFT_CYAN);
+    sp.drawString(ctx->attempt, width - pctW - 8, barY);
   };
   char liveStatus[80] = "Starting...";
   if (!_recoverChainActive) {
@@ -2761,34 +2768,22 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     else if (filePath == MfcKeyStore::kBuiltinExtendedId) snprintf(liveStatus, sizeof(liveStatus), "Extended");
     else { String label=filePath; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); if(label.endsWith(".txt")) label.remove(label.length()-4); snprintf(liveStatus,sizeof(liveStatus),"%s",label.c_str()); }
   }
-  size_t chainCounts[3] = {0,0,0}; size_t chainGlobalTotal = 0, chainGlobalBase = 0;
   if (_recoverChainActive) {
-    const char* sources[3] = {MfcKeyStore::kBuiltinDefaultId, MfcKeyStore::kDiscoveredDictionary, MfcKeyStore::kBuiltinExtendedId};
-    for (int i=0;i<3;++i) { chainCounts[i]=MfcKeyStore::dictionaryKeyCount(Uni.Storage,sources[i]); chainGlobalTotal += chainCounts[i]; }
-    for (int i=0;i<_recoverChainIndex;++i) chainGlobalBase += chainCounts[i];
     static const char* const kStageNames[] = {"Default", "Discovered", "Extended"};
     renderOperationTitle("Dictionary Attack");
     snprintf(liveStatus, sizeof(liveStatus), "%s", kStageNames[_recoverChainIndex]);
-    ui.dictIndex = _recoverChainIndex + 1; ui.dictTotal = 3;
   }
   ui.status = liveStatus;
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   // Standalone: quickly verify only keys already persisted for this UID.
   // Keep this in the same LogView used by the selected dictionary.
   if (!_recoverChainActive) {
-    size_t totalSlots = 0;
-    for (size_t sector = 0; sector < totalSectors; ++sector) {
-      if (_mfKeys[sector].first) ++totalSlots;
-      if (_mfKeys[sector].second) ++totalSlots;
-    }
-    size_t checked = 0;
     for (size_t sector = 0; sector < totalSectors; ++sector) {
       const uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
       for (uint8_t kt = 0; kt < 2; ++kt) {
         auto& slot = kt ? _mfKeys[sector].second : _mfKeys[sector].first;
         if (!slot) continue;
-        ++checked;
         Uni.update();
         if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
           ShowStatusAction::show("Cancelled", 1000); _doDictionaryPicker(); return;
@@ -2801,8 +2796,8 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   }
 
   if (!_recoverChainActive) {
-    ui.partialPct = ui.totalPct = 0;
-    actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+    ui.pct = 0;
+    actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
   }
 
   if (_recoverChainActive) {
@@ -2810,9 +2805,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     size_t currentKey = 0;
     MfcKeyStore::forEachDictionaryKey(Uni.Storage, filePath, [&](const uint8_t key[6], size_t, size_t) {
       ++currentKey;
-      ui.keyIndex=currentKey; ui.keyTotal=totalKeys;
-      ui.partialPct = totalKeys ? (int)(currentKey * 100U / totalKeys) : 0;
-      ui.totalPct = chainGlobalTotal ? (int)((chainGlobalBase + currentKey) * 100U / chainGlobalTotal) : ui.partialPct;
+      ui.pct = totalKeys ? (int)(currentKey * 100U / totalKeys) : 0;
       for (size_t sector = 0; sector < totalSectors && !objectiveMet; ++sector) {
         uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
         for (uint8_t kt = 0; kt < 2; ++kt) {
@@ -2844,8 +2837,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   } else {
     bool cancelled = false;
     MfcKeyStore::forEachDictionaryKey(Uni.Storage, filePath, [&](const uint8_t key[6], size_t keyIndex, size_t) {
-      ui.keyIndex=keyIndex+1U; ui.keyTotal=sourceKeyCount; ui.dictIndex=1; ui.dictTotal=1;
-      ui.partialPct = sourceKeyCount ? (int)((keyIndex + 1U) * 100U / sourceKeyCount) : 0; ui.totalPct=ui.partialPct;
+      ui.pct = sourceKeyCount ? (int)((keyIndex + 1U) * 100U / sourceKeyCount) : 0;
       for (size_t sector = 0; sector < totalSectors; ++sector) {
         const uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
         for (uint8_t kt = 0; kt < 2; ++kt) {
@@ -2869,9 +2861,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
       if(!slot){char nf[32];snprintf(nf,sizeof(nf),"S%u %c: not found",(unsigned)sector,kt?'B':'A');actionLog.addLine(nf,TFT_RED);}
     }
   }
-  ui.partialPct = 100;
-  if (_recoverChainActive && chainGlobalTotal) ui.totalPct = (int)((chainGlobalBase + sourceKeyCount) * 100U / chainGlobalTotal);
-  else ui.totalPct = 100;
+  ui.pct = 100;
   char summaryText[80];
   formatSummary(summaryText, sizeof(summaryText));
   char resultLine[40];
@@ -2881,7 +2871,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   char coverageLine[40];
   snprintf(coverageLine, sizeof(coverageLine), "%s", strchr(summaryText, '\n') ? strchr(summaryText, '\n') + 1 : "");
   actionLog.addLine(coverageLine, TFT_WHITE);
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
   if (recovered > 0) {
     _saveKeys();
     int n = Achievement.inc("nfc_dict_attack");

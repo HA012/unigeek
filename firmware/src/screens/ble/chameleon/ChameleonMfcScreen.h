@@ -122,10 +122,6 @@ private:
   char    _actionStatus[48] = {};
   char    _actionAttempt[48] = {};
   int     _actionPct = 0;
-  int     _actionTotalPct = 0;
-  uint32_t _actionKeyIndex = 0, _actionKeyTotal = 0;
-  uint8_t  _actionDictIndex = 1, _actionDictTotal = 1;
-  uint32_t _actionGlobalBase = 0, _actionGlobalTotal = 0;
   static void _actionStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Keys result view

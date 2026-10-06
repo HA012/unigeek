@@ -4391,13 +4391,20 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   // and green/red result history instead of a progress-only screen.
   LogView actionLog;
   actionLog.clear();
-  struct DictUiCtx { const char* status; const char* attempt; size_t keyIndex,keyTotal; int dictIndex,dictTotal,partialPct,totalPct; } ui = {"Starting...", "", 0,0,1,1,0,0};
+  struct DictUiCtx { const char* status; const char* attempt; int pct; } ui = {"Starting...", "", 0};
   auto statusCb = [](Sprite& sp, int barY, int width, void* userData) {
-    auto* ctx=static_cast<DictUiCtx*>(userData); char left[72],pct[8];
-    snprintf(left,sizeof(left),"%s (%u/%u)",ctx->attempt,(unsigned)ctx->keyIndex,(unsigned)ctx->keyTotal); snprintf(pct,sizeof(pct),"%d%%",ctx->partialPct);
-    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(left,2,barY); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY);
-    snprintf(left,sizeof(left),"%s (%d/%d)",ctx->status,ctx->dictIndex,ctx->dictTotal); snprintf(pct,sizeof(pct),"%d%%",ctx->totalPct);
-    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_WHITE); sp.drawString(left,2,barY+11); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY+11);
+    auto* ctx = static_cast<DictUiCtx*>(userData);
+    sp.setTextDatum(TL_DATUM);
+    sp.setTextColor(TFT_WHITE);
+    sp.drawString(ctx->status, 2, barY);
+    char pctBuf[8];
+    snprintf(pctBuf, sizeof(pctBuf), "%d%%", ctx->pct);
+    sp.setTextDatum(TR_DATUM);
+    sp.setTextColor(TFT_CYAN);
+    sp.drawString(pctBuf, width - 2, barY);
+    const int pctW = sp.textWidth(pctBuf);
+    sp.setTextColor(TFT_CYAN);
+    sp.drawString(ctx->attempt, width - pctW - 8, barY);
   };
   char liveStatus[80] = "Starting...";
   if (!_mfcRecoverChainActive) {
@@ -4406,35 +4413,23 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     else if (path == MfcKeyStore::kBuiltinExtendedId) snprintf(liveStatus, sizeof(liveStatus), "Extended");
     else { String label=path; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); if(label.endsWith(".txt")) label.remove(label.length()-4); snprintf(liveStatus,sizeof(liveStatus),"%s",label.c_str()); }
   }
-  size_t chainCounts[3]={0,0,0}, chainGlobalTotal=0, chainGlobalBase=0;
   if (_mfcRecoverChainActive) {
-    const char* sources[3]={MfcKeyStore::kBuiltinDefaultId,MfcKeyStore::kDiscoveredDictionary,MfcKeyStore::kBuiltinExtendedId};
-    for(int i=0;i<3;++i){chainCounts[i]=MfcKeyStore::dictionaryKeyCount(Uni.Storage,sources[i]);chainGlobalTotal+=chainCounts[i];}
-    for(int i=0;i<_mfcRecoverChainIndex;++i)chainGlobalBase+=chainCounts[i];
     static const char* const kStageNames[] = {"Default", "Discovered", "Extended"};
     Header header;
     header.render("Dictionary Attack");
     StatusBar::refresh();
     snprintf(liveStatus, sizeof(liveStatus), "%s", kStageNames[_mfcRecoverChainIndex]);
-    ui.dictIndex=_mfcRecoverChainIndex+1; ui.dictTotal=3;
   }
   ui.status = liveStatus;
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   // Standalone: verify only persisted keys, quickly, in this same LogView.
   if (!_mfcRecoverChainActive) {
-    size_t totalSlots = 0;
-    for (size_t sec = 0; sec < sectors; ++sec) {
-      if (savedA[sec].length()) ++totalSlots;
-      if (savedB[sec].length()) ++totalSlots;
-    }
-    size_t checked = 0;
     for (size_t sec = 0; sec < sectors; ++sec) {
       const uint8_t trailer = (uint8_t)(sectorFirstBlock(sec) + sectorBlockCount(sec) - 1U);
       for (uint8_t kt = 0; kt < 2; ++kt) {
         String& slot = kt ? savedB[sec] : savedA[sec];
         if (!slot.length()) continue;
-        ++checked;
         uint8_t key[6];
         if (!MfcKeyStore::parseDictionaryKey(slot, key)) { slot = ""; continue; }
         Uni.update();
@@ -4449,8 +4444,8 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   }
 
   if (!_mfcRecoverChainActive) {
-    ui.partialPct=ui.totalPct=0;
-    actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+    ui.pct=0;
+    actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
   }
 
   int recovered = 0;
@@ -4459,16 +4454,14 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   if (_mfcRecoverChainActive) {
     size_t currentKey=0;
     MfcKeyStore::forEachDictionaryKey(Uni.Storage,path,[&](const uint8_t key[6],size_t,size_t){
-      ++currentKey; ui.keyIndex=currentKey; ui.keyTotal=chainKeyCount;
-      ui.partialPct=chainKeyCount?(int)(currentKey*100U/chainKeyCount):0;
-      ui.totalPct=chainGlobalTotal?(int)((chainGlobalBase+currentKey)*100U/chainGlobalTotal):ui.partialPct;
+      ++currentKey; ui.pct=chainKeyCount?(int)(currentKey*100U/chainKeyCount):0;
       for(size_t sec=0;sec<sectors && !objectiveMet;++sec){
         const uint8_t trailer=(uint8_t)(sectorFirstBlock(sec)+sectorBlockCount(sec)-1U);
         for(uint8_t kt=0;kt<2;++kt){
           String& slot=kt?savedB[sec]:savedA[sec]; if(slot.length()) continue;
           Uni.update();
           if(Uni.Nav&&Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){dev.deactivate();_mfcRecoverChainActive=false;_mfcRecoverTagUidLen=0;_resumeMfcReadAfterDict=false;_mfcRecoveryNext=false;_mfcReadAfterDict=false;ShowStatusAction::show("Cancelled",1000);_showMfcTagMenu();objectiveMet=true;return false;}
-          char current[48]; snprintf(current,sizeof(current),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); ui.attempt=current; actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui,2);
+          char current[48]; snprintf(current,sizeof(current),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); ui.attempt=current; actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui);
           if(!dev.hasActiveTag()){ST25R3916Backend::ScanResult current;if(!dev.scan(ST25R3916Backend::TECH_A,current,500,true)||!sameTag(tag,current))continue;}
           const bool ok=dev.mifareClassicAuthenticate(trailer,key,kt==1);
           char line[48];snprintf(line,sizeof(line),"S%u %c: %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);actionLog.addLine(line,ok?TFT_GREEN:TFT_RED);
@@ -4482,14 +4475,13 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   } else {
     bool cancelled=false;
     MfcKeyStore::forEachDictionaryKey(Uni.Storage,path,[&](const uint8_t key[6],size_t keyIndex,size_t){
-      ui.keyIndex=keyIndex+1U; ui.keyTotal=sourceKeyCount; ui.dictIndex=1; ui.dictTotal=1;
-      ui.partialPct=sourceKeyCount?(int)((keyIndex+1U)*100U/sourceKeyCount):0; ui.totalPct=ui.partialPct;
+      ui.pct=sourceKeyCount?(int)((keyIndex+1U)*100U/sourceKeyCount):0;
       for(size_t sec=0;sec<sectors;++sec){
         const uint8_t trailer=(uint8_t)(sectorFirstBlock(sec)+sectorBlockCount(sec)-1U);
         for(uint8_t kt=0;kt<2;++kt){
           String& slot=kt?savedB[sec]:savedA[sec]; if(slot.length()) continue;
           Uni.update(); if(Uni.Nav&&Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){cancelled=true;return false;}
-          char current[48]; snprintf(current,sizeof(current),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); ui.attempt=current; actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui,2);
+          char current[48]; snprintf(current,sizeof(current),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); ui.attempt=current; actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui);
           if(!dev.hasActiveTag()){ST25R3916Backend::ScanResult current;if(!dev.scan(ST25R3916Backend::TECH_A,current,500,true)||!sameTag(tag,current))continue;}
           const bool ok=dev.mifareClassicAuthenticate(trailer,key,kt==1);
           char line[48];snprintf(line,sizeof(line),"S%u %c: %02X%02X%02X%02X%02X%02X",(unsigned)sec,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);actionLog.addLine(line,ok?TFT_GREEN:TFT_RED);
@@ -4515,9 +4507,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     MfcKeyStore::updateDiscoveredDictionary(Uni.Storage, out);
   }
 
-  ui.partialPct=100;
-  if (_mfcRecoverChainActive && chainGlobalTotal) ui.totalPct=(int)((chainGlobalBase+sourceKeyCount)*100U/chainGlobalTotal);
-  else ui.totalPct=100;
+  ui.pct=100;
   char summaryText[80];
   formatSummary(summaryText, sizeof(summaryText));
   char resultLine[40];
@@ -4527,7 +4517,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   char coverageLine[40];
   snprintf(coverageLine, sizeof(coverageLine), "%s", strchr(summaryText, '\n') ? strchr(summaryText, '\n') + 1 : "");
   actionLog.addLine(coverageLine, TFT_WHITE);
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   char msg[80];
   formatSummary(msg, sizeof(msg));
