@@ -6,7 +6,6 @@
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"
-#include "ui/views/LogView.h"
 #include "utils/nfc/NFCUtility.h"
 #include "utils/nfc/MagicCard.h"
 
@@ -209,8 +208,9 @@ private:
     {"Erase NDEF"},
   };
 
-  LogView _magicLog;
-  bool _magicDetectDone = false;
+  enum MagicUiPhase : uint8_t { MAGIC_WAITING, MAGIC_SCANNING, MAGIC_RESULT };
+  MagicUiPhase _magicUiPhase = MAGIC_WAITING;
+  String _magicResult;
 
   ListItem _ndefWriteItems[6] = {
     {"Text"},
@@ -397,7 +397,7 @@ private:
   bool _classicAuthSector(uint8_t sector, const uint8_t key[6]);
   bool _classicReadNdefArea(const uint8_t* sectors, size_t sectorCount,
                             uint8_t*& area, size_t& areaLen);
-  MagicCardType _detectMagicType();
+  MagicCardType _detectMagicType(void (*progress)(uint8_t) = nullptr);
   bool _writeMagicUid(MagicCardType type, const uint8_t* sourceUid,
                       uint8_t sourceUidLen, const uint8_t block0[16]);
   bool _resetAndReselect();

@@ -1,6 +1,5 @@
 #pragma once
 #include "ui/templates/BaseScreen.h"
-#include "ui/views/LogView.h"
 
 class ChameleonMagicScreen : public BaseScreen {
 public:
@@ -12,10 +11,12 @@ public:
   void onRender() override;
 
 private:
-  bool    _running   = false;
-  bool    _needsDraw = true;
-  bool    _done      = false;
-  LogView _log;
+  enum Phase : uint8_t { WAITING, SCANNING, RESULT };
+  Phase  _phase     = WAITING;
+  bool   _running   = false;
+  bool   _started   = false;
+  bool   _needsDraw = true;
+  String _result;
 
   void _run();
 };

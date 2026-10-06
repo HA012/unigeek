@@ -3,7 +3,6 @@
 #include "ui/templates/ListScreen.h"
 #include "ui/views/ScrollListView.h"
 #include "ui/views/BrowseFileView.h"
-#include "ui/views/LogView.h"
 #include "utils/nfc/MagicCard.h"
 #include "utils/nfc/MfcRecoverySummary.h"
 
@@ -262,8 +261,9 @@ private:
 
   static constexpr uint8_t kMaxRows = 96;
   ScrollListView _scrollView;
-  LogView _magicLog;
-  bool _magicDetectDone = false;
+  enum MagicUiPhase : uint8_t { MAGIC_WAITING, MAGIC_SCANNING, MAGIC_RESULT };
+  MagicUiPhase _magicUiPhase = MAGIC_WAITING;
+  String _magicResult;
   ScrollListView::Row _rows[kMaxRows];
   String _rowLabels[kMaxRows];
   String _rowValues[kMaxRows];
@@ -380,7 +380,7 @@ private:
   void _startMfcRecoverKeys();
   void _detectMagic();
   void _runDetectMagic();
-  MagicCardType _detectMagicType(class ST25R3916Backend& dev);
+  MagicCardType _detectMagicType(class ST25R3916Backend& dev, void (*progress)(uint8_t) = nullptr);
   bool _writeMagicUid(class ST25R3916Backend& dev, MagicCardType type, const uint8_t* uid, uint8_t uidLen, const uint8_t block0[16]);
   void _showMfuMenu();
   void _showMfuTagMenu();

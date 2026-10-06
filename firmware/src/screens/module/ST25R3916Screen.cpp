@@ -535,8 +535,9 @@ void ST25R3916Screen::onUpdate() {
   if (_state == STATE_MAGIC_DETECT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) _showMfcTagMenu();
-      else if (dir == INavigation::DIR_PRESS && !_magicDetectDone) _runDetectMagic();
+      if (dir == INavigation::DIR_BACK ||
+          (dir == INavigation::DIR_PRESS && _magicUiPhase == MAGIC_RESULT))
+        _showMfcTagMenu();
     }
     return;
   }
@@ -620,7 +621,16 @@ void ST25R3916Screen::onUpdate() {
 
 void ST25R3916Screen::onRender() {
   if (_state == STATE_MAGIC_DETECT) {
-    _magicLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH());
+    if (_magicUiPhase == MAGIC_WAITING) {
+      TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+    } else if (_magicUiPhase == MAGIC_RESULT) {
+      auto& lcd = Uni.Lcd;
+      lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+      lcd.setTextDatum(MC_DATUM);
+      lcd.setTextSize(1);
+      lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+      lcd.drawString(_magicResult, bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+    }
     return;
   }
   if (_state == STATE_EMULATING) {
@@ -4558,9 +4568,12 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
 #endif
 }
 
-MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
+MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev, void (*progress)(uint8_t)) {
+  auto report = [&](uint8_t percent) { if (progress) progress(percent); };
+  report(10);
 #if defined(DEVICE_HAS_ST25R3916)
   ST25R3916Backend::ScanResult tag;
+  report(20);
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 900, true) || !isMifareClassic(tag.sak)) {
     dev.deactivate();
     return MagicCardType::NONE;
@@ -4572,12 +4585,15 @@ MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
     uint8_t rx[20] = {};
     size_t len = 0;
     if (dev.nfcATransceive(cmd, sizeof(cmd), rx, sizeof(rx), len, 120) && len >= 16) {
+      report(100);
       dev.deactivate();
       return MagicCardType::GEN3;
     }
   }
 
+  report(45);
   for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+    report((uint8_t)(55 + attempt * 20));
     dev.deactivate();
     delay(10);
     if (!dev.scan(ST25R3916Backend::TECH_A, tag, 800, true)) continue;
@@ -4593,6 +4609,7 @@ MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
     size_t bits = 0;
     const bool wakeOk = dev.nfcATransceiveBits(&wake, 7, ack, 4, bits, 250) &&
                         bits >= 4 && (ack[0] & 0x0F) == 0x0A;
+    report((uint8_t)(65 + attempt * 20));
     if (!wakeOk) continue;
 
     uint8_t unlock = 0x43;
@@ -4601,10 +4618,12 @@ MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
     const bool unlockOk = dev.nfcATransceiveBits(&unlock, 8, ack, 4, bits, 250) &&
                           bits >= 4 && (ack[0] & 0x0F) == 0x0A;
     if (unlockOk) {
+      report(100);
       dev.deactivate();
       return MagicCardType::GEN1A;
     }
   }
+  report(100);
   dev.deactivate();
 #endif
   return MagicCardType::NONE;
@@ -4612,43 +4631,52 @@ MagicCardType ST25R3916Screen::_detectMagicType(ST25R3916Backend& dev) {
 
 void ST25R3916Screen::_detectMagic() {
   _state = STATE_MAGIC_DETECT;
-  _magicDetectDone = false;
-  _magicLog.clear();
-  _magicLog.addLine("Detect Magic", TFT_CYAN);
-  _magicLog.addLine("[Press] Start", TFT_DARKGREY);
+  _magicUiPhase = MAGIC_WAITING;
+  _magicResult = "";
   render();
+  _runDetectMagic();
 }
 
 void ST25R3916Screen::_runDetectMagic() {
 #if defined(DEVICE_HAS_ST25R3916)
-  _magicLog.addLine("Scanning tag...", TFT_WHITE);
-  render();
   ST25R3916Backend dev;
   if (!st25Begin(dev, _interface)) {
-    _magicLog.addLine("ST25R3916 not detected", TFT_DARKGREY);
-    _magicDetectDone = true; render(); return;
+    _magicResult = "Tag not detected";
+    _magicUiPhase = MAGIC_RESULT;
+    render();
+    return;
   }
   ST25R3916Backend::ScanResult tag;
-  if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, false)) {
-    _magicLog.addLine("Tag not detected", TFT_DARKGREY);
-    _magicDetectDone = true; render(); return;
+  const auto waitResult = st25WaitForTag(dev, ST25R3916Backend::TECH_A, tag, 5000, true);
+  if (waitResult != St25WaitResult::FOUND) {
+    if (waitResult == St25WaitResult::CANCELLED) {
+      _showMfcTagMenu();
+      return;
+    }
+    _magicResult = "Tag not detected";
+    _magicUiPhase = MAGIC_RESULT;
+    render();
+    return;
   }
   if (!isMifareClassic(tag.sak)) {
-    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
-    _magicDetectDone = true; render(); return;
+    _magicResult = "Magic not detected";
+    _magicUiPhase = MAGIC_RESULT;
+    render();
+    return;
   }
-  _magicLog.addLine("Checking Magic type...", TFT_WHITE);
-  render();
-  MagicCardType mt = _detectMagicType(dev);
-  _magicLog.addLine("Magic type:", TFT_CYAN);
-  _magicLog.addLine(mt == MagicCardType::GEN1A ? "Gen1A" :
-                    mt == MagicCardType::GEN3 ? "Gen3" : "None",
-                    mt == MagicCardType::NONE ? TFT_DARKGREY : TFT_GREEN);
-  _magicDetectDone = true;
+
+  _magicUiPhase = MAGIC_SCANNING;
+  ProgressView::init();
+  ProgressView::progress("Scanning...", 0);
+  const MagicCardType mt = _detectMagicType(dev, [](uint8_t p) { ProgressView::progress("Scanning...", p); });
+  ProgressView::finish();
+  _magicResult = mt == MagicCardType::GEN1A ? "Gen1A" :
+                 mt == MagicCardType::GEN3 ? "Gen3" : "Magic not detected";
+  _magicUiPhase = MAGIC_RESULT;
   render();
 #else
-  _magicLog.addLine("ST25R3916 not supported", TFT_DARKGREY);
-  _magicDetectDone = true;
+  _magicResult = "Tag not detected";
+  _magicUiPhase = MAGIC_RESULT;
   render();
 #endif
 }

@@ -416,7 +416,9 @@ bool ChameleonClient::scan14A(uint8_t uid[7], uint8_t* uidLen,
   return true;
 }
 
-MagicCardType ChameleonClient::detectMagicType() {
+MagicCardType ChameleonClient::detectMagicType(void (*progress)(uint8_t)) {
+  auto report = [&](uint8_t percent) { if (progress) progress(percent); };
+  report(10);
   uint8_t previousMode = 0;
   const bool restoreMode = getMode(&previousMode);
   setMode(1);
@@ -431,19 +433,23 @@ MagicCardType ChameleonClient::detectMagicType() {
     return scan14A(uid, &uidLen, atqa, &sak);
   };
 
-  if (!reselect()) return finish(MagicCardType::NONE);
+  report(20);
+  if (!reselect()) { report(100); return finish(MagicCardType::NONE); }
 
   // Gen3 / APDU cards accept a direct MIFARE READ of block 0 without prior
   // authentication. Probe this first: a Gen1A unlock would also make block 0
   // directly readable and could otherwise create a false Gen3 positive.
   {
+    report(35);
     uint8_t cmd[2] = {0x30, 0x00};
     uint8_t resp[32] = {};
     uint16_t respLen = 0;
     const bool ok = hf14ARaw(128 | 64 | 32 | 16 | 4, 500, 16,
                              cmd, sizeof(cmd), resp, &respLen, sizeof(resp));
     if (ok && respLen >= 18) {
+      report(90);
       reselect();
+      report(100);
       return finish(MagicCardType::GEN3);
     }
   }
@@ -451,7 +457,8 @@ MagicCardType ChameleonClient::detectMagicType() {
   // Gen1A 0x40/0x43 must be entered from HALT. Mirror the sequence used by
   // writeMagicUid() and by the PN532 backend; probing from the ACTIVE state
   // can make a genuine Magic Gen1A tag look like a normal card.
-  if (!reselect()) return finish(MagicCardType::NONE);
+  report(50);
+  if (!reselect()) { report(100); return finish(MagicCardType::NONE); }
   bool gen1a = false;
   {
     uint8_t resp[16] = {};
@@ -463,10 +470,12 @@ MagicCardType ChameleonClient::detectMagicType() {
     (void)hf14ARaw(64 | 32 | 8, 200, 16, halt, sizeof(halt),
                    resp, &haltLen, sizeof(resp), &haltSt);
 
+    report(65);
     uint8_t wake = 0x40;
     const bool ack1 = hf14ARaw(128 | 64 | 8, 200, 7, &wake, 1,
                                resp, &respLen, sizeof(resp)) &&
                       respLen >= 1 && resp[0] == 0x0A;
+    report(80);
     if (ack1) {
       uint8_t unlock = 0x43;
       respLen = 0;
@@ -476,7 +485,9 @@ MagicCardType ChameleonClient::detectMagicType() {
     }
   }
 
+  report(90);
   reselect();
+  report(100);
   return finish(gen1a ? MagicCardType::GEN1A : MagicCardType::NONE);
 }
 

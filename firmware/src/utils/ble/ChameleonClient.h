@@ -154,7 +154,7 @@ public:
   bool scan14A(uint8_t uid[7], uint8_t* uidLen, uint8_t atqa[2], uint8_t* sak);
   // Read-only Magic MIFARE Classic classification. Leaves the target in a
   // freshly selected state after probes that temporarily enter a backdoor.
-  MagicCardType detectMagicType();
+  MagicCardType detectMagicType(void (*progress)(uint8_t) = nullptr);
   struct AntiCollData {
     uint8_t uid[7] = {};
     uint8_t uidLen = 0;

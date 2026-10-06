@@ -602,10 +602,9 @@ void PN532I2cScreen::onUpdate() {
   if (_state == STATE_MAGIC_DETECT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) {
+      if (dir == INavigation::DIR_BACK ||
+          (dir == INavigation::DIR_PRESS && _magicUiPhase == MAGIC_RESULT)) {
         _goMifareTag();
-      } else if (dir == INavigation::DIR_PRESS && !_magicDetectDone) {
-        _doDetectMagic();
       }
     }
     return;
@@ -763,7 +762,16 @@ void PN532I2cScreen::onUpdate() {
 
 void PN532I2cScreen::onRender() {
   if (_state == STATE_MAGIC_DETECT) {
-    _magicLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH());
+    if (_magicUiPhase == MAGIC_WAITING) {
+      renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+    } else if (_magicUiPhase == MAGIC_RESULT) {
+      auto& lcd = Uni.Lcd;
+      lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+      lcd.setTextDatum(MC_DATUM);
+      lcd.setTextSize(1);
+      lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+      lcd.drawString(_magicResult, bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+    }
     return;
   }
   if (_state == STATE_DEVICE_INFO || _state == STATE_SCAN_RESULT ||
@@ -1422,11 +1430,10 @@ void PN532I2cScreen::_goNdefParent() {
 
 void PN532I2cScreen::_goDetectMagic() {
   _state = STATE_MAGIC_DETECT;
-  _magicDetectDone = false;
-  _magicLog.clear();
-  _magicLog.addLine("Detect Magic", TFT_CYAN);
-  _magicLog.addLine("[Press] Start", TFT_DARKGREY);
+  _magicUiPhase = MAGIC_WAITING;
+  _magicResult = "";
   render();
+  _doDetectMagic();
 }
 
 // ── display helpers ────────────────────────────────────────────────────────
@@ -5096,22 +5103,28 @@ bool PN532I2cScreen::_resetAndReselect() {
   return false;
 }
 
-MagicCardType PN532I2cScreen::_detectMagicType() {
+MagicCardType PN532I2cScreen::_detectMagicType(void (*progress)(uint8_t)) {
+  auto report = [&](uint8_t percent) { if (progress) progress(percent); };
+  report(10);
   // Probe Gen3 first. Gen3 / APDU cards accept a direct READ of block 0
   // without MIFARE authentication; a prior Gen1A unlock would make the same
   // read possible and could cause a false Gen3 positive.
   {
+    report(20);
     static const uint8_t readBlock0[] = {0x30, 0x00};
     uint8_t resp[20] = {};
     uint8_t rlen = sizeof(resp);
     if (_nfcDataExch(_nfc, _wire, readBlock0, sizeof(readBlock0), resp, rlen, 500) &&
         rlen >= 16) {
+      report(90);
       _resetAndReselect();
+      report(100);
       return MagicCardType::GEN3;
     }
   }
 
-  if (!_resetAndReselect()) return MagicCardType::NONE;
+  report(40);
+  if (!_resetAndReselect()) { report(100); return MagicCardType::NONE; }
 
   // Gen1A backdoor sequence. After normal ISO14443A activation the PICC is
   // ACTIVE, but the 0x40(7-bit) wakeup is expected from HALT. Put the card in
@@ -5125,6 +5138,7 @@ MagicCardType PN532I2cScreen::_detectMagicType() {
       _nfcWriteReg(_nfc, _wire, 0x6302, 0x00) && // TxMode: CRC off, 106A
       _nfcWriteReg(_nfc, _wire, 0x6303, 0x00);   // RxMode: CRC off, 106A
 
+  report(55);
   if (rawMode) {
     // HLTA has CRC_A 0x57CD. A halted card intentionally sends no response;
     // _nfcCommThru still consumes the PN532 response/status, so ignore its
@@ -5141,6 +5155,7 @@ MagicCardType PN532I2cScreen::_detectMagicType() {
 
       _nfcWriteReg(_nfc, _wire, 0x633D, 0x00);
 
+      report(75);
       if (ack1) {
         static const uint8_t unlock[] = {0x43};
         rlen = sizeof(resp);
@@ -5155,7 +5170,9 @@ MagicCardType PN532I2cScreen::_detectMagicType() {
   _nfcWriteReg(_nfc, _wire, 0x633D, 0x00);
   _nfcWriteReg(_nfc, _wire, 0x6302, 0x80);
   _nfcWriteReg(_nfc, _wire, 0x6303, 0x80);
+  report(90);
   _resetAndReselect();
+  report(100);
   return gen1a ? MagicCardType::GEN1A : MagicCardType::NONE;
 }
 
@@ -5277,11 +5294,7 @@ bool PN532I2cScreen::_writeMagicUid(MagicCardType type, const uint8_t* sourceUid
 }
 
 void PN532I2cScreen::_doDetectMagic() {
-  _magicLog.addLine("Scanning tag...", TFT_WHITE);
-  render();
-
-  uint8_t uid[7] = {};
-  uint8_t uidLen = 0;
+  uint8_t uid[7]; uint8_t uidLen = 0;
   uint32_t start = millis();
   bool ok = false;
   while (millis() - start < 5000) {
@@ -5299,34 +5312,33 @@ void PN532I2cScreen::_doDetectMagic() {
   }
 
   if (!ok) {
-    _magicLog.addLine("Tag not detected", TFT_DARKGREY);
-    _magicDetectDone = true;
+    _magicResult = "Tag not detected";
+    _magicUiPhase = MAGIC_RESULT;
     render();
     return;
   }
 
   const uint8_t sak = pn532_packetbuffer[11];
   if (sak != 0x09 && sak != 0x08 && sak != 0x18) {
-    _magicLog.addLine("Tag not supported", TFT_DARKGREY);
-    _magicDetectDone = true;
+    _magicResult = "Magic not detected";
+    _magicUiPhase = MAGIC_RESULT;
     render();
     return;
   }
 
-  _magicLog.addLine("Checking Magic type...", TFT_WHITE);
-  render();
+  _magicUiPhase = MAGIC_SCANNING;
+  ProgressView::init();
+  ProgressView::progress("Scanning...", 0);
+  const MagicCardType magic = _detectMagicType([](uint8_t p) { ProgressView::progress("Scanning...", p); });
+  ProgressView::finish();
 
-  const MagicCardType magic = _detectMagicType();
-  _magicLog.addLine("Magic type:", TFT_CYAN);
-  _magicLog.addLine(magicCardTypeName(magic),
-                    magic == MagicCardType::NONE ? TFT_DARKGREY : TFT_GREEN);
-
+  _magicResult = magic == MagicCardType::GEN1A ? "Gen1A" :
+                 magic == MagicCardType::GEN3 ? "Gen3" : "Magic not detected";
   if (magic != MagicCardType::NONE) {
     int n = Achievement.inc("pn532_magic_detect");
     if (n == 1) Achievement.unlock("pn532_magic_detect");
   }
-
-  _magicDetectDone = true;
+  _magicUiPhase = MAGIC_RESULT;
   render();
 }
 
