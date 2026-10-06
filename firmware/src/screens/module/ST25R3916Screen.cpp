@@ -4277,8 +4277,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
         _mfcRecoverChainActive = false;
         _resumeMfcReadAfterDict = false;
         char finalMsg[40];
-        if (_mfcRecoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_mfcRecoverChainNewKeys, _mfcRecoverChainNewKeys == 1 ? "" : "s");
+        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_mfcRecoverChainNewKeys);
         ShowStatusAction::show(finalMsg, 1400);
         _mfcReadAfterDict = true;
       }
@@ -4453,15 +4452,12 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
   }
 
   ui.pct = 100;
-  snprintf(liveStatus, sizeof(liveStatus), recovered > 0 ? "Keys updated: %d new" : "No new keys found", recovered);
+  snprintf(liveStatus, sizeof(liveStatus), "%d keys recovered", recovered);
   actionLog.addLine(liveStatus, recovered > 0 ? TFT_GREEN : TFT_RED);
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   char msg[48];
-  if (recovered > 0)
-    snprintf(msg, sizeof(msg), "%d new key%s saved to Known Keys", recovered, recovered == 1 ? "" : "s");
-  else
-    snprintf(msg, sizeof(msg), "No new keys found");
+  snprintf(msg, sizeof(msg), "%d keys recovered", recovered);
   if (!_mfcRecoverChainActive) ShowStatusAction::show(msg, 1600);
   if (_mfcRecoverChainActive) {
     _mfcRecoverChainNewKeys += recovered;
@@ -4475,8 +4471,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
       _mfcRecoverChainActive = false;
       _resumeMfcReadAfterDict = false;
       char finalMsg[40];
-      if (_mfcRecoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-      else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_mfcRecoverChainNewKeys, _mfcRecoverChainNewKeys == 1 ? "" : "s");
+      snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_mfcRecoverChainNewKeys);
       ShowStatusAction::show(finalMsg, 1400);
       // Always return through Read Tag; incomplete coverage becomes a partial
       // read rather than reopening the recovery prompt.

@@ -430,10 +430,9 @@ void ChameleonMfcScreen::_finishRecover(bool success, const char* status,
   const bool resumeRead = _resumeReadAfterAttack;
   _resumeReadAfterAttack = false;
   char recoveredMsg[40];
-  if (resumeRead && success) {
+  if (success) {
     const uint16_t newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
-    if (newlyRecovered == 0) snprintf(recoveredMsg, sizeof(recoveredMsg), "No new keys found");
-    else snprintf(recoveredMsg, sizeof(recoveredMsg), "%u key%s recovered", (unsigned)newlyRecovered, newlyRecovered == 1 ? "" : "s");
+    snprintf(recoveredMsg, sizeof(recoveredMsg), "%u keys recovered", (unsigned)newlyRecovered);
     status = recoveredMsg;
   }
   if (status && status[0]) ShowStatusAction::show(status, success ? 1400 : 1800);
@@ -532,8 +531,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (_resumeReadAfterAttack) {
       const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
       char finalMsg[40];
-      if (newlyRecovered == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-      else snprintf(finalMsg, sizeof(finalMsg), "%d key%s recovered", newlyRecovered, newlyRecovered == 1 ? "" : "s");
+      snprintf(finalMsg, sizeof(finalMsg), "%d keys recovered", newlyRecovered);
       _resumeReadAfterAttack = false;
       ShowStatusAction::show(finalMsg, 1400);
       _callDump();
@@ -550,8 +548,7 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (_resumeReadAfterAttack) {
       const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
       char finalMsg[40];
-      if (newlyRecovered == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-      else snprintf(finalMsg, sizeof(finalMsg), "%d key%s recovered", newlyRecovered, newlyRecovered == 1 ? "" : "s");
+      snprintf(finalMsg, sizeof(finalMsg), "%d keys recovered", newlyRecovered);
       _resumeReadAfterAttack = false;
       ShowStatusAction::show(finalMsg, 1400);
       _callDump();
@@ -1498,10 +1495,7 @@ void ChameleonMfcScreen::_runDictAttack() {
   const int newFound = _dictNewFound;
 
   char msg[64];
-  if (newFound > 0)
-    snprintf(msg, sizeof(msg), "Keys updated: %d new", newFound);
-  else
-    snprintf(msg, sizeof(msg), "No new keys found");
+  snprintf(msg, sizeof(msg), "%d keys recovered", newFound);
   strncpy(_actionStatus, msg, sizeof(_actionStatus) - 1);
   _actionPct = 100;
   _actionLog.addLine(msg, newFound > 0 ? TFT_GREEN : TFT_RED);

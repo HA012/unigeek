@@ -2670,8 +2670,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
       else {
         _recoverChainActive = false;
         char finalMsg[40];
-        if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
         ShowStatusAction::show(finalMsg, 1400);
         _readAfterRecovery = true;
       }
@@ -2699,8 +2698,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
       else {
         _recoverChainActive = false;
         char finalMsg[40];
-        if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+        snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
         ShowStatusAction::show(finalMsg, 1400);
         _readAfterRecovery = true;
       }
@@ -2814,7 +2812,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   }
 
   ui.pct = 100;
-  snprintf(liveStatus, sizeof(liveStatus), recovered > 0 ? "Keys updated: %d new" : "No new keys found", recovered);
+  snprintf(liveStatus, sizeof(liveStatus), "%d keys recovered", recovered);
   actionLog.addLine(liveStatus, recovered > 0 ? TFT_GREEN : TFT_RED);
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
   if (recovered > 0) {
@@ -2823,8 +2821,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     if (n == 1) Achievement.unlock("nfc_dict_attack");
   }
   char msg[48];
-  if (recovered > 0) snprintf(msg, sizeof(msg), "%d new key%s saved to Known Keys", recovered, recovered == 1 ? "" : "s");
-  else snprintf(msg, sizeof(msg), "No new keys found");
+  snprintf(msg, sizeof(msg), "%d keys recovered", recovered);
   if (!_recoverChainActive) ShowStatusAction::show(msg, 1600);
   if (_recoverChainActive) {
     _recoverChainNewKeys += recovered;
@@ -2835,8 +2832,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     } else {
       _recoverChainActive = false;
       char finalMsg[40];
-      if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
-      else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+      snprintf(finalMsg, sizeof(finalMsg), "%u keys recovered", (unsigned)_recoverChainNewKeys);
       ShowStatusAction::show(finalMsg, 1400);
       // Always return through Read Tag, even with incomplete coverage, so the
       // user still gets the best partial dump available.
