@@ -233,7 +233,11 @@ private:
   bool     _dumpComplete = false;
   size_t   _dumpReadBlocks = 0;
   bool     _resumeReadAfterDict = false;
-  bool     _pendingDumpAfterDict = false;
+  bool     _recoverChainActive = false;
+  uint8_t  _recoverChainIndex = 0;
+  uint16_t _recoverChainNewKeys = 0;
+  bool     _pendingRecoveryStep = false;
+  bool     _readAfterRecovery = false;
   String   _dumpPickDir;
   String   _uidPickDir;
   uint8_t  _uidWriteSource[7] = {};
@@ -344,6 +348,8 @@ private:
   void _doShowKeys();
   void _doDictionaryPicker();
   void _doDictionaryAttackWithFile(uint8_t fileIndex);
+  void _doDictionaryAttackWithPath(const String& filePath);
+  void _startRecoverKeys();
   void _doUltralightReadTag();
   void _doUltralightWriteTag();
   void _doUltralightEraseTag();

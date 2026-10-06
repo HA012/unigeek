@@ -69,7 +69,8 @@ private:
   StartAction _startAction = ACTION_READ_TAG;
   bool _resumeReadAfterAttack = false;
   bool  _running = false;
-  char _chainStage[24] = {};
+  char _chainStage[32] = {};
+  int  _recoverStartCount = 0;
   int  _dictNewFound = 0;
 
   // Card info

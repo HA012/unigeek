@@ -547,12 +547,23 @@ void PN532I2cScreen::onInit() {
 }
 
 void PN532I2cScreen::onUpdate() {
-  // Resume Read Tag only after the Dictionary Attack frame has returned.
-  // _doDictionaryAttackWithFile() keeps sizeable local buffers on the stack;
-  // starting the dump synchronously there needlessly stacks both operations.
-  if (_pendingDumpAfterDict) {
-    _pendingDumpAfterDict = false;
-    _doDumpMemory();
+  // Run automatic Recover Keys one dictionary at a time, after the previous
+  // attack frame has unwound. This keeps the large dictionary buffers off the
+  // stack before the next stage (or the resumed Read Tag) starts.
+  if (_pendingRecoveryStep) {
+    _pendingRecoveryStep = false;
+    static const char* const kRecoveryDicts[] = {
+      "/unigeek/nfc/dictionaries/discovered.txt",
+      "/unigeek/nfc/dictionaries/extended.txt",
+    };
+    if (_recoverChainIndex < 2) {
+      _doDictionaryAttackWithPath(kRecoveryDicts[_recoverChainIndex]);
+    }
+    return;
+  }
+  if (_readAfterRecovery) {
+    _readAfterRecovery = false;
+    _doReadTag();
     return;
   }
   if (_state == STATE_SCAN_14A) {
@@ -2252,12 +2263,14 @@ bool PN532I2cScreen::_hasReadableKeyForEverySector() const {
 }
 
 void PN532I2cScreen::_doReadTag() {
+  const bool resumedAfterRecovery = _resumeReadAfterDict;
+  _resumeReadAfterDict = false;
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
   if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
-  if (!_hasReadableKeyForEverySector()) {
+  if (!_hasReadableKeyForEverySector() && !resumedAfterRecovery) {
     static const InputSelectAction::Option opts[] = {
       {"Recover Keys", "dict"},
       {"Partial Read", "partial"},
@@ -2266,8 +2279,7 @@ void PN532I2cScreen::_doReadTag() {
     render();  // Clear the popup before opening picker/progress UI.
     if (!r) { _goMifareTag(); return; }
     if (strcmp(r, "dict") == 0) {
-      _resumeReadAfterDict = true;
-      _doDictionaryPicker();
+      _startRecoverKeys();
       return;
     }
   }
@@ -2636,9 +2648,38 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
     _doDictionaryPicker();
     return;
   }
-  String filePath = e.path;
+  _doDictionaryAttackWithPath(e.path);
+}
+
+void PN532I2cScreen::_startRecoverKeys() {
+  _resumeReadAfterDict = true;
+  _recoverChainActive = true;
+  _recoverChainIndex = 0;
+  _recoverChainNewKeys = 0;
+  _pendingRecoveryStep = true;
+}
+
+void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   String content = Uni.Storage->readFile(filePath.c_str());
-  if (content.length() == 0) { ShowStatusAction::show("Empty file"); return; }
+  // discovered.txt is created lazily; a missing/empty stage is simply skipped
+  // by the automatic chain. Standalone Dictionary Attack keeps its picker UX.
+  if (content.length() == 0) {
+    if (_recoverChainActive) {
+      ++_recoverChainIndex;
+      if (_recoverChainIndex < 2) _pendingRecoveryStep = true;
+      else {
+        _recoverChainActive = false;
+        char finalMsg[40];
+        if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+        ShowStatusAction::show(finalMsg, 1400);
+        _readAfterRecovery = true;
+      }
+      return;
+    }
+    ShowStatusAction::show("Empty file");
+    return;
+  }
 
   static constexpr uint8_t MAX_KEYS = 128;
   uint8_t keys[MAX_KEYS][6];
@@ -2651,13 +2692,40 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
     if (_parseHexKeyI2c(line, keys[keyCount])) keyCount++;
     start = nl + 1;
   }
-  if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
+  if (keyCount == 0) {
+    if (_recoverChainActive) {
+      ++_recoverChainIndex;
+      if (_recoverChainIndex < 2) _pendingRecoveryStep = true;
+      else {
+        _recoverChainActive = false;
+        char finalMsg[40];
+        if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+        ShowStatusAction::show(finalMsg, 1400);
+        _readAfterRecovery = true;
+      }
+      return;
+    }
+    ShowStatusAction::show("No valid keys");
+    return;
+  }
 
   auto dims = _mfDims(_sak);
-  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
+  if (dims.first == 0) {
+    if (_recoverChainActive) {
+      _recoverChainActive = false;
+      _resumeReadAfterDict = false;
+      _pendingRecoveryStep = false;
+      _readAfterRecovery = false;
+    }
+    ShowStatusAction::show("Tag not supported");
+    _goMifare();
+    return;
+  }
 
   size_t totalSectors = dims.first;
   int recovered = 0;
+  bool objectiveMet = false;
 
   // Match the Chameleon Ultra dictionary-attack UX: live scrolling key
   // attempts with a status/progress bar, rather than a progress-only screen.
@@ -2676,6 +2744,11 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
     sp.drawString(pctBuf, width - 2, barY);
   };
   char liveStatus[48] = "Starting...";
+  if (_recoverChainActive) {
+    static const char* const kStageNames[] = {"Discovered", "Extended"};
+    renderOperationTitle("Dictionary Attack");
+    snprintf(liveStatus, sizeof(liveStatus), "%s", kStageNames[_recoverChainIndex]);
+  }
   ui.status = liveStatus;
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
@@ -2689,6 +2762,19 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
       ui.pct = (int)((sector * 2 + kt) * 100 / (totalSectors * 2));
       bool found = false;
       for (uint8_t k = 0; k < keyCount; k++) {
+        Uni.update();
+        if (Uni.Nav && Uni.Nav->wasPressed() &&
+            Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+          if (_recoverChainActive) {
+            _recoverChainActive = false;
+            _resumeReadAfterDict = false;
+            _pendingRecoveryStep = false;
+            _readAfterRecovery = false;
+          }
+          ShowStatusAction::show("Cancelled", 1000);
+          _goMifareTag();
+          return;
+        }
         snprintf(liveStatus, sizeof(liveStatus), "S%u %c %02X%02X%02X%02X%02X%02X",
                  (unsigned)sector, useKeyB ? 'B' : 'A',
                  keys[k][0], keys[k][1], keys[k][2], keys[k][3], keys[k][4], keys[k][5]);
@@ -2708,11 +2794,14 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
                                         keys[k][3], keys[k][4], keys[k][5]);
           recovered++;
           found = true;
+          if (_recoverChainActive && _hasReadableKeyForEverySector())
+            objectiveMet = true;
           break;
         }
         uint8_t rUid[7]; uint8_t rLen;
         _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, rUid, &rLen, 200);
       }
+      if (objectiveMet) break;
       if (!found) {
         char nf[32];
         snprintf(nf, sizeof(nf), "  S%u %c: not found",
@@ -2721,6 +2810,7 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
         actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
       }
     }
+    if (objectiveMet) break;
   }
 
   ui.pct = 100;
@@ -2735,15 +2825,26 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   char msg[48];
   if (recovered > 0) snprintf(msg, sizeof(msg), "%d new key%s saved to Known Keys", recovered, recovered == 1 ? "" : "s");
   else snprintf(msg, sizeof(msg), "No new keys found");
-  ShowStatusAction::show(msg, 1600);
-  if (_resumeReadAfterDict) {
-    _resumeReadAfterDict = false;
-    if (_hasReadableKeyForEverySector()) {
-      _pendingDumpAfterDict = true;
+  if (!_recoverChainActive) ShowStatusAction::show(msg, 1600);
+  if (_recoverChainActive) {
+    _recoverChainNewKeys += recovered;
+    const bool covered = _hasReadableKeyForEverySector();
+    ++_recoverChainIndex;
+    if (!covered && _recoverChainIndex < 2) {
+      _pendingRecoveryStep = true;
     } else {
-      ShowStatusAction::show("Keys still missing", 1600);
-      _goMifareTag();
+      _recoverChainActive = false;
+      char finalMsg[40];
+      if (_recoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+      else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_recoverChainNewKeys, _recoverChainNewKeys == 1 ? "" : "s");
+      ShowStatusAction::show(finalMsg, 1400);
+      // Always return through Read Tag, even with incomplete coverage, so the
+      // user still gets the best partial dump available.
+      _readAfterRecovery = true;
     }
+  } else if (_resumeReadAfterDict) {
+    _resumeReadAfterDict = false;
+    _readAfterRecovery = true;
   } else {
     _goMifareAttacks();
   }

@@ -500,6 +500,17 @@ void ST25R3916Screen::onInit() {
 }
 
 void ST25R3916Screen::onUpdate() {
+  if (_mfcRecoveryNext) {
+    _mfcRecoveryNext = false;
+    static const char* const kRecoveryDicts[] = {
+      "/unigeek/nfc/dictionaries/discovered.txt",
+      "/unigeek/nfc/dictionaries/extended.txt",
+    };
+    if (_mfcRecoverChainIndex < 2)
+      _runMfcDictionaryAttack(kRecoveryDicts[_mfcRecoverChainIndex]);
+    return;
+  }
+
   // Resume MIFARE Classic reads only after the dictionary attack has fully
   // unwound. _runMfcDictionaryAttack() has a large stack frame; calling
   // _readMfcTag() from inside it can overflow the ESP32 task stack.
@@ -1429,8 +1440,7 @@ void ST25R3916Screen::_readMfcTag() {
     render();
     if (!r) { _showMfcTagMenu(); return; }
     if (strcmp(r, "dict") == 0) {
-      _resumeMfcReadAfterDict = true;
-      _openMfcDictionaries(true);
+      _startMfcRecoverKeys();
       return;
     }
   }
@@ -4227,9 +4237,23 @@ void ST25R3916Screen::_openMfcDictionary(uint8_t index,bool attackMode) {
   if(index>=_browser.count())return;const auto&e=_browser.entry(index);if(e.isDir){_dictPickDir=e.path;_openMfcDictionaries(attackMode);return;}if(attackMode){_runMfcDictionaryAttack(e.path);return;}if(!Uni.Storage||!Uni.Storage->isAvailable()){ShowStatusAction::show("Storage unavailable");return;}String content=Uni.Storage->readFile(e.path.c_str());_rowCount=0;int pos=0;while(pos<(int)content.length()&&_rowCount<kMaxRows){int nl=content.indexOf('\n',pos);if(nl<0)nl=content.length();String line=content.substring(pos,nl);line.trim();if(line.length()&&!line.startsWith("#")){_rowLabels[_rowCount]=String(_rowCount+1);_rowValues[_rowCount]=line;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount;}pos=nl+1;}if(!_rowCount){ShowStatusAction::show("No keys in file");return;}_dictViewTitle=e.label;_state=STATE_MFC_DICT_VIEW;_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();
 }
 
+void ST25R3916Screen::_startMfcRecoverKeys() {
+  _resumeMfcReadAfterDict = true;
+  _mfcRecoverChainActive = true;
+  _mfcRecoverChainIndex = 0;
+  _mfcRecoverChainNewKeys = 0;
+  _mfcRecoveryNext = true;
+}
+
 void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
 #if defined(DEVICE_HAS_ST25R3916)
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    if (_mfcRecoverChainActive) {
+      _mfcRecoverChainActive = false;
+      _resumeMfcReadAfterDict = false;
+      _mfcRecoveryNext = false;
+      _mfcReadAfterDict = false;
+    }
     ShowStatusAction::show("Storage unavailable");
     return;
   }
@@ -4245,13 +4269,45 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     if (st25ParseKey(line, keys[keyCount])) ++keyCount;
     pos = nl + 1;
   }
-  if (!keyCount) { ShowStatusAction::show("No valid keys"); return; }
+  if (!keyCount) {
+    if (_mfcRecoverChainActive) {
+      ++_mfcRecoverChainIndex;
+      if (_mfcRecoverChainIndex < 2) _mfcRecoveryNext = true;
+      else {
+        _mfcRecoverChainActive = false;
+        _resumeMfcReadAfterDict = false;
+        char finalMsg[40];
+        if (_mfcRecoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+        else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_mfcRecoverChainNewKeys, _mfcRecoverChainNewKeys == 1 ? "" : "s");
+        ShowStatusAction::show(finalMsg, 1400);
+        _mfcReadAfterDict = true;
+      }
+      return;
+    }
+    ShowStatusAction::show("No valid keys");
+    return;
+  }
 
   ST25R3916Backend dev;
-  if (!st25Begin(dev, _interface)) { ShowStatusAction::show("ST25R3916 not detected"); return; }
+  if (!st25Begin(dev, _interface)) {
+    if (_mfcRecoverChainActive) {
+      _mfcRecoverChainActive = false;
+      _resumeMfcReadAfterDict = false;
+      _mfcRecoveryNext = false;
+      _mfcReadAfterDict = false;
+    }
+    ShowStatusAction::show("ST25R3916 not detected");
+    return;
+  }
   ST25R3916Backend::ScanResult tag;
   if (!dev.scan(ST25R3916Backend::TECH_A, tag, 5000, true) || !isMifareClassic(tag.sak)) {
     dev.deactivate();
+    if (_mfcRecoverChainActive) {
+      _mfcRecoverChainActive = false;
+      _resumeMfcReadAfterDict = false;
+      _mfcRecoveryNext = false;
+      _mfcReadAfterDict = false;
+    }
     ShowStatusAction::show("Tag not supported");
     return;
   }
@@ -4298,10 +4354,18 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     sp.drawString(pctBuf, width - 2, barY);
   };
   char liveStatus[48] = "Starting...";
+  if (_mfcRecoverChainActive) {
+    static const char* const kStageNames[] = {"Discovered", "Extended"};
+    Header header;
+    header.render("Dictionary Attack");
+    StatusBar::refresh();
+    snprintf(liveStatus, sizeof(liveStatus), "%s", kStageNames[_mfcRecoverChainIndex]);
+  }
   ui.status = liveStatus;
   actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
 
   int recovered = 0;
+  bool objectiveMet = false;
   const size_t totalWork = sectors * 2U;
   for (size_t sec = 0; sec < sectors; ++sec) {
     const uint8_t trailer = (uint8_t)(sectorFirstBlock(sec) + sectorBlockCount(sec) - 1U);
@@ -4312,6 +4376,20 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
 
       bool found = false;
       for (uint8_t k = 0; k < keyCount; ++k) {
+        Uni.update();
+        if (Uni.Nav && Uni.Nav->wasPressed() &&
+            Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+          dev.deactivate();
+          if (_mfcRecoverChainActive) {
+            _mfcRecoverChainActive = false;
+            _resumeMfcReadAfterDict = false;
+            _mfcRecoveryNext = false;
+            _mfcReadAfterDict = false;
+          }
+          ShowStatusAction::show("Cancelled", 1000);
+          _showMfcTagMenu();
+          return;
+        }
         snprintf(liveStatus, sizeof(liveStatus), "S%u %c %02X%02X%02X%02X%02X%02X",
                  (unsigned)sec, kt ? 'B' : 'A',
                  keys[k][0], keys[k][1], keys[k][2], keys[k][3], keys[k][4], keys[k][5]);
@@ -4337,11 +4415,21 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
           slot = hex;
           ++recovered;
           found = true;
+          if (_mfcRecoverChainActive) {
+            objectiveMet = true;
+            for (size_t checkSec = 0; checkSec < sectors; ++checkSec) {
+              if (!savedA[checkSec].length() && !savedB[checkSec].length()) {
+                objectiveMet = false;
+                break;
+              }
+            }
+          }
           dev.deactivate();
           break;
         }
         dev.deactivate();
       }
+      if (objectiveMet) break;
       if (!found) {
         char nf[32];
         snprintf(nf, sizeof(nf), "S%u %c: not found", (unsigned)sec, kt ? 'B' : 'A');
@@ -4349,6 +4437,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
         actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
       }
     }
+    if (objectiveMet) break;
   }
   dev.deactivate();
 
@@ -4373,11 +4462,28 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     snprintf(msg, sizeof(msg), "%d new key%s saved to Known Keys", recovered, recovered == 1 ? "" : "s");
   else
     snprintf(msg, sizeof(msg), "No new keys found");
-  ShowStatusAction::show(msg, 1600);
-  if (_resumeMfcReadAfterDict) {
+  if (!_mfcRecoverChainActive) ShowStatusAction::show(msg, 1600);
+  if (_mfcRecoverChainActive) {
+    _mfcRecoverChainNewKeys += recovered;
+    bool covered = true;
+    for (size_t sec = 0; sec < sectors; ++sec)
+      if (!savedA[sec].length() && !savedB[sec].length()) { covered = false; break; }
+    ++_mfcRecoverChainIndex;
+    if (!covered && _mfcRecoverChainIndex < 2) {
+      _mfcRecoveryNext = true;
+    } else {
+      _mfcRecoverChainActive = false;
+      _resumeMfcReadAfterDict = false;
+      char finalMsg[40];
+      if (_mfcRecoverChainNewKeys == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+      else snprintf(finalMsg, sizeof(finalMsg), "%u key%s recovered", (unsigned)_mfcRecoverChainNewKeys, _mfcRecoverChainNewKeys == 1 ? "" : "s");
+      ShowStatusAction::show(finalMsg, 1400);
+      // Always return through Read Tag; incomplete coverage becomes a partial
+      // read rather than reopening the recovery prompt.
+      _mfcReadAfterDict = true;
+    }
+  } else if (_resumeMfcReadAfterDict) {
     _resumeMfcReadAfterDict = false;
-    // Defer the resumed read until onUpdate(), after this dictionary attack
-    // returns and releases its large local buffers from the task stack.
     _mfcReadAfterDict = true;
   } else {
     _showMfcAttacksMenu();

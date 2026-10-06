@@ -321,6 +321,10 @@ private:
   bool _emuReturnMfc = false;
   bool _resumeMfcReadAfterDict = false;
   bool _mfcReadAfterDict = false;
+  bool _mfcRecoverChainActive = false;
+  uint8_t _mfcRecoverChainIndex = 0;
+  uint16_t _mfcRecoverChainNewKeys = 0;
+  bool _mfcRecoveryNext = false;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 
   void _scanReader();
@@ -366,6 +370,7 @@ private:
   void _openMfcDictionaries(bool attackMode = false);
   void _openMfcDictionary(uint8_t index, bool attackMode = false);
   void _runMfcDictionaryAttack(const String& path);
+  void _startMfcRecoverKeys();
   void _detectMagic();
   void _runDetectMagic();
   MagicCardType _detectMagicType(class ST25R3916Backend& dev);

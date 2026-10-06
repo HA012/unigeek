@@ -429,18 +429,28 @@ void ChameleonMfcScreen::_finishRecover(bool success, const char* status,
   _chainStage[0] = 0;
   const bool resumeRead = _resumeReadAfterAttack;
   _resumeReadAfterAttack = false;
-  if (resumeRead && _hasKeyForEverySector()) {
+  char recoveredMsg[40];
+  if (resumeRead && success) {
+    const uint16_t newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
+    if (newlyRecovered == 0) snprintf(recoveredMsg, sizeof(recoveredMsg), "No new keys found");
+    else snprintf(recoveredMsg, sizeof(recoveredMsg), "%u key%s recovered", (unsigned)newlyRecovered, newlyRecovered == 1 ? "" : "s");
+    status = recoveredMsg;
+  }
+  if (status && status[0]) ShowStatusAction::show(status, success ? 1400 : 1800);
+  if (resumeRead && success) {
+    // Resume Read Tag even with incomplete coverage; _callDump() will produce
+    // the best partial dump available from the recovered keys.
     _callDump();
     return;
   }
   _showReadPreview();
-  if (status && status[0]) ShowStatusAction::show(status, success ? 1400 : 1800);
 }
 
 void ChameleonMfcScreen::_callRecoverKeys() {
   _state = STATE_RECOVER;
   _running = true;
-  _setChainStage("Dictionary");
+  _recoverStartCount = _recovered;
+  _setChainStage("Dictionary Attack");
 
   auto& c = ChameleonClient::get();
   uint8_t previousMode = 0;
@@ -519,12 +529,14 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (restore) c.setMode(previousMode);
     _chainStage[0] = 0;
     _callStaticNested();
-    if (_resumeReadAfterAttack && _hasKeyForEverySector()) {
+    if (_resumeReadAfterAttack) {
+      const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
+      char finalMsg[40];
+      if (newlyRecovered == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+      else snprintf(finalMsg, sizeof(finalMsg), "%d key%s recovered", newlyRecovered, newlyRecovered == 1 ? "" : "s");
       _resumeReadAfterAttack = false;
+      ShowStatusAction::show(finalMsg, 1400);
       _callDump();
-    } else if (_resumeReadAfterAttack) {
-      _resumeReadAfterAttack = false;
-      _showReadPreview();
     }
     return;
   }
@@ -535,12 +547,14 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     if (restore) c.setMode(previousMode);
     _chainStage[0] = 0;
     _callNestedAttack();
-    if (_resumeReadAfterAttack && _hasKeyForEverySector()) {
+    if (_resumeReadAfterAttack) {
+      const int newlyRecovered = _recovered >= _recoverStartCount ? _recovered - _recoverStartCount : 0;
+      char finalMsg[40];
+      if (newlyRecovered == 0) snprintf(finalMsg, sizeof(finalMsg), "No new keys found");
+      else snprintf(finalMsg, sizeof(finalMsg), "%d key%s recovered", newlyRecovered, newlyRecovered == 1 ? "" : "s");
       _resumeReadAfterAttack = false;
+      ShowStatusAction::show(finalMsg, 1400);
       _callDump();
-    } else if (_resumeReadAfterAttack) {
-      _resumeReadAfterAttack = false;
-      _showReadPreview();
     }
     return;
   }
@@ -549,11 +563,15 @@ void ChameleonMfcScreen::_callRecoverKeys() {
     return;
   }
 
-  _finishRecover(false,
-                 !_hasAnyKey()
-                     ? (ntLevel == 1 ? "Need 1 key for Static Nested" : "No key found")
-                     : "Recovery finished",
-                 true, previousMode, restore);
+  if (_resumeReadAfterAttack) {
+    _finishRecover(true, nullptr, true, previousMode, restore);
+  } else {
+    _finishRecover(false,
+                   !_hasAnyKey()
+                       ? (ntLevel == 1 ? "Need 1 key for Static Nested" : "No key found")
+                       : "Recovery finished",
+                   true, previousMode, restore);
+  }
 }
 
 // ── Known Keys ──
@@ -1250,6 +1268,11 @@ bool ChameleonMfcScreen::_loadDictFile(const char* path) {
 ChameleonMfcScreen::DictControl ChameleonMfcScreen::_standaloneDictHook(
     ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre) {
   if (pre) {
+    Uni.update();
+    if (Uni.Nav && Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      return DictControl::Cancel;
+    }
     snprintf(self->_actionStatus, sizeof(self->_actionStatus),
              "S%d %c %02X%02X%02X%02X%02X%02X",
              attempt.sector, attempt.type,
@@ -1409,7 +1432,6 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_runChainDictionaries() {
   struct Spec { const char* label; const char* path; };
   const Spec dicts[] = {
     {"Discovered", MfcKeyStore::kDiscoveredDictionary},
-    {"Default",    "/unigeek/nfc/dictionaries/default.txt"},
     {"Extended",   "/unigeek/nfc/dictionaries/extended.txt"},
   };
 
@@ -1417,7 +1439,7 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_runChainDictionaries() {
     if (_recoverObjectiveMet()) return DictControl::ObjectiveMet;
     strncpy(_actionStatus, spec.label, sizeof(_actionStatus) - 1);
     _actionStatus[sizeof(_actionStatus) - 1] = 0;
-    _setChainStage("Dictionary");
+    _setChainStage("Dictionary Attack");
 
     uint16_t count = 0;
     uint8_t (*keys)[6] = nullptr;
