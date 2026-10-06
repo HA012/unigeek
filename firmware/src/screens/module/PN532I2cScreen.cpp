@@ -553,17 +553,18 @@ void PN532I2cScreen::onUpdate() {
   if (_pendingRecoveryStep) {
     _pendingRecoveryStep = false;
     static const char* const kRecoveryDicts[] = {
-      "/unigeek/nfc/dictionaries/discovered.txt",
-      "/unigeek/nfc/dictionaries/extended.txt",
+      MfcKeyStore::kBuiltinDefaultId, MfcKeyStore::kDiscoveredDictionary, MfcKeyStore::kBuiltinExtendedId,
     };
-    if (_recoverChainIndex < 2) {
+    if (_recoverChainIndex < 3) {
       _doDictionaryAttackWithPath(kRecoveryDicts[_recoverChainIndex]);
     }
     return;
   }
   if (_readAfterRecovery) {
     _readAfterRecovery = false;
-    _doReadTag();
+    // Recovery already updated _mfKeys for the currently selected tag.
+    // Do not scan and run Default again; resume directly with the dump.
+    _doDumpMemory();
     return;
   }
   if (_state == STATE_SCAN_14A) {
@@ -2185,6 +2186,7 @@ void PN532I2cScreen::_saveKeys() {
 }
 
 bool PN532I2cScreen::_discoverDefaultKeys(bool checkingProgress) {
+  _keyCheckCancelled = false;
   if (!_hasCard) return false;
   auto dims = _mfDims(_sak);
   if (dims.first == 0) return false;
@@ -2199,6 +2201,10 @@ bool PN532I2cScreen::_discoverDefaultKeys(bool checkingProgress) {
   for (size_t sector = 0; sector < totalSectors; sector++) {
     uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
     for (uint8_t kt = 0; kt < 2; kt++) {
+      Uni.update();
+      if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+        _keyCheckCancelled = true; ProgressView::finish(); return false;
+      }
       bool useKeyB = (kt == 1);
       auto& slot = useKeyB ? _mfKeys[sector].second : _mfKeys[sector].first;
       char msg[48];
@@ -2212,12 +2218,20 @@ bool PN532I2cScreen::_discoverDefaultKeys(bool checkingProgress) {
                  (unsigned)(sector + 1), (unsigned)totalSectors,
                  useKeyB ? "B" : "A");
       }
-      int pct = (int)((keyIndex - 1u) * 100u / totalKeys);
+      int pct = checkingProgress
+                  ? (int)((keyIndex - 1u) * 100u / totalKeys)
+                  : (int)(sector * 100u / totalSectors);
       ProgressView::progress(msg, pct);
 
       // Persisted per-UID keys are tried first, but never trusted blindly.
       if (slot) {
         const auto kv = slot.value();
+        if (checkingProgress) {
+          snprintf(msg, sizeof(msg), "S%u %c %02X%02X%02X%02X%02X%02X",
+                   (unsigned)sector, useKeyB ? 'B' : 'A',
+                   kv[0], kv[1], kv[2], kv[3], kv[4], kv[5]);
+          ProgressView::progress(msg, pct);
+        }
         if (_nfc->mifareclassic_AuthenticateBlock(
               _uid, _uidLen, trailer, useKeyB ? 1 : 0, (uint8_t*)kv.data())) {
           keyFound = true;
@@ -2231,7 +2245,29 @@ bool PN532I2cScreen::_discoverDefaultKeys(bool checkingProgress) {
       }
 
       for (const auto& key : NFCUtility::getDefaultKeys()) {
+        // Read Tag is intentionally a quick authentication pass: persisted
+        // credentials plus the five quick/common keys. Full Default belongs to Recover.
+        if (!checkingProgress) {
+          const auto quick = key.value();
+          static const uint8_t quickKeys[5][6] = {
+            {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}, {0x00,0x00,0x00,0x00,0x00,0x00},
+            {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5}, {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7},
+            {0xB0,0xB1,0xB2,0xB3,0xB4,0xB5}
+          };
+          bool isQuick = false; for (const auto& qk : quickKeys) if (memcmp(quick.data(), qk, 6) == 0) { isQuick=true; break; }
+          if (!isQuick) continue;
+        }
+        Uni.update();
+        if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+          _keyCheckCancelled = true; ProgressView::finish(); return false;
+        }
         const auto kv = key.value();
+        if (checkingProgress) {
+          snprintf(msg, sizeof(msg), "S%u %c %02X%02X%02X%02X%02X%02X",
+                   (unsigned)sector, useKeyB ? 'B' : 'A',
+                   kv[0], kv[1], kv[2], kv[3], kv[4], kv[5]);
+          ProgressView::progress(msg, pct);
+        }
         if (_nfc->mifareclassic_AuthenticateBlock(
               _uid, _uidLen, trailer, useKeyB ? 1 : 0, (uint8_t*)kv.data())) {
           slot = key;
@@ -2263,26 +2299,13 @@ bool PN532I2cScreen::_hasReadableKeyForEverySector() const {
 }
 
 void PN532I2cScreen::_doReadTag() {
-  const bool resumedAfterRecovery = _resumeReadAfterDict;
   _resumeReadAfterDict = false;
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
   if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
-  if (!_hasReadableKeyForEverySector() && !resumedAfterRecovery) {
-    static const InputSelectAction::Option opts[] = {
-      {"Recover Keys", "dict"},
-      {"Partial Read", "partial"},
-    };
-    const char* r = InputSelectAction::popup("Missing sector keys", opts, 2, nullptr);
-    render();  // Clear the popup before opening picker/progress UI.
-    if (!r) { _goMifareTag(); return; }
-    if (strcmp(r, "dict") == 0) {
-      _startRecoverKeys();
-      return;
-    }
-  }
+  if (_keyCheckCancelled) { ShowStatusAction::show("Cancelled",1000); _goMifareTag(); return; }
   _doDumpMemory();
 }
 
@@ -2550,16 +2573,36 @@ void PN532I2cScreen::_openKeyDatabases() {
   _state = STATE_MIFARE_KEY_DB_SELECT;
   if (!_keyDbPickDir.length()) _keyDbPickDir = _dictPath;
   _browser.root = _dictPath;
-  uint8_t n = _browser.load(this, _keyDbPickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED,
-                            _keyDbPickDir == _dictPath ? "discovered.txt" : nullptr);
-  setItems(_browser.items(), n);
+  uint8_t n = _browser.load(this, _keyDbPickDir, ".txt", nullptr, BrowseFileView::STEM,
+                            nullptr);
+  if (_keyDbPickDir == _dictPath) {
+    uint8_t out=0; _dictItems[out++]={"Default"};
+    _dictItems[out++]={"Discovered"};
+    _dictItems[out++]={"Extended"};
+    for(uint8_t i=0;i<n;++i) if(_browser.entry(i).path!=MfcKeyStore::kDiscoveredDictionary) _dictItems[out++]=_browser.items()[i];
+    setItems(_dictItems,out);
+  } else setItems(_browser.items(), n);
   render();
-  if (!n && _keyDbPickDir == _dictPath) ShowStatusAction::show("No dictionary files");
 }
 
 void PN532I2cScreen::_openKeyDatabase(uint8_t index) {
-  if (index >= _browser.count()) return;
-  const auto& e = _browser.entry(index);
+  int fi = -1;
+  if (_keyDbPickDir == _dictPath) {
+    int discovered=-1; for(uint8_t i=0;i<_browser.count();++i) if(_browser.entry(i).path==MfcKeyStore::kDiscoveredDictionary){discovered=i;break;}
+    const uint8_t extendedIndex=2;
+    if(index==0 || index==extendedIndex){
+      const uint8_t (*keys)[6]=nullptr; size_t count=0; const char* label=nullptr;
+      MfcKeyStore::builtinDictionary(index==0?MfcKeyStore::kBuiltinDefaultId:MfcKeyStore::kBuiltinExtendedId,&keys,&count,&label);
+      _resetRows(); for(size_t i=0;i<count && _rowCount<MAX_ROWS;++i)_pushRow(String((unsigned)(i+1)),MfcKeyStore::keyString(keys[i]));
+      _keyDbViewTitle=label; _state=STATE_MIFARE_KEY_DB_VIEW; _scrollView.resetScroll(); _scrollView.setRows(_rows,_rowCount); render(); return;
+    }
+    if(index==1) {
+      if(discovered<0){ ShowStatusAction::show("No keys in file"); return; }
+      fi=discovered;
+    } else { uint8_t wanted=index-3; for(uint8_t i=0,seen=0;i<_browser.count();++i){if((int)i==discovered)continue;if(seen++==wanted){fi=i;break;}} }
+  } else fi=index;
+  if (fi < 0 || fi >= _browser.count()) return;
+  const auto& e = _browser.entry(fi);
   if (e.isDir) { _keyDbPickDir = e.path; _openKeyDatabases(); return; }
   if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable"); return; }
   String content = Uni.Storage->readFile(e.path.c_str());
@@ -2583,46 +2626,20 @@ void PN532I2cScreen::_openKeyDatabase(uint8_t index) {
 }
 
 void PN532I2cScreen::_doDictionaryPicker() {
-  // Standalone Dictionary Attack always scans the tag now. This gives it the
-  // same valid UID/SAK context as the Read Tag -> Dictionary Attack path and
-  // avoids accidentally reusing a previous tag still cached in _hasCard.
-  if (_resumeReadAfterDict) {
-    if (!_hasCard && !_scanCardOrShow(5000)) {
-      _resumeReadAfterDict = false;
-      _goMifareAttacks();
-      return;
-    }
-  } else {
-    if (!_scanCardOrShow(5000)) {
-      _goMifareAttacks();
-      return;
-    }
-    // Start from the persisted per-UID state.  The standalone attack should
-    // test only slots that are not already in Known Keys; clearing the
-    // whole table here made the PN532 rediscover and report the same 32 keys
-    // on every run.  This is intentionally lighter than the CU pre-check:
-    // PN532 authentication is slower and needs frequent PICC re-selection, so
-    // persisted slots are used as the baseline and missing slots are attacked.
-    _mfKeys.fill({});
-    _loadSavedKeys();
-  }
-  if (_mfDims(_sak).first == 0) {
-    _resumeReadAfterDict = false;
-    ShowStatusAction::show("Tag not supported");
-    _goMifareAttacks();
-    return;
-  }
+  // Standalone Dictionary Attack selects its dictionary before asking for a tag.
+  // Tag acquisition and persisted-key verification happen only after selection.
 
   _state = STATE_DICT_SELECT;
   if (_dictPickDir.length() == 0) _dictPickDir = _dictPath;
   _browser.root = _dictPath;
-  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED);
-  if (n == 0 && _dictPickDir == _dictPath) {
-    ShowStatusAction::show("No dictionary files");
-    _goMifareAttacks();
-    return;
-  }
-  setItems(_browser.items(), n);
+  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM);
+  if (_dictPickDir == _dictPath) {
+    uint8_t out=0; _dictItems[out++]={"Default"};
+    _dictItems[out++]={"Discovered"};
+    _dictItems[out++]={"Extended"};
+    for(uint8_t i=0;i<n;++i) if(_browser.entry(i).path!=MfcKeyStore::kDiscoveredDictionary) _dictItems[out++]=_browser.items()[i];
+    setItems(_dictItems,out);
+  } else setItems(_browser.items(), n);
 }
 
 static bool _parseHexKeyI2c(const String& line, uint8_t out[6]) {
@@ -2641,71 +2658,64 @@ static bool _parseHexKeyI2c(const String& line, uint8_t out[6]) {
 }
 
 void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
-  if (fileIndex >= _browser.count()) return;
-  const auto& e = _browser.entry(fileIndex);
-  if (e.isDir) {
-    _dictPickDir = e.path;
-    _doDictionaryPicker();
-    return;
-  }
+  int fi=-1;
+  if(_dictPickDir==_dictPath){
+    int discovered=-1;for(uint8_t i=0;i<_browser.count();++i)if(_browser.entry(i).path==MfcKeyStore::kDiscoveredDictionary){discovered=i;break;}
+    const uint8_t extendedIndex=2;
+    if(fileIndex==0 || fileIndex==extendedIndex){_doDictionaryAttackWithPath(fileIndex==0?MfcKeyStore::kBuiltinDefaultId:MfcKeyStore::kBuiltinExtendedId);return;}
+    if(fileIndex==1){_doDictionaryAttackWithPath(MfcKeyStore::kDiscoveredDictionary);return;}
+    else{uint8_t wanted=fileIndex-3;for(uint8_t i=0,seen=0;i<_browser.count();++i){if((int)i==discovered)continue;if(seen++==wanted){fi=i;break;}}}
+  } else fi=fileIndex;
+  if(fi<0 || fi>=_browser.count())return;
+  const auto& e=_browser.entry((uint8_t)fi);
+  if(e.isDir){_dictPickDir=e.path;_doDictionaryPicker();return;}
   _doDictionaryAttackWithPath(e.path);
 }
 
 void PN532I2cScreen::_startRecoverKeys() {
   _resumeReadAfterDict = true;
   _recoverChainActive = true;
-  _recoverChainIndex = 0;
+  _recoverChainIndex = 0; // Read Tag is quick; Recover owns Default -> Discovered -> Extended
   _recoverChainNewKeys = 0;
+  _recoverySummary.reset();
   _pendingRecoveryStep = true;
 }
 
 void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
-  String content = Uni.Storage->readFile(filePath.c_str());
-  // discovered.txt is created lazily; a missing/empty stage is simply skipped
-  // by the automatic chain. Standalone Dictionary Attack keeps its picker UX.
-  if (content.length() == 0) {
-    if (_recoverChainActive) {
-      ++_recoverChainIndex;
-      if (_recoverChainIndex < 2) _pendingRecoveryStep = true;
-      else {
-        _recoverChainActive = false;
-        char finalMsg[40];
-        snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
-        ShowStatusAction::show(finalMsg, 1400);
-        _readAfterRecovery = true;
-      }
-      return;
-    }
-    ShowStatusAction::show("Empty file");
-    return;
-  }
-
-  static constexpr uint8_t MAX_KEYS = 128;
-  uint8_t keys[MAX_KEYS][6];
-  uint8_t keyCount = 0;
-  int start = 0;
-  while (start < (int)content.length() && keyCount < MAX_KEYS) {
-    int nl = content.indexOf('\n', start);
-    if (nl < 0) nl = content.length();
-    String line = content.substring(start, nl);
-    if (_parseHexKeyI2c(line, keys[keyCount])) keyCount++;
-    start = nl + 1;
-  }
-  if (keyCount == 0) {
-    if (_recoverChainActive) {
-      ++_recoverChainIndex;
-      if (_recoverChainIndex < 2) _pendingRecoveryStep = true;
-      else {
-        _recoverChainActive = false;
-        char finalMsg[40];
-        snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
-        ShowStatusAction::show(finalMsg, 1400);
-        _readAfterRecovery = true;
-      }
-      return;
-    }
+  const bool streamedChainDictionary = _recoverChainActive && filePath == MfcKeyStore::kDiscoveredDictionary;
+  // Count valid entries first. File dictionaries are still streamed during the
+  // attack; this pass only provides an accurate progress denominator.
+  const size_t sourceKeyCount = MfcKeyStore::dictionaryKeyCount(Uni.Storage, filePath);
+  // Validate the selected dictionary before asking the user to present a tag.
+  if (!sourceKeyCount && !_recoverChainActive) {
     ShowStatusAction::show("No valid keys");
+    _doDictionaryPicker();
     return;
+  }
+  if (!_recoverChainActive && !_resumeReadAfterDict) {
+    if (!_scanCardOrShow(5000)) { _doDictionaryPicker(); return; }
+    if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _doDictionaryPicker(); return; }
+    // Standalone performs a quick persisted-key check below, in the same
+    // Dictionary Attack UI. Do not run the default-key discovery pass here.
+    _mfKeys.fill({});
+    _loadSavedKeys();
+  }
+  const size_t chainKeyCount = sourceKeyCount;
+  // Discovered is optional: absent/empty simply advances the automatic chain.
+  if (!sourceKeyCount) {
+    if (_recoverChainActive) {
+      ++_recoverChainIndex;
+      if (_recoverChainIndex < 3) _pendingRecoveryStep = true;
+      else {
+        _recoverChainActive = false;
+        char finalMsg[80]; auto dims = _mfDims(_sak); unsigned covered = 0;
+        for (size_t sec=0; sec<dims.first; ++sec) if (_mfKeys[sec].first || _mfKeys[sec].second) ++covered;
+        _recoverySummary.format(finalMsg,sizeof(finalMsg),covered,(unsigned)dims.first);
+        ShowStatusAction::show(finalMsg,1400); _readAfterRecovery=true;
+      }
+      return;
+    }
+    ShowStatusAction::show("No valid keys"); return;
   }
 
   auto dims = _mfDims(_sak);
@@ -2722,6 +2732,13 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   }
 
   size_t totalSectors = dims.first;
+  if (!_recoverChainActive) _recoverySummary.reset();
+  auto formatSummary = [&](char* out, size_t size) {
+    unsigned covered = 0;
+    for (size_t sec = 0; sec < totalSectors; ++sec)
+      if (_mfKeys[sec].first || _mfKeys[sec].second) ++covered;
+    _recoverySummary.format(out, size, covered, (unsigned)totalSectors);
+  };
   int recovered = 0;
   bool objectiveMet = false;
 
@@ -2729,120 +2746,169 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
   // attempts with a status/progress bar, rather than a progress-only screen.
   LogView actionLog;
   actionLog.clear();
-  struct DictUiCtx { const char* status; int pct; } ui = {"Starting...", 0};
+  struct DictUiCtx { const char* status; const char* attempt; size_t keyIndex,keyTotal; int dictIndex,dictTotal,partialPct,totalPct; } ui = {"Starting...", "", 0,0,1,1,0,0};
   auto statusCb = [](Sprite& sp, int barY, int width, void* userData) {
-    auto* ctx = static_cast<DictUiCtx*>(userData);
-    sp.setTextDatum(TL_DATUM);
-    sp.setTextColor(TFT_CYAN);
-    sp.drawString(ctx->status, 2, barY);
-    char pctBuf[8];
-    snprintf(pctBuf, sizeof(pctBuf), "%d%%", ctx->pct);
-    sp.setTextDatum(TR_DATUM);
-    sp.setTextColor(TFT_WHITE);
-    sp.drawString(pctBuf, width - 2, barY);
+    auto* ctx = static_cast<DictUiCtx*>(userData); char left[72], pct[8];
+    snprintf(left,sizeof(left),"%s (%u/%u)",ctx->attempt,(unsigned)ctx->keyIndex,(unsigned)ctx->keyTotal);
+    snprintf(pct,sizeof(pct),"%d%%",ctx->partialPct); sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(left,2,barY); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY);
+    snprintf(left,sizeof(left),"%s (%d/%d)",ctx->status,ctx->dictIndex,ctx->dictTotal); snprintf(pct,sizeof(pct),"%d%%",ctx->totalPct);
+    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_WHITE); sp.drawString(left,2,barY+11); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY+11);
   };
-  char liveStatus[48] = "Starting...";
+  char liveStatus[80] = "Starting...";
+  if (!_recoverChainActive) {
+    if (filePath == MfcKeyStore::kBuiltinDefaultId) snprintf(liveStatus, sizeof(liveStatus), "Default");
+    else if (filePath == MfcKeyStore::kDiscoveredDictionary) snprintf(liveStatus, sizeof(liveStatus), "Discovered");
+    else if (filePath == MfcKeyStore::kBuiltinExtendedId) snprintf(liveStatus, sizeof(liveStatus), "Extended");
+    else { String label=filePath; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); if(label.endsWith(".txt")) label.remove(label.length()-4); snprintf(liveStatus,sizeof(liveStatus),"%s",label.c_str()); }
+  }
+  size_t chainCounts[3] = {0,0,0}; size_t chainGlobalTotal = 0, chainGlobalBase = 0;
   if (_recoverChainActive) {
-    static const char* const kStageNames[] = {"Discovered", "Extended"};
+    const char* sources[3] = {MfcKeyStore::kBuiltinDefaultId, MfcKeyStore::kDiscoveredDictionary, MfcKeyStore::kBuiltinExtendedId};
+    for (int i=0;i<3;++i) { chainCounts[i]=MfcKeyStore::dictionaryKeyCount(Uni.Storage,sources[i]); chainGlobalTotal += chainCounts[i]; }
+    for (int i=0;i<_recoverChainIndex;++i) chainGlobalBase += chainCounts[i];
+    static const char* const kStageNames[] = {"Default", "Discovered", "Extended"};
     renderOperationTitle("Dictionary Attack");
     snprintf(liveStatus, sizeof(liveStatus), "%s", kStageNames[_recoverChainIndex]);
+    ui.dictIndex = _recoverChainIndex + 1; ui.dictTotal = 3;
   }
   ui.status = liveStatus;
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
 
-  for (size_t sector = 0; sector < totalSectors; sector++) {
-    uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
-    for (uint8_t kt = 0; kt < 2; kt++) {
-      bool useKeyB = (kt == 1);
-      auto& slot = useKeyB ? _mfKeys[sector].second : _mfKeys[sector].first;
-      if (slot) continue;
-
-      ui.pct = (int)((sector * 2 + kt) * 100 / (totalSectors * 2));
-      bool found = false;
-      for (uint8_t k = 0; k < keyCount; k++) {
+  // Standalone: quickly verify only keys already persisted for this UID.
+  // Keep this in the same LogView used by the selected dictionary.
+  if (!_recoverChainActive) {
+    size_t totalSlots = 0;
+    for (size_t sector = 0; sector < totalSectors; ++sector) {
+      if (_mfKeys[sector].first) ++totalSlots;
+      if (_mfKeys[sector].second) ++totalSlots;
+    }
+    size_t checked = 0;
+    for (size_t sector = 0; sector < totalSectors; ++sector) {
+      const uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
+      for (uint8_t kt = 0; kt < 2; ++kt) {
+        auto& slot = kt ? _mfKeys[sector].second : _mfKeys[sector].first;
+        if (!slot) continue;
+        ++checked;
         Uni.update();
-        if (Uni.Nav && Uni.Nav->wasPressed() &&
-            Uni.Nav->readDirection() == INavigation::DIR_BACK) {
-          if (_recoverChainActive) {
-            _recoverChainActive = false;
-            _resumeReadAfterDict = false;
-            _pendingRecoveryStep = false;
-            _readAfterRecovery = false;
-          }
-          ShowStatusAction::show("Cancelled", 1000);
-          _goMifareTag();
-          return;
+        if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+          ShowStatusAction::show("Cancelled", 1000); _doDictionaryPicker(); return;
         }
-        snprintf(liveStatus, sizeof(liveStatus), "S%u %c %02X%02X%02X%02X%02X%02X",
-                 (unsigned)sector, useKeyB ? 'B' : 'A',
-                 keys[k][0], keys[k][1], keys[k][2], keys[k][3], keys[k][4], keys[k][5]);
-        actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
-
-        bool ok = _nfc->mifareclassic_AuthenticateBlock(
-              _uid, _uidLen, trailer, useKeyB ? 1 : 0, keys[k]);
-        char line[48];
-        snprintf(line, sizeof(line), "S%u %c: %02X%02X%02X%02X%02X%02X",
-                 (unsigned)sector, useKeyB ? 'B' : 'A',
-                 keys[k][0], keys[k][1], keys[k][2], keys[k][3], keys[k][4], keys[k][5]);
-        actionLog.addLine(line, ok ? TFT_GREEN : TFT_RED);
-        actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
-
-        if (ok) {
-          slot = NFCUtility::MIFARE_Key(keys[k][0], keys[k][1], keys[k][2],
-                                        keys[k][3], keys[k][4], keys[k][5]);
-          recovered++;
-          found = true;
-          if (_recoverChainActive && _hasReadableKeyForEverySector())
-            objectiveMet = true;
-          break;
-        }
-        uint8_t rUid[7]; uint8_t rLen;
-        _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, rUid, &rLen, 200);
-      }
-      if (objectiveMet) break;
-      if (!found) {
-        char nf[32];
-        snprintf(nf, sizeof(nf), "  S%u %c: not found",
-                 (unsigned)sector, useKeyB ? 'B' : 'A');
-        actionLog.addLine(nf, TFT_RED);
-        actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
+        const auto kv = slot.value();
+        if (!_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,trailer,kt?1:0,const_cast<uint8_t*>(kv.data()))) slot.reset();
+        uint8_t rUid[7]; uint8_t rLen; _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,rUid,&rLen,200);
       }
     }
-    if (objectiveMet) break;
   }
 
-  ui.pct = 100;
-  snprintf(liveStatus, sizeof(liveStatus), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
-  actionLog.addLine(liveStatus, recovered > 0 ? TFT_GREEN : TFT_RED);
-  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui);
+  if (!_recoverChainActive) {
+    ui.partialPct = ui.totalPct = 0;
+    actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
+  }
+
+  if (_recoverChainActive) {
+    const size_t totalKeys = chainKeyCount;
+    size_t currentKey = 0;
+    MfcKeyStore::forEachDictionaryKey(Uni.Storage, filePath, [&](const uint8_t key[6], size_t, size_t) {
+      ++currentKey;
+      ui.keyIndex=currentKey; ui.keyTotal=totalKeys;
+      ui.partialPct = totalKeys ? (int)(currentKey * 100U / totalKeys) : 0;
+      ui.totalPct = chainGlobalTotal ? (int)((chainGlobalBase + currentKey) * 100U / chainGlobalTotal) : ui.partialPct;
+      for (size_t sector = 0; sector < totalSectors && !objectiveMet; ++sector) {
+        uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
+        for (uint8_t kt = 0; kt < 2; ++kt) {
+          bool useKeyB = (kt == 1);
+          auto& slot = useKeyB ? _mfKeys[sector].second : _mfKeys[sector].first;
+          if (slot) continue;
+          Uni.update();
+          if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+            _recoverChainActive=false; _resumeReadAfterDict=false; _pendingRecoveryStep=false; _readAfterRecovery=false;
+            ShowStatusAction::show("Cancelled",1000); _goMifareTag(); objectiveMet=true; return false;
+          }
+          char attemptLine[40];
+          snprintf(attemptLine,sizeof(attemptLine),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sector,useKeyB?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);
+          ui.attempt = attemptLine;
+          actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui);
+          bool ok=_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,trailer,useKeyB?1:0,const_cast<uint8_t*>(key));
+          char result[48];
+          snprintf(result,sizeof(result),"S%u %c: %02X%02X%02X%02X%02X%02X",
+                   (unsigned)sector,useKeyB?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);
+          actionLog.addLine(result,ok?TFT_GREEN:TFT_RED);
+          if(ok){ slot=NFCUtility::MIFARE_Key(key[0],key[1],key[2],key[3],key[4],key[5]); ++recovered; _recoverySummary.add(key); if(_hasReadableKeyForEverySector()) objectiveMet=true; }
+          uint8_t rUid[7]; uint8_t rLen; _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,rUid,&rLen,200);
+          if(objectiveMet) break;
+        }
+      }
+      return !objectiveMet;
+    });
+    if (!_recoverChainActive) return;
+  } else {
+    bool cancelled = false;
+    MfcKeyStore::forEachDictionaryKey(Uni.Storage, filePath, [&](const uint8_t key[6], size_t keyIndex, size_t) {
+      ui.keyIndex=keyIndex+1U; ui.keyTotal=sourceKeyCount; ui.dictIndex=1; ui.dictTotal=1;
+      ui.partialPct = sourceKeyCount ? (int)((keyIndex + 1U) * 100U / sourceKeyCount) : 0; ui.totalPct=ui.partialPct;
+      for (size_t sector = 0; sector < totalSectors; ++sector) {
+        const uint32_t trailer = (sector < 32) ? (sector * 4 + 3) : (128 + (sector - 32) * 16 + 15);
+        for (uint8_t kt = 0; kt < 2; ++kt) {
+          auto& slot = kt ? _mfKeys[sector].second : _mfKeys[sector].first;
+          if (slot) continue;
+          Uni.update();
+          if (Uni.Nav && Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) { cancelled = true; return false; }
+          char current[40]; snprintf(current,sizeof(current),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)sector,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); ui.attempt = current;
+          actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),statusCb,&ui);
+          const bool ok=_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,trailer,kt?1:0,const_cast<uint8_t*>(key));
+          char line[48]; snprintf(line,sizeof(line),"S%u %c: %02X%02X%02X%02X%02X%02X",(unsigned)sector,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]); actionLog.addLine(line,ok?TFT_GREEN:TFT_RED);
+          if(ok){slot=NFCUtility::MIFARE_Key(key[0],key[1],key[2],key[3],key[4],key[5]);++recovered;_recoverySummary.add(key);}
+          uint8_t rUid[7]; uint8_t rLen; _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,rUid,&rLen,200);
+        }
+      }
+      return true;
+    });
+    if(cancelled){ShowStatusAction::show("Cancelled",1000);_doDictionaryPicker();return;}
+    for(size_t sector=0;sector<totalSectors;++sector) for(uint8_t kt=0;kt<2;++kt) {
+      const auto& slot=kt?_mfKeys[sector].second:_mfKeys[sector].first;
+      if(!slot){char nf[32];snprintf(nf,sizeof(nf),"S%u %c: not found",(unsigned)sector,kt?'B':'A');actionLog.addLine(nf,TFT_RED);}
+    }
+  }
+  ui.partialPct = 100;
+  if (_recoverChainActive && chainGlobalTotal) ui.totalPct = (int)((chainGlobalBase + sourceKeyCount) * 100U / chainGlobalTotal);
+  else ui.totalPct = 100;
+  char summaryText[80];
+  formatSummary(summaryText, sizeof(summaryText));
+  char resultLine[40];
+  snprintf(resultLine, sizeof(resultLine), "%u %s recovered",
+           (unsigned)_recoverySummary.count, _recoverySummary.count == 1 ? "key" : "keys");
+  actionLog.addLine(resultLine, recovered > 0 ? TFT_GREEN : TFT_RED);
+  char coverageLine[40];
+  snprintf(coverageLine, sizeof(coverageLine), "%s", strchr(summaryText, '\n') ? strchr(summaryText, '\n') + 1 : "");
+  actionLog.addLine(coverageLine, TFT_WHITE);
+  actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), statusCb, &ui, 2);
   if (recovered > 0) {
     _saveKeys();
     int n = Achievement.inc("nfc_dict_attack");
     if (n == 1) Achievement.unlock("nfc_dict_attack");
   }
-  char msg[48];
-  snprintf(msg, sizeof(msg), "%s", recovered > 0 ? "Keys recovered" : "No keys recovered");
+  char msg[80];
+  formatSummary(msg, sizeof(msg));
   if (!_recoverChainActive) ShowStatusAction::show(msg, 1600);
   if (_recoverChainActive) {
     _recoverChainNewKeys += recovered;
     const bool covered = _hasReadableKeyForEverySector();
     ++_recoverChainIndex;
-    if (!covered && _recoverChainIndex < 2) {
+    if (!covered && _recoverChainIndex < 3) {
       _pendingRecoveryStep = true;
     } else {
       _recoverChainActive = false;
-      char finalMsg[40];
-      snprintf(finalMsg, sizeof(finalMsg), "%s", _recoverChainNewKeys > 0 ? "Keys recovered" : "No keys recovered");
+      char finalMsg[80];
+      formatSummary(finalMsg, sizeof(finalMsg));
       ShowStatusAction::show(finalMsg, 1400);
-      // Always return through Read Tag, even with incomplete coverage, so the
-      // user still gets the best partial dump available.
+      // Resume directly with the best complete/partial dump using the recovered keys.
       _readAfterRecovery = true;
     }
   } else if (_resumeReadAfterDict) {
     _resumeReadAfterDict = false;
     _readAfterRecovery = true;
   } else {
-    _goMifareAttacks();
+    _doDictionaryPicker();
   }
 }
 
@@ -3238,6 +3304,7 @@ void PN532I2cScreen::_doMifareReadMemory() {
 
   // Use the same persisted/default key discovery used by Read Tag.
   _discoverDefaultKeys(true);
+  if (_keyCheckCancelled) { ShowStatusAction::show("Cancelled",1000); _goMifareAdvanced(); return; }
   const uint16_t blocks = dims.second;
   _state = STATE_RAW_RESULT; _rawResultMifare = true; _resetRows();
   _pushRow("Type", _inferType(_sak, _atqa)); _pushRow("UID", _hexUid(_uid, _uidLen)); _pushRow("Blocks", String(blocks));
@@ -5360,6 +5427,18 @@ void PN532I2cScreen::_doGen3LockUid() {
 }
 
 void PN532I2cScreen::_showDumpActions() {
+  if (!_dumpComplete) {
+    static const InputSelectAction::Option missingOpts[] = {
+      {"Recover Keys", "dict"},
+      {"Partial Read", "partial"},
+    };
+    const char* choice = InputSelectAction::popup("Missing sector keys", missingOpts, 2, nullptr);
+    render();
+    if (!choice) return;
+    if (strcmp(choice, "dict") == 0) { _startRecoverKeys(); return; }
+    // Partial Read accepts the already acquired partial dump and continues to
+    // its normal actions below.
+  }
   static const InputSelectAction::Option opts[] = {
     {"View Dump",    "view"},
     {"Save UID",     "uid"},
@@ -5717,6 +5796,7 @@ void PN532I2cScreen::_doEraseTag() {
   auto dims = _mfDims(_sak);
   if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
   _discoverDefaultKeys(true);
+  if (_keyCheckCancelled) { ShowStatusAction::show("Cancelled",1000); _goMifareTag(); return; }
   if (!_hasReadableKeyForEverySector()) {
     ShowStatusAction::show("Key not available"); _goMifareTag(); return;
   }

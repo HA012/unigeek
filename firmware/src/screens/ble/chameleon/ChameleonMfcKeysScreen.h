@@ -22,6 +22,7 @@ private:
   uint8_t             _selMenu = 0;
   ListItem            _menu[2];
   BrowseFileView      _browser;
+  ListItem            _dictItems[2 + BrowseFileView::kCap];
   String              _pickDir;
   ScrollListView      _scrollView;
   ScrollListView::Row _rows[kMaxRows];
@@ -33,4 +34,5 @@ private:
   void _goMenu();
   void _loadDatabases();
   void _openDatabase(const String& path, const String& name);
+  void _openBuiltinDatabase(const String& id, const char* name);
 };

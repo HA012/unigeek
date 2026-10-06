@@ -30,7 +30,7 @@ Sub-menu for stored ISO14443A target:
 - **Authenticate** — Try every default key on every sector, key A and key B
 - **Dump Memory** — Read every block using discovered keys; blocks with no key or read errors show `-`. Press to save the dump to `/unigeek/nfc/dumps/<UID>.bin`
 - **Discovered Keys** — Per-sector list of recovered keys
-- **Dictionary Attack** — Pick a `.txt` file from `/unigeek/nfc/dictionaries/` and try its keys on the still-unknown sectors
+- **Dictionary Attack** — Pick built-in Default/Extended, Discovered, or a user `.txt` dictionary and try its keys on the still-unknown sectors
 
 ### MIFARE Ultralight / NTAG
 

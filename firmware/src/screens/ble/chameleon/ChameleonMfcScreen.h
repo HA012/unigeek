@@ -3,6 +3,7 @@
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
 #include "ui/views/ScrollListView.h"
+#include "utils/nfc/MfcRecoverySummary.h"
 
 class ChameleonMfcScreen : public ListScreen {
 public:
@@ -32,6 +33,7 @@ private:
     Continue,
     Cancel,
     ObjectiveMet,
+    Error,
   };
 
   struct DictAttempt {
@@ -70,8 +72,13 @@ private:
   bool _resumeReadAfterAttack = false;
   bool  _running = false;
   char _chainStage[32] = {};
+  char _dictError[64] = {};
   int  _recoverStartCount = 0;
   int  _dictNewFound = 0;
+  MfcRecoverySummary _keySummary;
+  bool _trackRecoveryKeys = false;
+  bool _dictAttackPending = false;
+  uint8_t _authenticatedSectors() const;
 
   // Card info
   uint8_t _uid[7]  = {};
@@ -113,7 +120,12 @@ private:
   // Action log (dump + dict)
   LogView _actionLog;
   char    _actionStatus[48] = {};
+  char    _actionAttempt[48] = {};
   int     _actionPct = 0;
+  int     _actionTotalPct = 0;
+  uint32_t _actionKeyIndex = 0, _actionKeyTotal = 0;
+  uint8_t  _actionDictIndex = 1, _actionDictTotal = 1;
+  uint32_t _actionGlobalBase = 0, _actionGlobalTotal = 0;
   static void _actionStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Keys result view
@@ -127,12 +139,11 @@ private:
   // Dict file picker
   static constexpr const char* _kDictDir = "/unigeek/nfc/dictionaries";
   BrowseFileView _browser;
-  ListItem _dictItems[1 + BrowseFileView::kCap];
+  ListItem _dictItems[2 + BrowseFileView::kCap];
   uint8_t  _dictFileCount = 0;
   String   _dictPickDir;        // current directory in the dict picker
-  static constexpr uint16_t MAX_DICT_KEYS = 256;
-  uint8_t  _dictKeys[MAX_DICT_KEYS][6] = {};
   uint16_t _dictKeyCount = 0;
+  String   _dictSource;          // built-in id or file path selected for standalone attack
 
   uint8_t  _trailerBlock(uint8_t sector);
   uint16_t _totalBlocks();
@@ -149,7 +160,8 @@ private:
   bool _recoverObjectiveMet() const;
   void _setChainStage(const char* name);
   void _finishRecover(bool success, const char* status, bool restoreMode,
-                      uint8_t previousMode, bool havePreviousMode);
+                      uint8_t previousMode, bool havePreviousMode,
+                      bool allowPartialReadOnFailure = false);
   DictControl _applyDictionaryKeys(const uint8_t keys[][6], uint16_t keyCount,
                                    DictControl (*hook)(ChameleonMfcScreen*, const DictAttempt&, bool pre));
   DictControl _runChainDictionaries();
@@ -167,14 +179,14 @@ private:
   void _freeDump();
   bool _extractDumpNdef(uint8_t** ndef, size_t* ndefLen) const;
   void _loadDictPicker();
-  bool _loadDictFile(const char* path);
   void _runDictAttack();
   void _buildKeyRows();
   void _loadKeys();
   void _saveKeys();
 
   // Nested attack UI helpers (nonce collection now done firmware-side).
+  enum class AdvancedAttackResult : uint8_t { Completed, Failed, Cancelled };
   void _log(const char* line, uint16_t color);
-  void _callStaticNested();
-  void _callNestedAttack();
+  AdvancedAttackResult _callStaticNested();
+  AdvancedAttackResult _callNestedAttack();
 };

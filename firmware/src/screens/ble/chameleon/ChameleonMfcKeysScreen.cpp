@@ -3,6 +3,7 @@
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/nfc/MfcKeyStore.h"
 
 const char* ChameleonMfcKeysScreen::title() {
   if (_state == STATE_DATABASES) return "Dictionaries";
@@ -29,12 +30,19 @@ void ChameleonMfcKeysScreen::_loadDatabases() {
   if (!_pickDir.length()) _pickDir = kDictDir;
 
   _browser.root = kDictDir;
-  uint8_t n = _browser.load(this, _pickDir, ".txt", nullptr, BrowseFileView::STEM_CAPITALIZED,
-                            _pickDir == kDictDir ? "discovered.txt" : nullptr);
-  setItems(_browser.items(), n);
+  uint8_t n = _browser.load(this, _pickDir, ".txt", nullptr, BrowseFileView::STEM,
+                            nullptr);
+  if (_pickDir == kDictDir) {
+    _dictItems[0] = {"Default"}; _dictItems[1] = {"Discovered"}; _dictItems[2] = {"Extended"};
+    uint8_t visible = 3;
+    for (uint8_t i=0;i<n;++i) {
+      // discovered.txt is represented by the virtual Discovered entry above.
+      if (_browser.items()[i].label == "discovered") continue;
+      _dictItems[visible++]=_browser.items()[i];
+    }
+    setItems(_dictItems, visible);
+  } else setItems(_browser.items(), n);
   render();
-
-  if (!n && _pickDir == kDictDir) ShowStatusAction::show("No dictionary files", 1600);
 }
 
 void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& name) {
@@ -78,6 +86,14 @@ void ChameleonMfcKeysScreen::_openDatabase(const String& path, const String& nam
   render();
 }
 
+void ChameleonMfcKeysScreen::_openBuiltinDatabase(const String& id, const char* name) {
+  const uint8_t (*keys)[6]=nullptr; size_t count=0;
+  if (!MfcKeyStore::builtinDictionary(id,&keys,&count)) return;
+  _rowCount=0;
+  for(size_t i=0;i<count && _rowCount<kMaxRows;++i){_labels[_rowCount]=String(_rowCount+1);_values[_rowCount]=MfcKeyStore::keyString(keys[i]);_rows[_rowCount]={_labels[_rowCount].c_str(),_values[_rowCount]};++_rowCount;}
+  _viewTitle=name; _state=STATE_VIEW; _scrollView.resetScroll(); _scrollView.setRows(_rows,_rowCount); render();
+}
+
 // ── screen hooks ───────────────────────────────────────
 
 void ChameleonMfcKeysScreen::onItemSelected(uint8_t index) {
@@ -93,9 +109,23 @@ void ChameleonMfcKeysScreen::onItemSelected(uint8_t index) {
   }
 
   if (_state == STATE_DATABASES) {
-    if (index >= _browser.count()) return;
-
-    const auto& e = _browser.entry(index);
+    if (_pickDir == kDictDir && index < 3) {
+      if (index == 0) _openBuiltinDatabase(MfcKeyStore::kBuiltinDefaultId, "Default");
+      else if (index == 1) _openDatabase(MfcKeyStore::kDiscoveredDictionary, "Discovered");
+      else _openBuiltinDatabase(MfcKeyStore::kBuiltinExtendedId, "Extended");
+      return;
+    }
+    uint8_t fi = index;
+    if (_pickDir == kDictDir) {
+      uint8_t wanted = index - 3, seen = 0; bool found = false;
+      for (uint8_t i=0; i<_browser.count(); ++i) {
+        if (_browser.items()[i].label == "discovered") continue;
+        if (seen++ == wanted) { fi = i; found = true; break; }
+      }
+      if (!found) return;
+    }
+    if (fi >= _browser.count()) return;
+    const auto& e = _browser.entry(fi);
     if (e.isDir) {
       _pickDir = e.path;
       _loadDatabases();

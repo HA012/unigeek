@@ -249,6 +249,9 @@ static bool verifyKeyOnCard(MFRC522_I2C* module, uint8_t authCmd, uint8_t blockA
 // ===================== Key sources =====================
 
 // Built-in common MIFARE keys
+// Darkside-specific candidate corpus. This is intentionally independent of
+// MfcKeyStore::kDefaultKeys: it is an attack heuristic list, not the UI/Read Tag
+// "Default" dictionary. Do not synchronize the two lists mechanically.
 static const uint64_t COMMON_KEYS[] = {
   0xFFFFFFFFFFFFULL, 0xA0A1A2A3A4A5ULL, 0xB0B1B2B3B4B5ULL,
   0x000000000000ULL, 0xAABBCCDDEEFFULL, 0x4D3A99C351DDULL,

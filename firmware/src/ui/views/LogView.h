@@ -35,10 +35,11 @@ public:
   }
 
   void draw(IDisplay& lcd, int x, int y, int w, int h,
-            StatusBarCallback statusCb = nullptr, void* userData = nullptr)
+            StatusBarCallback statusCb = nullptr, void* userData = nullptr, int statusLines = 1)
   {
     static constexpr int lineH   = 10;
-    static constexpr int statusH = 11;
+    static constexpr int statusLineH = 11;
+    const int statusH = statusLineH * (statusLines < 1 ? 1 : statusLines);
     _scrollY = 0;
     // +1 for the separator hline that sits between log area and status bar.
     int cbH      = statusCb ? statusH + 1 : 0;

@@ -5,6 +5,7 @@
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
 #include "utils/nfc/MagicCard.h"
+#include "utils/nfc/MfcRecoverySummary.h"
 
 class ST25R3916Backend;
 
@@ -304,6 +305,7 @@ private:
   bool _ndefExperimentalTarget = false;
   bool _writeSourceUidKnown = false;
   BrowseFileView _browser;
+  ListItem _dictItems[2 + BrowseFileView::kCap];
   String _dumpPickDir;
   String _uidPickDir;
   String _uidDumpPickDir;
@@ -321,9 +323,14 @@ private:
   bool _emuReturnMfc = false;
   bool _resumeMfcReadAfterDict = false;
   bool _mfcReadAfterDict = false;
+  bool _mfcKnownKeysOnlyRead = false;
   bool _mfcRecoverChainActive = false;
   uint8_t _mfcRecoverChainIndex = 0;
   uint16_t _mfcRecoverChainNewKeys = 0;
+  uint8_t _mfcRecoverTagUid[10] = {};
+  uint8_t _mfcRecoverTagUidLen = 0;
+  uint8_t _mfcRecoverTagSak = 0;
+  MfcRecoverySummary _mfcRecoverySummary;
   bool _mfcRecoveryNext = false;
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
 

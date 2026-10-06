@@ -1,4 +1,5 @@
 #pragma once
+#include "utils/nfc/MfcRecoverySummary.h"
 
 #include <array>
 #include <Adafruit_PN532.h>
@@ -236,6 +237,7 @@ private:
   bool     _recoverChainActive = false;
   uint8_t  _recoverChainIndex = 0;
   uint16_t _recoverChainNewKeys = 0;
+  MfcRecoverySummary _recoverySummary;
   bool     _pendingRecoveryStep = false;
   bool     _readAfterRecovery = false;
   String   _dumpPickDir;
@@ -274,6 +276,7 @@ private:
 
   static constexpr const char* _dictPath = "/unigeek/nfc/dictionaries";
   BrowseFileView _browser;
+  ListItem       _dictItems[2 + BrowseFileView::kCap];
   String         _dictPickDir;   // current dir in the dict picker
   String         _keyDbPickDir;  // current dir in the key database browser
   String         _keyDbViewTitle;
@@ -314,6 +317,7 @@ private:
   void _doTypeBEraseNdef();
   void _doTypeBFormatNdef();
   bool _discoverDefaultKeys(bool checkingProgress = false);
+  bool _keyCheckCancelled = false;
   void _loadSavedKeys();
   void _saveKeys();
   bool _hasReadableKeyForEverySector() const;

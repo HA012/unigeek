@@ -74,7 +74,6 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
           if (strcasecmp(name.c_str(), "discovered.txt") == 0) return 0;
           if (strcasecmp(name.c_str(), "default.txt") == 0) return 1;
           if (strcasecmp(name.c_str(), "extended.txt") == 0) return 2;
-          if (strcasecmp(name.c_str(), "community.txt") == 0) return 3;
           return 100;
         };
         int tmpRank = dictionaryRank(tmp.name);
