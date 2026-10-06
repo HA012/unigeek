@@ -2752,7 +2752,7 @@ void PN532I2cScreen::_doDictionaryAttackWithPath(const String& filePath) {
     snprintf(left,sizeof(left),"%s (%u/%u)",ctx->attempt,(unsigned)ctx->keyIndex,(unsigned)ctx->keyTotal);
     snprintf(pct,sizeof(pct),"%d%%",ctx->partialPct); sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(left,2,barY); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY);
     snprintf(left,sizeof(left),"%s (%d/%d)",ctx->status,ctx->dictIndex,ctx->dictTotal); snprintf(pct,sizeof(pct),"%d%%",ctx->totalPct);
-    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_WHITE); sp.drawString(left,2,barY+11); sp.setTextDatum(TR_DATUM); sp.drawString(pct,width-2,barY+11);
+    sp.setTextDatum(TL_DATUM); sp.setTextColor(TFT_WHITE); sp.drawString(left,2,barY+11); sp.setTextDatum(TR_DATUM); sp.setTextColor(TFT_CYAN); sp.drawString(pct,width-2,barY+11);
   };
   char liveStatus[80] = "Starting...";
   if (!_recoverChainActive) {
