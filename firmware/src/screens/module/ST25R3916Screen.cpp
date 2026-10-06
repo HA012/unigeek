@@ -4404,7 +4404,7 @@ void ST25R3916Screen::_runMfcDictionaryAttack(const String& path) {
     char pctBuf[8];
     snprintf(pctBuf, sizeof(pctBuf), "%d%%", ctx->pct);
     sp.setTextDatum(TR_DATUM);
-    sp.setTextColor(TFT_CYAN);
+    sp.setTextColor(TFT_WHITE);
     sp.drawString(pctBuf, width - 2, barY);
     const int pctW = sp.textWidth(pctBuf);
     sp.setTextColor(TFT_CYAN);
