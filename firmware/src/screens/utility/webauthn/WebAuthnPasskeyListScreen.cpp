@@ -71,12 +71,12 @@ void WebAuthnPasskeyListScreen::_confirmDelete(uint8_t index)
   memcpy(credId, _entries[index].credId, sizeof(credId));
 
   if (!webauthn::CredentialStore::deleteResidentCredById(credId)) {
-    ShowStatusAction::show("Delete failed", 1200);
     render();
+    ShowStatusAction::show("Delete failed", 1200);
     return;
   }
-  ShowStatusAction::show("Deleted", 800);
   _reload(index);
+  ShowStatusAction::show("Deleted", 800);
 }
 
 #endif  // DEVICE_HAS_WEBAUTHN

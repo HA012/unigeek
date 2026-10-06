@@ -593,11 +593,11 @@ void RfCaptureScreen::_showBrowseOptions(uint8_t index) {
     String newPath = _makeUniquePath(newName);
     if (Uni.Storage->writeFile(newPath.c_str(), content.c_str())) {
       Uni.Storage->deleteFile(_browser.entry(index).path.c_str());
-      ShowStatusAction::show("Renamed", 1000);
       _loadBrowseDir(_browsePath);
+      ShowStatusAction::show("Renamed", 1000);
     } else {
-      ShowStatusAction::show("Rename failed");
       render();
+      ShowStatusAction::show("Rename failed");
     }
 
   } else if (strcmp(choice, "delete") == 0) {

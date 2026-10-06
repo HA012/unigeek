@@ -761,25 +761,25 @@ void ChameleonMfcNdefScreen::_showWritePreview(const uint8_t* ndef, size_t ndefL
 void ChameleonMfcNdefScreen::_writeText() {
   String v = InputTextAction::popup("Text", ""); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildText(v, b, n, sizeof(b))) { ShowStatusAction::show("Text too large", 1600); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildText(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Text too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeUrl() {
   String v = InputTextAction::popup("URL", "https://"); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildUrl(v, b, n, sizeof(b))) { ShowStatusAction::show("URL too large", 1600); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildUrl(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("URL too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writePhone() {
   String v = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildPhone(v, b, n, sizeof(b))) { ShowStatusAction::show("Phone too large", 1600); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildPhone(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Phone too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeEmail() {
   String v = InputTextAction::popup("Email", ""); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildEmail(v, b, n, sizeof(b))) { ShowStatusAction::show("Email too large", 1600); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildEmail(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Email too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeVcard() {
@@ -791,7 +791,7 @@ void ChameleonMfcNdefScreen::_writeVcard() {
   String website = InputTextAction::popup("Website", "https://"); if (InputTextAction::wasCancelled()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
   if (!NdefBuilder::buildVcard(contact, company, address, phone, email, website, b, n, sizeof(b))) {
-    ShowStatusAction::show("vCard too large", 1600); _goWriteMenu(); return;
+    _goWriteMenu(); ShowStatusAction::show("vCard too large", 1600); return;
   }
   _showWritePreview(b, n, false);
 }

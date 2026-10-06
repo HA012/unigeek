@@ -3330,8 +3330,8 @@ void PN532I2cScreen::_doMifareEditMemory() {
   if (InputNumberAction::wasCancelled()) { _goMifareAdvanced(); return; }
   String hex=InputTextAction::popup("Block data (32 hex)","",InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) { _goMifareAdvanced(); return; }
-  hex.replace(" ",""); hex.replace(":",""); if (hex.length()!=32) { ShowStatusAction::show("Need 32 hex chars"); _goMifareAdvanced(); return; }
-  uint8_t data[16]={}; for(int i=0;i<16;++i){ char b[3]={hex[i*2],hex[i*2+1],0}; char*e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){ShowStatusAction::show("Bad hex");_goMifareAdvanced();return;} data[i]=(uint8_t)v; }
+  hex.replace(" ",""); hex.replace(":",""); if (hex.length()!=32) { _goMifareAdvanced(); ShowStatusAction::show("Need 32 hex chars"); return; }
+  uint8_t data[16]={}; for(int i=0;i<16;++i){ char b[3]={hex[i*2],hex[i*2+1],0}; char*e=nullptr; unsigned long v=strtoul(b,&e,16); if(!e||*e){_goMifareAdvanced();ShowStatusAction::show("Bad hex");return;} data[i]=(uint8_t)v; }
   static const uint8_t keys[][6] = {
     {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}, {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5},
     {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7}, {0x00,0x00,0x00,0x00,0x00,0x00},
@@ -3339,7 +3339,7 @@ void PN532I2cScreen::_doMifareEditMemory() {
     {0x1A,0x98,0x2C,0x7E,0x45,0x9A}, {0xAA,0xBB,0xCC,0xDD,0xEE,0xFF},
   };
   bool ok=false; for(uint8_t kt=0;kt<2 && !ok;++kt) for(auto &key:keys){ uint8_t uid[7]={},ul=0; if(!_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,uid,&ul,250)||ul!=_uidLen||memcmp(uid,_uid,ul)!=0) continue; if(_nfc->mifareclassic_AuthenticateBlock(_uid,_uidLen,block,kt,const_cast<uint8_t*>(key))) ok=_nfc->mifareclassic_WriteDataBlock(block,data); if(ok) break; }
-  ShowStatusAction::show(ok?"Block written":"Key not available",1600); _goMifareAdvanced();
+  _goMifareAdvanced(); ShowStatusAction::show(ok?"Block written":"Key not available",1600);
 }
 
 void PN532I2cScreen::_doUltralightReadPages() {
@@ -4640,15 +4640,15 @@ void PN532I2cScreen::_doWriteNdefText() {
   size_t ndefLen = 4 + payloadLen;
 
   if (ndefLen > 254 || payloadLen > 255) {
-    ShowStatusAction::show("Text too long");
     _goNdefWrite();
+    ShowStatusAction::show("Text too long");
     return;
   }
 
   uint8_t* ndef = new uint8_t[ndefLen];
   if (!ndef) {
-    ShowStatusAction::show("Out of memory");
     _goNdefWrite();
+    ShowStatusAction::show("Out of memory");
     return;
   }
 
@@ -4685,15 +4685,15 @@ void PN532I2cScreen::_doWriteNdefUrl() {
   size_t ndefLen = 4 + payloadLen;
 
   if (ndefLen > 254 || payloadLen > 255) {
-    ShowStatusAction::show("URL too long");
     _goNdefWrite();
+    ShowStatusAction::show("URL too long");
     return;
   }
 
   uint8_t* ndef = new uint8_t[ndefLen];
   if (!ndef) {
-    ShowStatusAction::show("Out of memory");
     _goNdefWrite();
+    ShowStatusAction::show("Out of memory");
     return;
   }
 
@@ -4724,15 +4724,15 @@ void PN532I2cScreen::_doWriteNdefEmail() {
   size_t ndefLen = 4 + payloadLen;
 
   if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
-    ShowStatusAction::show("Email too long");
     _goNdefWrite();
+    ShowStatusAction::show("Email too long");
     return;
   }
 
   uint8_t* ndef = new uint8_t[ndefLen];
   if (!ndef) {
-    ShowStatusAction::show("Out of memory");
     _goNdefWrite();
+    ShowStatusAction::show("Out of memory");
     return;
   }
 
@@ -4763,15 +4763,15 @@ void PN532I2cScreen::_doWriteNdefPhone() {
   size_t ndefLen = 4 + payloadLen;
 
   if (ndefLen > MAX_NDEF_BYTES || payloadLen > 255) {
-    ShowStatusAction::show("Phone too long");
     _goNdefWrite();
+    ShowStatusAction::show("Phone too long");
     return;
   }
 
   uint8_t* ndef = new uint8_t[ndefLen];
   if (!ndef) {
-    ShowStatusAction::show("Out of memory");
     _goNdefWrite();
+    ShowStatusAction::show("Out of memory");
     return;
   }
 
@@ -4967,8 +4967,8 @@ void PN532I2cScreen::_doWriteNdefVcard() {
                                ndef,
                                ndefLen,
                                MAX_NDEF_BYTES)) {
-    ShowStatusAction::show("vCard too large");
     _goNdefWrite();
+    ShowStatusAction::show("vCard too large");
     return;
   }
 
@@ -5922,16 +5922,17 @@ void PN532I2cScreen::_doSaveDump() {
   String path = String(_dumpPath) + "/" + filename;
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
-  if (!f) { ShowStatusAction::show("Failed"); render(); return; }
+  if (!f) { render(); ShowStatusAction::show("Failed"); return; }
   if (_dumpLen == 0 || _dumpLen > sizeof(_dumpImg)) {
     f.close();
-    ShowStatusAction::show("Invalid dump size");
     render();
+    ShowStatusAction::show("Invalid dump size");
     return;
   }
   const bool ok = f.write(_dumpImg, _dumpLen) == _dumpLen;
   f.close();
 
+  render();
   if (ok) {
     String msg = String("Saved: ") + filename;
     ShowStatusAction::show(msg.c_str(), 1600);

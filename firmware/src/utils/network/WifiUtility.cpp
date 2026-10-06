@@ -66,6 +66,7 @@ WifiUtility::ConnectResult WifiUtility::connectWithPrompt(const char* bssid, con
 
   // An explicitly saved empty value is distinct from EXIT. This also lets
   // connectWithPrompt() try open networks without treating them as cancelled.
+  if (Screen.current()) Screen.current()->render();
   ShowStatusAction::show(("Connecting to " + String(ssid) + "...").c_str(), 0);
   if (!connect(ssid, password.c_str())) {
     return CONNECT_FAILED;

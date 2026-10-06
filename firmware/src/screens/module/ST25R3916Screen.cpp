@@ -222,7 +222,11 @@ static bool st25PwdFromText(const String& input, uint8_t pwd[4]) {
 static bool st25PromptPwd(uint8_t pwd[4], const char* title = "Password / 0xXXXXXXXX") {
   String text = InputTextAction::popup(title, "", InputTextAction::INPUT_TEXT);
   if (InputTextAction::wasCancelled()) return false;
-  if (!st25PwdFromText(text, pwd)) { ShowStatusAction::show("Invalid password"); return false; }
+  if (!st25PwdFromText(text, pwd)) {
+    if (Screen.current()) Screen.current()->render();
+    ShowStatusAction::show("Invalid password");
+    return false;
+  }
   return true;
 }
 
@@ -2474,7 +2478,7 @@ void ST25R3916Screen::_writeNdefBuilt(uint8_t kind) {
             kind == 1 ? NdefBuilder::buildUrl(value, b, n, sizeof(b)) :
             kind == 2 ? NdefBuilder::buildPhone(value, b, n, sizeof(b)) :
                         NdefBuilder::buildEmail(value, b, n, sizeof(b));
-  if (!ok) { ShowStatusAction::show("NDEF too large"); _returnToNdefWriteMenu(); return; }
+  if (!ok) { _returnToNdefWriteMenu(); ShowStatusAction::show("NDEF too large"); return; }
   _showNdefWritePreview(b, n, false);
 }
 
@@ -2487,7 +2491,7 @@ void ST25R3916Screen::_writeNdefVcard() {
   String website = InputTextAction::popup("Website", "https://"); if (InputTextAction::wasCancelled()) { _returnToNdefWriteMenu(); return; }
   uint8_t b[kMaxNdefBytes] = {}; size_t n = 0;
   if (!NdefBuilder::buildVcard(contact, company, address, phone, email, website, b, n, sizeof(b))) {
-    ShowStatusAction::show("vCard too large"); _returnToNdefWriteMenu(); return;
+    _returnToNdefWriteMenu(); ShowStatusAction::show("vCard too large"); return;
   }
   _showNdefWritePreview(b, n, false);
 }
@@ -4768,8 +4772,8 @@ void ST25R3916Screen::_editMfcMemory() {
   hex.replace(":", "");
   if (hex.length() != 32) {
     dev.deactivate();
-    ShowStatusAction::show("Need 32 hex chars");
     _showMfcAdvancedMenu();
+    ShowStatusAction::show("Need 32 hex chars");
     return;
   }
 
@@ -4780,8 +4784,8 @@ void ST25R3916Screen::_editMfcMemory() {
     unsigned long value = strtoul(b, &end, 16);
     if (!end || *end) {
       dev.deactivate();
-      ShowStatusAction::show("Bad hex");
       _showMfcAdvancedMenu();
+      ShowStatusAction::show("Bad hex");
       return;
     }
     data[i] = (uint8_t)value;
@@ -4815,9 +4819,11 @@ void ST25R3916Screen::_editMfcMemory() {
     }
   }
 
-  ShowStatusAction::show(ok ? "Block written" : "Key not available", 1600);
-#endif
   _showMfcAdvancedMenu();
+  ShowStatusAction::show(ok ? "Block written" : "Key not available", 1600);
+#else
+  _showMfcAdvancedMenu();
+#endif
 }
 
 void ST25R3916Screen::_lockMfcUidGen3() {

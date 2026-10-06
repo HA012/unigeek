@@ -111,6 +111,7 @@ void WigleScreen::_editToken() {
   WigleUtil::saveToken(Uni.Storage, token);
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
   _menuItems[0] = {"Wigle Token", _tokenSub.c_str()};
+  render();
   ShowStatusAction::show("Token saved");
 }
 
