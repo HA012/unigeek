@@ -2,6 +2,7 @@
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
+#include "ui/views/DictionaryDiscoverySummary.h"
 #include "ui/views/ScrollListView.h"
 #include "utils/nfc/MfcRecoverySummary.h"
 
@@ -76,6 +77,11 @@ private:
   int  _dictNewFound = 0;
   MfcRecoverySummary _keySummary;
   bool _trackRecoveryKeys = false;
+  bool _keyCheckPromptShown = false;
+  bool _keyCheckCompletedShown = false;
+  DictionaryDiscoverySummary _discoveredKeys;
+  bool _keyCheckContinueMissing = false;
+  bool _keyCheckStopRequested = false;
   bool _dictAttackPending = false;
   uint8_t _authenticatedSectors() const;
 
@@ -120,8 +126,11 @@ private:
   // Action log (dump + dict)
   LogView _actionLog;
   char    _actionStatus[48] = {};
+  uint8_t _dictProgressStage = 0;
   char    _actionAttempt[48] = {};
   int     _actionPct = 0;
+  size_t  _dictProgressKeyIndex = 0;
+  size_t  _dictProgressKeyTotal = 0;
   static void _actionStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Keys result view
@@ -154,6 +163,7 @@ private:
   bool _hasKeyForEverySector() const;
   bool _hasAllKeys() const;
   bool _recoverObjectiveMet() const;
+  bool _offerMissingKeyCheck(const uint8_t key[6], char type);
   void _setChainStage(const char* name);
   void _finishRecover(bool success, const char* status, bool restoreMode,
                       uint8_t previousMode, bool havePreviousMode,

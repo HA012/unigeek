@@ -18,8 +18,9 @@ struct MfcRecoverySummary {
     if (count < 80) memcpy(values[count++], key, 6);
   }
 
-  void format(char* out, size_t capacity, unsigned covered, unsigned total) const {
-    snprintf(out, capacity, "%u %s recovered\n%u/%u sectors authenticated",
-             (unsigned)count, count == 1 ? "key" : "keys", covered, total);
+  void format(char* out, size_t capacity, unsigned found, unsigned totalKeys,
+              unsigned covered, unsigned totalSectors) const {
+    snprintf(out, capacity, "%u/%u keys recovered\n%u/%u sectors authenticated",
+             found, totalKeys, covered, totalSectors);
   }
 };

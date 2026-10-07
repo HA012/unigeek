@@ -13,6 +13,7 @@
 #include "ui/components/StatusBar.h"
 #include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "ui/views/DictionaryKeyProgressView.h"
 #include "utils/ble/ChameleonClient.h"
 #include "utils/nfc/MfcKeyStore.h"
 #include "utils/nfc/NdefParser.h"
@@ -97,6 +98,21 @@ void ChameleonMfcScreen::_actionStatusBarCb(Sprite& sp, int barY, int width, voi
   auto* self = static_cast<ChameleonMfcScreen*>(userData);
   sp.setTextDatum(TL_DATUM);
   sp.setTextColor(TFT_WHITE);
+  if (self->_dictProgressKeyTotal) {
+    char label[64];
+    if (self->_dictProgressStage)
+      snprintf(label, sizeof(label), "%s (%u/3)", self->_actionStatus, (unsigned)self->_dictProgressStage);
+    else
+      snprintf(label, sizeof(label), "%s", self->_actionStatus);
+    sp.drawString(label, 2, barY);
+    char keyBuf[32];
+    snprintf(keyBuf, sizeof(keyBuf), "%u/%u keys",
+             (unsigned)self->_dictProgressKeyIndex, (unsigned)self->_dictProgressKeyTotal);
+    sp.setTextDatum(TR_DATUM);
+    sp.setTextColor(TFT_WHITE);
+    sp.drawString(keyBuf, width - 2, barY);
+    return;
+  }
   sp.drawString(self->_actionStatus, 2, barY);
   char pctBuf[8];
   snprintf(pctBuf, sizeof(pctBuf), "%d%%", self->_actionPct);
@@ -210,7 +226,7 @@ void ChameleonMfcScreen::_callAuth() {
     if (_dictSource == MfcKeyStore::kBuiltinDefaultId) strncpy(_actionStatus, "Default", sizeof(_actionStatus) - 1);
     else if (_dictSource == MfcKeyStore::kDiscoveredDictionary) strncpy(_actionStatus, "Discovered", sizeof(_actionStatus) - 1);
     else if (_dictSource == MfcKeyStore::kBuiltinExtendedId) strncpy(_actionStatus, "Extended", sizeof(_actionStatus) - 1);
-    else { String label=_dictSource; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); if(label.endsWith(".txt")) label.remove(label.length()-4); strncpy(_actionStatus,label.c_str(),sizeof(_actionStatus)-1); }
+    else { String label=_dictSource; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); strncpy(_actionStatus,label.c_str(),sizeof(_actionStatus)-1); }
     _actionStatus[sizeof(_actionStatus) - 1] = 0;
     _actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _actionStatusBarCb, this);
     int totalWork = 0;
@@ -297,7 +313,8 @@ void ChameleonMfcScreen::_callAuth() {
     }
   }
 
-  snprintf(msg, sizeof(msg), "Authenticating sectors (%d/%d)...", totalWork, totalWork);
+  snprintf(msg, sizeof(msg), "Authenticating sectors (%u/%u)...",
+           (unsigned)_sectors, (unsigned)_sectors);
   ProgressView::progress(msg, 100);
   ProgressView::finish();
 
@@ -450,9 +467,11 @@ uint8_t ChameleonMfcScreen::_authenticatedSectors() const {
 }
 
 bool ChameleonMfcScreen::_recoverObjectiveMet() const {
-  // Read Tag only needs one usable key per sector. Standalone Attack Chain
-  // keeps going until both A and B are recovered, or no method remains.
-  return _resumeReadAfterAttack ? _hasKeyForEverySector() : _hasAllKeys();
+  // An explicit Stop after full sector coverage always completes Recover.
+  // Otherwise Continue means keep looking for both A/B keys; without that
+  // choice Read Tag may finish once every sector has one usable key.
+  if (_keyCheckStopRequested) return true;
+  return _resumeReadAfterAttack && !_keyCheckContinueMissing ? _hasKeyForEverySector() : _hasAllKeys();
 }
 
 void ChameleonMfcScreen::_setChainStage(const char* name) {
@@ -478,7 +497,8 @@ void ChameleonMfcScreen::_finishRecover(bool success, const char* status,
   _trackRecoveryKeys = false;
   char recoveredMsg[80];
   if (success) {
-    _keySummary.format(recoveredMsg, sizeof(recoveredMsg), _authenticatedSectors(), _sectors);
+    unsigned found=0; for(uint8_t sec=0;sec<_sectors;++sec){if(_foundA[sec])++found;if(_foundB[sec])++found;}
+    _keySummary.format(recoveredMsg, sizeof(recoveredMsg), (unsigned)_keySummary.count, (unsigned)_keySummary.count, _authenticatedSectors(), _sectors);
     status = recoveredMsg;
   }
   if (status && status[0]) ShowStatusAction::show(status, success ? 1400 : 1800);
@@ -518,6 +538,8 @@ void ChameleonMfcScreen::_callRecoverKeys() {
   _actionStatus[sizeof(_actionStatus) - 1] = 0;
   _actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(),
                   _actionStatusBarCb, this);
+  _keyCheckPromptShown=false; _keyCheckContinueMissing=false; _keyCheckStopRequested=false;
+  _keyCheckCompletedShown=false; _discoveredKeys=DictionaryDiscoverySummary();
   const DictControl dictResult = _runChainDictionaries();
   if (_dictNewFound > 0) _saveKeys();
   if (dictResult == DictControl::Cancel) {
@@ -1247,7 +1269,7 @@ void ChameleonMfcScreen::_callDump() {
 void ChameleonMfcScreen::_loadDictPicker() {
   if (_dictPickDir.length() == 0) _dictPickDir = _kDictDir;
   _browser.root = _kDictDir;
-  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::STEM);
+  uint8_t n = _browser.load(this, _dictPickDir, ".txt", nullptr, BrowseFileView::NAME);
 
   if (_dictPickDir == _kDictDir) {
     uint8_t out = 0;
@@ -1284,51 +1306,74 @@ static bool _parseChameleonMfcKey(const String& line, uint8_t out[6]) {
   return true;
 }
 
+bool ChameleonMfcScreen::_offerMissingKeyCheck(const uint8_t key[6], char type) {
+  _discoveredKeys.note(key,type);
+  const bool complete=_hasAllKeys();
+  const bool canStop=_hasKeyForEverySector() && !complete;
+  _discoveredKeys.render(_actionLog,_sectors,[&](const String& hex)->size_t{
+    uint8_t bytes[6];
+    for(int j=0;j<6;++j){char pair[3]={hex[j*2],hex[j*2+1],0};bytes[j]=(uint8_t)strtoul(pair,nullptr,16);}
+    size_t n=0;
+    for(uint8_t sec=0;sec<_sectors;++sec)
+      if((_foundA[sec]&&memcmp(_keysA[sec],bytes,6)==0)||
+         (_foundB[sec]&&memcmp(_keysB[sec],bytes,6)==0))++n;
+    return n;
+  },canStop,complete);
+  _actionAttempt[0]=0;
+  _actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);
+  {
+    if(canStop)_keyCheckPromptShown=true;
+    if(complete)_keyCheckCompletedShown=true;
+    Uni.update();delay(80);Uni.update();
+    while(true){
+      Uni.update();
+      if(Uni.Nav&&Uni.Nav->wasPressed()){
+        const auto dir=Uni.Nav->readDirection();
+        if(dir==INavigation::DIR_PRESS){
+          _keyCheckContinueMissing=true;
+          return true;
+        }
+        if(canStop&&dir==INavigation::DIR_BACK){_keyCheckStopRequested=true;return false;}
+      }
+      delay(15);
+    }
+  }
+  return !_keyCheckStopRequested;
+}
+
 ChameleonMfcScreen::DictControl ChameleonMfcScreen::_standaloneDictHook(
     ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre) {
   if (pre) {
+    self->_dictProgressKeyIndex=(size_t)attempt.index + 1U;
+    self->_dictProgressKeyTotal=attempt.total;
     Uni.update();
     if (Uni.Nav && Uni.Nav->wasPressed() &&
         Uni.Nav->readDirection() == INavigation::DIR_BACK) {
       return DictControl::Cancel;
     }
-    char current[48];
-    snprintf(current, sizeof(current),
-             "S%d %c %02X%02X%02X%02X%02X%02X",
-             attempt.sector, attempt.type,
-             attempt.key[0], attempt.key[1], attempt.key[2],
-             attempt.key[3], attempt.key[4], attempt.key[5]);
-    strncpy(self->_actionAttempt, current, sizeof(self->_actionAttempt)-1); self->_actionAttempt[sizeof(self->_actionAttempt)-1]=0;
-    self->_actionPct = attempt.total ? (int)(((uint64_t)attempt.index + 1U) * 100U / attempt.total) : 0;
-    self->_actionLog.draw(Uni.Lcd, self->bodyX(), self->bodyY(),
-                          self->bodyW(), self->bodyH(), _actionStatusBarCb, self);
+    DictionaryKeyProgressView::draw(self->_actionStatus, attempt.sector, attempt.type, attempt.key,
+                                    (size_t)attempt.index + 1U, attempt.total,
+                                    (size_t)attempt.slot + 1U, (size_t)attempt.slotTotal, false, true);
     return DictControl::Continue;
   }
 
-  char line[48];
-  snprintf(line, sizeof(line), "S%d %c: %02X%02X%02X%02X%02X%02X",
-           attempt.sector, attempt.type,
-           attempt.key[0], attempt.key[1], attempt.key[2],
-           attempt.key[3], attempt.key[4], attempt.key[5]);
-  // The next pre-attempt redraw will show this result together with the next
-  // key. Avoid a second redraw per attempt, which causes visible flicker.
-  self->_actionLog.addLine(line, attempt.authed ? TFT_GREEN : TFT_RED);
+  if (attempt.authed) {
+    DictionaryKeyProgressView::draw(self->_actionStatus, attempt.sector, attempt.type, attempt.key,
+                                    (size_t)attempt.index + 1U, attempt.total,
+                                    (size_t)attempt.slot + 1U, (size_t)attempt.slotTotal, true, true);
+    delay(2000);
+  }
   return DictControl::Continue;
 }
 
 ChameleonMfcScreen::DictControl ChameleonMfcScreen::_chainDictHook(
     ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre) {
   if (pre) {
-    char current[48];
-    snprintf(current, sizeof(current),
-             "S%d %c %02X%02X%02X%02X%02X%02X",
-             attempt.sector, attempt.type,
-             attempt.key[0], attempt.key[1], attempt.key[2],
-             attempt.key[3], attempt.key[4], attempt.key[5]);
-    strncpy(self->_actionAttempt, current, sizeof(self->_actionAttempt)-1); self->_actionAttempt[sizeof(self->_actionAttempt)-1]=0;
-    self->_actionPct = attempt.total ? (int)(((uint64_t)attempt.index + 1U) * 100U / attempt.total) : 0;
-    self->_actionLog.draw(Uni.Lcd, self->bodyX(), self->bodyY(),
-                          self->bodyW(), self->bodyH(), _actionStatusBarCb, self);
+    self->_dictProgressKeyIndex=(size_t)attempt.index + 1U;
+    self->_dictProgressKeyTotal=attempt.total;
+    DictionaryKeyProgressView::draw(self->_actionStatus, attempt.sector, attempt.type, attempt.key,
+                                    (size_t)attempt.index + 1U, attempt.total,
+                                    (size_t)attempt.slot + 1U, (size_t)attempt.slotTotal, false, true);
 
     Uni.update();
     if (Uni.Nav && Uni.Nav->wasPressed() &&
@@ -1337,15 +1382,12 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_chainDictHook(
     return DictControl::Continue;
   }
 
-  char line[48];
-  snprintf(line, sizeof(line), "S%d %c: %02X%02X%02X%02X%02X%02X",
-           attempt.sector, attempt.type,
-           attempt.key[0], attempt.key[1], attempt.key[2],
-           attempt.key[3], attempt.key[4], attempt.key[5]);
-  self->_actionLog.addLine(line, attempt.authed ? TFT_GREEN : TFT_RED);
-  // The next pre-attempt redraw carries the result, avoiding a second redraw.
-  if (attempt.authed && self->_recoverObjectiveMet())
-    return DictControl::ObjectiveMet;
+  if (attempt.authed) {
+    DictionaryKeyProgressView::draw(self->_actionStatus, attempt.sector, attempt.type, attempt.key,
+                                    (size_t)attempt.index + 1U, attempt.total,
+                                    (size_t)attempt.slot + 1U, (size_t)attempt.slotTotal, true, true);
+    delay(2000);
+  }
   return DictControl::Continue;
 }
 
@@ -1353,94 +1395,62 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_applyDictionaryKeys(
     const uint8_t keys[][6], uint16_t keyCount,
     DictControl (*hook)(ChameleonMfcScreen*, const DictAttempt&, bool pre)) {
   auto& c = ChameleonClient::get();
-  const uint32_t totalWork = (uint32_t)_sectors * 2U;
+  const uint32_t totalSlots = (uint32_t)_sectors * 2U;
+  uint32_t slotIndex = 0;
+  _dictProgressKeyIndex=0; _dictProgressKeyTotal=keyCount;
+  DictionaryKeyProgressView::begin(_actionStatus, keyCount, _dictProgressStage);
 
-  // Attack Chain presents dictionary progress by dictionary key, so walk the
-  // dictionary first and test that key against every still-missing slot. This
-  // keeps "x/y" monotonic and truthful: x is the key currently being tested,
-  // while the progress bar tracks the individual authentication attempts.
-  if (hook == _chainDictHook) {
-    uint32_t pendingSlots = 0;
-    for (uint8_t s = 0; s < _sectors; ++s) {
-      if (!_foundA[s]) ++pendingSlots;
-      if (!_foundB[s]) ++pendingSlots;
-    }
-    const uint32_t totalAttempts = pendingSlots * (uint32_t)keyCount;
-    uint32_t attemptNo = 0;
-
-    for (uint16_t k = 0; k < keyCount; ++k) {
-      for (uint8_t s = 0; s < _sectors; ++s) {
-        const uint8_t block = _trailerBlock(s);
-        for (int kt = 0; kt < 2; ++kt) {
-          if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
-
-          const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
-          const char keyTypeCh = (kt == 0) ? 'A' : 'B';
-          DictAttempt attempt{s, keyTypeCh, k, keyCount, attemptNo,
-                              totalAttempts, keys[k], 0, (int)totalWork, false};
-          const DictControl preCtrl = hook(this, attempt, true);
-          if (preCtrl != DictControl::Continue) return preCtrl;
-
-          const bool ok = c.mf1CheckKey(block, keyType, keys[k]);
-          ++attemptNo;
-          attempt.workIndex = attemptNo;
-          attempt.authed = ok;
-          if (ok) {
-            if (kt == 0) { memcpy(_keysA[s], keys[k], 6); _foundA[s] = true; }
-            else         { memcpy(_keysB[s], keys[k], 6); _foundB[s] = true; }
-            _recovered++;
-            _dictNewFound++;
-            if (_trackRecoveryKeys) _keySummary.add(keys[k]);
-          }
-
-          const DictControl postCtrl = hook(this, attempt, false);
-          if (postCtrl != DictControl::Continue) return postCtrl;
-        }
+  auto propagate = [&](const uint8_t key[6], uint8_t originSector, int originKt) -> DictControl {
+    uint32_t pending=0,done=0;
+    for(uint8_t s=0;s<_sectors;++s)for(int kt=0;kt<2;++kt)
+      if(!(s==originSector&&kt==originKt) && !((kt==0)?_foundA[s]:_foundB[s])) ++pending;
+    char keyHex[13];
+    snprintf(keyHex,sizeof(keyHex),"%02X%02X%02X%02X%02X%02X",
+             key[0],key[1],key[2],key[3],key[4],key[5]);
+    char logLine[40];
+    snprintf(logLine,sizeof(logLine),"S%02u %c %s recovered",
+             (unsigned)originSector,originKt?'B':'A',keyHex);
+    _actionLog.addLine(logLine,TFT_GREEN);
+    _actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);
+    for(uint8_t s=0;s<_sectors;++s)for(int kt=0;kt<2;++kt){
+      if(s==originSector&&kt==originKt)continue;
+      if((kt==0)?_foundA[s]:_foundB[s])continue;
+      Uni.update(); if(Uni.Nav&&Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK)return DictControl::Cancel;
+      ++done; _actionPct=pending?(int)(done*100U/pending):100;
+      snprintf(_actionAttempt,sizeof(_actionAttempt),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)s,kt?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);
+      _actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);
+      const bool ok=c.mf1CheckKey(_trailerBlock(s),kt?0x61:0x60,key);
+      if(ok){
+        if(kt==0){memcpy(_keysA[s],key,6);_foundA[s]=true;}else{memcpy(_keysB[s],key,6);_foundB[s]=true;}
+        ++_recovered;++_dictNewFound;if(_trackRecoveryKeys)_keySummary.add(key);
+        snprintf(logLine,sizeof(logLine),"S%02u %c %s",(unsigned)s,kt?'B':'A',keyHex);
+        _actionLog.addLine(logLine,TFT_GREEN);
       }
+      _actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);
     }
     return DictControl::Continue;
-  }
+  };
 
-  // Legacy non-chain branch retained for callers that supply a custom hook.
-  uint32_t progress = 0;
-  for (uint8_t s = 0; s < _sectors; ++s) {
-    const uint8_t block = _trailerBlock(s);
-    for (int kt = 0; kt < 2; ++kt) {
-      const uint8_t keyType = (kt == 0) ? 0x60 : 0x61;
-      const char keyTypeCh = (kt == 0) ? 'A' : 'B';
-      if ((kt == 0) ? _foundA[s] : _foundB[s]) { ++progress; continue; }
-
-      bool found = false;
-      for (uint16_t k = 0; k < keyCount && !found; ++k) {
-        DictAttempt attempt{s, keyTypeCh, k, keyCount, 0, 0, keys[k],
-                            (int)progress, (int)totalWork, false};
-        if (hook) {
-          const DictControl ctrl = hook(this, attempt, true);
-          if (ctrl != DictControl::Continue) return ctrl;
-        }
-        const bool ok = c.mf1CheckKey(block, keyType, keys[k]);
-        attempt.authed = ok;
-        if (ok) {
-          if (kt == 0) { memcpy(_keysA[s], keys[k], 6); _foundA[s] = true; }
-          else         { memcpy(_keysB[s], keys[k], 6); _foundB[s] = true; }
-          _recovered++;
-          _dictNewFound++;
-          if (_trackRecoveryKeys) _keySummary.add(keys[k]);
-          found = true;
-        }
-        if (hook) {
-          const DictControl ctrl = hook(this, attempt, false);
-          if (ctrl != DictControl::Continue) return ctrl;
-        }
+  for(uint8_t s=0;s<_sectors;++s)for(int kt=0;kt<2;++kt,++slotIndex){
+    if((kt==0)?_foundA[s]:_foundB[s])continue;
+    const uint8_t block=_trailerBlock(s); const uint8_t keyType=kt?0x61:0x60; const char keyTypeCh=kt?'B':'A';
+    bool found=false;
+    for(uint16_t k=0;k<keyCount&&!found;++k){
+      DictAttempt attempt{s,keyTypeCh,k,keyCount,0,0,keys[k],(int)slotIndex,(int)totalSlots,false};
+      if(hook){const DictControl ctrl=hook(this,attempt,true);if(ctrl!=DictControl::Continue)return ctrl;}
+      const bool ok=c.mf1CheckKey(block,keyType,keys[k]); attempt.authed=ok;
+      if(ok){if(kt==0){memcpy(_keysA[s],keys[k],6);_foundA[s]=true;}else{memcpy(_keysB[s],keys[k],6);_foundB[s]=true;}++_recovered;++_dictNewFound;if(_trackRecoveryKeys)_keySummary.add(keys[k]);found=true;}
+      if(hook){const DictControl ctrl=hook(this,attempt,false);if(ctrl!=DictControl::Continue&&ctrl!=DictControl::ObjectiveMet)return ctrl;}
+      if(found){
+        const DictControl ctrl=propagate(keys[k],s,kt);
+        if(ctrl!=DictControl::Continue)return ctrl;
+        if(!_offerMissingKeyCheck(keys[k],keyTypeCh))return DictControl::ObjectiveMet;
+        if(_hasAllKeys())return DictControl::ObjectiveMet;
+        _actionLog.clear();
+        _actionAttempt[0]=0;
+        _actionPct=0;
+        DictionaryKeyProgressView::begin(_actionStatus, keyCount, _dictProgressStage);
       }
-
-      if (!found && hook == _standaloneDictHook) {
-        char nf[32];
-        snprintf(nf, sizeof(nf), "  S%d %c: not found", s, keyTypeCh);
-        _actionLog.addLine(nf, TFT_RED);
-        _actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _actionStatusBarCb, this);
-      }
-      ++progress;
     }
   }
   return DictControl::Continue;
@@ -1459,7 +1469,11 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_runChainDictionaries() {
   // Read Tag is quick. Recover owns the full Default -> Discovered -> Extended chain.
   for (size_t dictIndex = 0; dictIndex < sizeof(dicts) / sizeof(dicts[0]); ++dictIndex) {
     const auto& spec = dicts[dictIndex];
-    if (_recoverObjectiveMet()) return DictControl::ObjectiveMet;
+    _dictProgressStage = (uint8_t)(dictIndex + 1U);
+    // Do not let pre-existing sector coverage skip a dictionary stage before
+    // the user has had a chance to choose whether to continue missing A/B.
+    if (_keyCheckStopRequested || _hasAllKeys()) return DictControl::ObjectiveMet;
+    if (dictIndex > 0) Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
     strncpy(_actionStatus, spec.label, sizeof(_actionStatus) - 1);
     _actionStatus[sizeof(_actionStatus) - 1] = 0;
     _setChainStage("Dictionary Attack");
@@ -1472,32 +1486,40 @@ ChameleonMfcScreen::DictControl ChameleonMfcScreen::_runChainDictionaries() {
       continue;
     }
 
-    // Discovered is optional and may grow large. Stream it key-by-key instead
-    // of allocating a buffer proportional to the file size. Each key is tested
-    // against every still-missing slot, matching the built-in chain strategy.
-    const size_t dictionaryTotal = MfcKeyStore::dictionaryKeyCount(Uni.Storage, spec.source);
-    if (!dictionaryTotal) continue;
-    uint32_t attemptNo = 0;
-    DictControl ctrl = DictControl::Continue;
-    MfcKeyStore::forEachDictionaryKey(Uni.Storage, spec.source, [&](const uint8_t key[6], size_t keyIndex, size_t) {
-      for (uint8_t s = 0; s < _sectors; ++s) {
-        const uint8_t block = _trailerBlock(s);
-        for (int kt = 0; kt < 2; ++kt) {
-          if ((kt == 0) ? _foundA[s] : _foundB[s]) continue;
-          DictAttempt attempt{s, (kt == 0) ? 'A' : 'B', (uint16_t)min(keyIndex,(size_t)UINT16_MAX),
-                              (uint16_t)min(dictionaryTotal,(size_t)UINT16_MAX), attemptNo, 0, key,
-                              (int)(keyIndex + 1U), (int)dictionaryTotal, false};
-          ctrl = _chainDictHook(this, attempt, true); if (ctrl != DictControl::Continue) return false;
-          const bool ok = ChameleonClient::get().mf1CheckKey(block, (kt == 0) ? 0x60 : 0x61, key);
-          ++attemptNo; attempt.workIndex = (uint32_t)(keyIndex + 1U); attempt.workTotal = (uint32_t)dictionaryTotal; attempt.authed = ok;
-          if (ok) { if (kt == 0) { memcpy(_keysA[s],key,6); _foundA[s]=true; } else { memcpy(_keysB[s],key,6); _foundB[s]=true; } ++_recovered; ++_dictNewFound; if (_trackRecoveryKeys) _keySummary.add(key); }
-          ctrl = _chainDictHook(this, attempt, false); if (ctrl != DictControl::Continue) return false;
+    // File dictionaries stay streamed: scan one sector/key slot at a time,
+    // then propagate each discovered key through the remaining unknown slots.
+    const size_t dictionaryTotal=MfcKeyStore::dictionaryKeyCount(Uni.Storage,spec.source);
+    if(!dictionaryTotal)continue;
+    const size_t totalSlots=(size_t)_sectors*2U;
+    bool stop=false;
+    _dictProgressKeyIndex=0; _dictProgressKeyTotal=dictionaryTotal;
+    DictionaryKeyProgressView::begin(_actionStatus, dictionaryTotal, _dictProgressStage);
+    for(uint8_t sec=0;sec<_sectors&&!stop;++sec)for(int kt=0;kt<2&&!stop;++kt){
+      if((kt==0)?_foundA[sec]:_foundB[sec])continue;
+      MfcKeyStore::forEachDictionaryKey(Uni.Storage,spec.source,[&](const uint8_t key[6],size_t keyIndex,size_t){
+        DictAttempt attempt{sec,kt?'B':'A',(uint32_t)keyIndex,(uint32_t)dictionaryTotal,0,0,key,(int)(sec*2U+kt),(int)totalSlots,false};
+        DictControl ctrl=_chainDictHook(this,attempt,true);if(ctrl!=DictControl::Continue){stop=true;return false;}
+        const bool ok=ChameleonClient::get().mf1CheckKey(_trailerBlock(sec),kt?0x61:0x60,key);attempt.authed=ok;
+        if(ok){if(kt==0){memcpy(_keysA[sec],key,6);_foundA[sec]=true;}else{memcpy(_keysB[sec],key,6);_foundB[sec]=true;}++_recovered;++_dictNewFound;if(_trackRecoveryKeys)_keySummary.add(key);}
+        ctrl=_chainDictHook(this,attempt,false);if(ctrl==DictControl::Cancel){stop=true;return false;}
+        if(!ok)return true;
+        uint32_t pending=0,done=0;for(uint8_t s2=0;s2<_sectors;++s2)for(int kt2=0;kt2<2;++kt2)if(!(s2==sec&&kt2==kt)&&!((kt2==0)?_foundA[s2]:_foundB[s2]))++pending;
+        char keyHex[13]; snprintf(keyHex,sizeof(keyHex),"%02X%02X%02X%02X%02X%02X",key[0],key[1],key[2],key[3],key[4],key[5]);
+        char logLine[40]; snprintf(logLine,sizeof(logLine),"S%02u %c %s recovered",(unsigned)sec,kt?'B':'A',keyHex); _actionLog.addLine(logLine,TFT_GREEN);
+        for(uint8_t s2=0;s2<_sectors&&!stop;++s2)for(int kt2=0;kt2<2;++kt2){if(s2==sec&&kt2==kt)continue;if((kt2==0)?_foundA[s2]:_foundB[s2])continue;Uni.update();if(Uni.Nav&&Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){stop=true;break;}++done;_actionPct=pending?(int)(done*100U/pending):100;snprintf(_actionAttempt,sizeof(_actionAttempt),"S%u %c %s",(unsigned)s2,kt2?'B':'A',keyHex);_actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);if(ChameleonClient::get().mf1CheckKey(_trailerBlock(s2),kt2?0x61:0x60,key)){if(kt2==0){memcpy(_keysA[s2],key,6);_foundA[s2]=true;}else{memcpy(_keysB[s2],key,6);_foundB[s2]=true;}++_recovered;++_dictNewFound;if(_trackRecoveryKeys)_keySummary.add(key);snprintf(logLine,sizeof(logLine),"S%02u %c %s",(unsigned)s2,kt2?'B':'A',keyHex);_actionLog.addLine(logLine,TFT_GREEN);}_actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);}
+        if(!_offerMissingKeyCheck(key,kt?'B':'A')){
+          stop=true; _keyCheckStopRequested=true; return false;
         }
-      }
-      return true;
-    });
-    if (_recoverObjectiveMet()) return DictControl::ObjectiveMet;
-    if (ctrl != DictControl::Continue) return ctrl;
+        if(!_hasAllKeys()){
+          _actionLog.clear();
+          _actionAttempt[0]=0;
+          _actionPct=0;
+          DictionaryKeyProgressView::begin(_actionStatus, dictionaryTotal, _dictProgressStage);
+        }
+        return false;
+      });
+    }
+    if(stop)return _keyCheckStopRequested?DictControl::ObjectiveMet:DictControl::Cancel;
   }
   return DictControl::Continue;
 }
@@ -1512,7 +1534,7 @@ void ChameleonMfcScreen::_runDictAttack() {
   if (_dictSource == MfcKeyStore::kBuiltinDefaultId) strncpy(_actionStatus, "Default", sizeof(_actionStatus) - 1);
   else if (_dictSource == MfcKeyStore::kDiscoveredDictionary) strncpy(_actionStatus, "Discovered", sizeof(_actionStatus) - 1);
   else if (_dictSource == MfcKeyStore::kBuiltinExtendedId) strncpy(_actionStatus, "Extended", sizeof(_actionStatus) - 1);
-  else { String label=_dictSource; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); if(label.endsWith(".txt")) label.remove(label.length()-4); strncpy(_actionStatus,label.c_str(),sizeof(_actionStatus)-1); }
+  else { String label=_dictSource; int slash=label.lastIndexOf('/'); if(slash>=0) label=label.substring(slash+1); strncpy(_actionStatus,label.c_str(),sizeof(_actionStatus)-1); }
   _actionStatus[sizeof(_actionStatus) - 1] = 0;
   render();
 
@@ -1520,34 +1542,41 @@ void ChameleonMfcScreen::_runDictAttack() {
   c.setMode(1);
 
   _dictNewFound = 0;
+  _keyCheckPromptShown=false; _keyCheckContinueMissing=false; _keyCheckStopRequested=false;
+  _keyCheckCompletedShown=false; _discoveredKeys=DictionaryDiscoverySummary();
   _keySummary.reset();
   _trackRecoveryKeys = true;
   DictControl dictResult = DictControl::Continue;
+  _dictProgressStage = 0;
   const size_t dictionaryTotal = MfcKeyStore::dictionaryKeyCount(Uni.Storage, _dictSource);
-  bool cancelled = false;
-  MfcKeyStore::forEachDictionaryKey(Uni.Storage, _dictSource, [&](const uint8_t key[6], size_t keyIndex, size_t) {
-    for (uint8_t sec = 0; sec < _sectors; ++sec) {
-      const uint8_t block = _trailerBlock(sec);
-      for (int kt = 0; kt < 2; ++kt) {
-        if ((kt == 0) ? _foundA[sec] : _foundB[sec]) continue;
-        DictAttempt attempt{sec, kt == 0 ? 'A' : 'B', (uint16_t)min(keyIndex,(size_t)UINT16_MAX),
-                            (uint16_t)min(dictionaryTotal,(size_t)UINT16_MAX), 0, 0, key,
-                            (int)(keyIndex + 1U), (int)dictionaryTotal, false};
-        dictResult = _standaloneDictHook(this, attempt, true);
-        if (dictResult != DictControl::Continue) { cancelled = dictResult == DictControl::Cancel; return false; }
-        const bool ok = c.mf1CheckKey(block, kt == 0 ? 0x60 : 0x61, key);
-        attempt.authed = ok;
-        if (ok) {
-          if (kt == 0) { memcpy(_keysA[sec], key, 6); _foundA[sec] = true; }
-          else { memcpy(_keysB[sec], key, 6); _foundB[sec] = true; }
-          ++_recovered; ++_dictNewFound; _keySummary.add(key);
-        }
-        dictResult = _standaloneDictHook(this, attempt, false);
-        if (dictResult != DictControl::Continue) { cancelled = dictResult == DictControl::Cancel; return false; }
+  bool cancelled=false;
+  const size_t totalSlots=(size_t)_sectors*2U;
+  _dictProgressKeyIndex=0; _dictProgressKeyTotal=dictionaryTotal;
+  DictionaryKeyProgressView::begin(_actionStatus, dictionaryTotal, 0);
+  for(uint8_t sec=0;sec<_sectors&&!cancelled&&!_keyCheckStopRequested;++sec)for(int kt=0;kt<2&&!cancelled&&!_keyCheckStopRequested;++kt){
+    if((kt==0)?_foundA[sec]:_foundB[sec])continue;
+    MfcKeyStore::forEachDictionaryKey(Uni.Storage,_dictSource,[&](const uint8_t key[6],size_t keyIndex,size_t){
+      DictAttempt attempt{sec,kt?'B':'A',(uint32_t)keyIndex,(uint32_t)dictionaryTotal,0,0,key,(int)(sec*2U+kt),(int)totalSlots,false};
+      dictResult=_standaloneDictHook(this,attempt,true);if(dictResult!=DictControl::Continue){cancelled=dictResult==DictControl::Cancel;return false;}
+      const bool ok=c.mf1CheckKey(_trailerBlock(sec),kt?0x61:0x60,key);attempt.authed=ok;
+      if(ok){if(kt==0){memcpy(_keysA[sec],key,6);_foundA[sec]=true;}else{memcpy(_keysB[sec],key,6);_foundB[sec]=true;}++_recovered;++_dictNewFound;_keySummary.add(key);}
+      dictResult=_standaloneDictHook(this,attempt,false);if(dictResult==DictControl::Cancel){cancelled=true;return false;}if(!ok)return true;
+      uint32_t pending=0,done=0;for(uint8_t s2=0;s2<_sectors;++s2)for(int kt2=0;kt2<2;++kt2)if(!(s2==sec&&kt2==kt)&&!((kt2==0)?_foundA[s2]:_foundB[s2]))++pending;
+      for(uint8_t s2=0;s2<_sectors&&!cancelled;++s2)for(int kt2=0;kt2<2;++kt2){if(s2==sec&&kt2==kt)continue;if((kt2==0)?_foundA[s2]:_foundB[s2])continue;Uni.update();if(Uni.Nav&&Uni.Nav->wasPressed()&&Uni.Nav->readDirection()==INavigation::DIR_BACK){cancelled=true;break;}++done;_actionPct=pending?(int)(done*100U/pending):100;snprintf(_actionAttempt,sizeof(_actionAttempt),"S%u %c %02X%02X%02X%02X%02X%02X",(unsigned)s2,kt2?'B':'A',key[0],key[1],key[2],key[3],key[4],key[5]);_actionLog.draw(Uni.Lcd,bodyX(),bodyY(),bodyW(),bodyH(),_actionStatusBarCb,this);if(c.mf1CheckKey(_trailerBlock(s2),kt2?0x61:0x60,key)){if(kt2==0){memcpy(_keysA[s2],key,6);_foundA[s2]=true;}else{memcpy(_keysB[s2],key,6);_foundB[s2]=true;}++_recovered;++_dictNewFound;_keySummary.add(key);}}
+      if(!_offerMissingKeyCheck(key,kt?'B':'A')){
+        _keyCheckStopRequested=true;
+        return false;
       }
-    }
-    return true;
-  });
+      if(!_hasAllKeys()){
+        _actionLog.clear();
+        _actionAttempt[0]=0;
+        _actionPct=0;
+        DictionaryKeyProgressView::begin(_actionStatus, dictionaryTotal, 0);
+      }
+      return false;
+    });
+    if(_keyCheckStopRequested)break;
+  }
   if (!cancelled) {
     for (uint8_t sec = 0; sec < _sectors; ++sec) for (int kt = 0; kt < 2; ++kt) {
       if ((kt == 0) ? _foundA[sec] : _foundB[sec]) continue;
@@ -1562,19 +1591,9 @@ void ChameleonMfcScreen::_runDictAttack() {
   const int newFound = _dictNewFound;
 
   char msg[80];
-  _keySummary.format(msg, sizeof(msg), _authenticatedSectors(), _sectors);
+  unsigned foundSummary=0; for(uint8_t sec=0;sec<_sectors;++sec){if(_foundA[sec])++foundSummary;if(_foundB[sec])++foundSummary;}
+  _keySummary.format(msg, sizeof(msg), (unsigned)_keySummary.count, (unsigned)_keySummary.count, _authenticatedSectors(), _sectors);
   _actionPct = 100;
-  char line1[40];
-  snprintf(line1, sizeof(line1), "%u %s recovered", (unsigned)_keySummary.count,
-           _keySummary.count == 1 ? "key" : "keys");
-  char line2[40];
-  snprintf(line2, sizeof(line2), "%u/%u sectors authenticated",
-           (unsigned)_authenticatedSectors(), (unsigned)_sectors);
-  snprintf(_actionStatus, sizeof(_actionStatus), "%s", line1);
-  _actionLog.addLine(line1, newFound > 0 ? TFT_GREEN : TFT_RED);
-  _actionLog.addLine(line2, TFT_WHITE);
-  _actionLog.draw(Uni.Lcd, bodyX(), bodyY(), bodyW(), bodyH(), _actionStatusBarCb, this);
-  ShowStatusAction::show(msg, 1600);
 
   if (newFound > 0) {
     _saveKeys();
@@ -1584,6 +1603,7 @@ void ChameleonMfcScreen::_runDictAttack() {
     if (_recovered >= 10) Achievement.unlock("chameleon_mfc_keys_found");
   }
 
+  ShowStatusAction::show(msg, 1400);
   c.setMode(0);
   _running = false;
   _state   = STATE_DICT_LOG;

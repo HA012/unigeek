@@ -327,6 +327,8 @@ private:
   bool _mfcRecoverChainActive = false;
   uint8_t _mfcRecoverChainIndex = 0;
   uint16_t _mfcRecoverChainNewKeys = 0;
+  bool _mfcRecoverContinueMissing = false;
+  bool _mfcRecoverStopRequested = false;
   uint8_t _mfcRecoverTagUid[10] = {};
   uint8_t _mfcRecoverTagUidLen = 0;
   uint8_t _mfcRecoverTagSak = 0;

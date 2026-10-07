@@ -234,6 +234,9 @@ private:
   uint8_t  _dumpValidBlocks[256] = {};
   bool     _resumeReadAfterDict = false;
   bool     _recoverChainActive = false;
+  bool     _recoverContinueMissing = false;
+  bool     _recoverPromptShown = false;
+  bool     _recoverStopRequested = false;
   uint8_t  _recoverChainIndex = 0;
   uint16_t _recoverChainNewKeys = 0;
   MfcRecoverySummary _recoverySummary;
