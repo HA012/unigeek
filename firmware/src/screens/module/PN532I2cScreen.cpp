@@ -608,8 +608,9 @@ void PN532I2cScreen::onUpdate() {
       if (dir == INavigation::DIR_BACK) {
         _goMain();
       } else if (dir == INavigation::DIR_PRESS) {
-        if (_scanFamily >= 0) { _familyFromScan = true; _openFamily((uint8_t)_scanFamily); }
-        else _doScan14A();
+        if (Uni.Nav->pressDuration() >= 700) {
+          if (_scanFamily >= 0) { _familyFromScan = true; _openFamily((uint8_t)_scanFamily); }
+        } else _doScan14A();
       } else {
         _scrollView.onNav(dir);
       }
@@ -632,7 +633,9 @@ void PN532I2cScreen::onUpdate() {
         if (_typeBFromMainScan) _goMain(); else _goTypeBTag();
       } else if (dir == INavigation::DIR_PRESS) {
         if (_typeBFromMainScan) {
-          if (_typeBAttribLen) { _familyFromScan = true; _openFamily(3); }
+          if (Uni.Nav->pressDuration() >= 700) {
+            if (_typeBAttribLen) { _familyFromScan = true; _openFamily(3); }
+          } else _doScan14A();
         } else if (!_genericReadActive) _doTypeBReadTag();
       } else _scrollView.onNav(dir);
     }
@@ -2513,7 +2516,10 @@ void PN532I2cScreen::_showTypeBDetails(bool scanAgainHint) {
     _pushRow("Protocol Info", _hexBlock(_typeBAtqb + 9, 3));
   }
   if (_typeBAttribLen) _pushRow("ATTRIB_RES", _hexBlock(_typeBAttrib, _typeBAttribLen));
-  if (scanAgainHint && _typeBAttribLen) _pushRow("[Press]", "Type 4B Menu");
+  if (scanAgainHint) {
+    _pushRow("[Press]", "Scan again");
+    if (_typeBAttribLen) _pushRow("[Hold]", "Type 4B Menu");
+  }
 
   _scrollView.resetScroll();
   _scrollView.setRows(_rows, _rowCount);
@@ -2884,8 +2890,8 @@ void PN532I2cScreen::_doScan14A() {
   snprintf(buf, sizeof(buf), "%d bytes", _uidLen);
   _pushRow("UID Len", buf);
   _pushRow("Protocol", "ISO14443A");
-  if (_scanFamily >= 0) _pushRow("[Press]", String(_scanFamily == 0 ? "MIFARE Classic" : _scanFamily == 1 ? "Ultralight / NTAG" : "Type 4A") + " Menu");
-  else _pushRow("[Press]", "Scan again");
+  _pushRow("[Press]", "Scan again");
+  if (_scanFamily >= 0) _pushRow("[Hold]", String(_scanFamily == 0 ? "MIFARE Classic" : _scanFamily == 1 ? "Ultralight / NTAG" : "Type 4A") + " Menu");
   _scrollView.setRows(_rows, _rowCount);
   render();
 }

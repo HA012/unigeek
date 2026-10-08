@@ -45,6 +45,7 @@ void ChameleonHFScreen::_draw() {
 void ChameleonHFScreen::_doScan() {
   _scanning = true;
   _dispatchRead = false;
+  _familyMenu = 0;
 
   // BaseScreen calls onInit() before its first render(). Draw the complete
   // screen here so the very first scan has the same header/sidebar as retries.
@@ -158,8 +159,12 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
+    _rowLabels[_rowCount] = "[Press]";
+    _rowValues[_rowCount] = "Scan again";
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    _rowCount++;
     if (_familyMenu) {
-      _rowLabels[_rowCount] = "[Press]";
+      _rowLabels[_rowCount] = "[Hold]";
       _rowValues[_rowCount] = _familyMenu == 1 ? "MIFARE Classic Menu" : "Ultralight / NTAG Menu";
       _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
       _rowCount++;
@@ -208,14 +213,14 @@ void ChameleonHFScreen::onUpdate() {
       Screen.goBack();
       return;
     }
-    if (dir == INavigation::DIR_PRESS) {
-      if (_state == STATE_RESULT && _familyMenu) {
-        // Replace Scan Tag, preserving its parent in the navigation stack.
-        if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
-        else Screen.replace(new ChameleonMfuMenuScreen());
-        return;
-      }
-      // Unsupported families have no contextual Press action.
+    if (dir == INavigation::DIR_PRESS && _state == STATE_RESULT) {
+      if (Uni.Nav->pressDuration() >= 700) {
+        if (_familyMenu) {
+          // Replace Scan Tag, preserving its parent in the navigation stack.
+          if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
+          else Screen.replace(new ChameleonMfuMenuScreen());
+        }
+      } else _doScan();
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);

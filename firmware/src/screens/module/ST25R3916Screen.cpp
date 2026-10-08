@@ -578,9 +578,11 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
-    if (_scanFamily != 0xFF) {
-      _familyFromScan = true;
-      _openFamily(_scanFamily);
+    if (Uni.Nav->pressDuration() >= 700) {
+      if (_scanFamily != 0xFF) {
+        _familyFromScan = true;
+        _openFamily(_scanFamily);
+      }
     } else _scan(_lastTechMask);
     return;
   }
@@ -1249,7 +1251,8 @@ void ST25R3916Screen::_genericReadTag() {
 void ST25R3916Screen::_scan(uint16_t techMask) {
 #if defined(DEVICE_HAS_ST25R3916)
   _lastTechMask = techMask;
-  const State previousState = _state;
+  // Invalidate the previous result before attempting a new scan.
+  _scanFamily = 0xFF;
   _state = STATE_SCANNING;
   render();
 
@@ -1259,12 +1262,7 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
 
   if (!ready) {
     ShowStatusAction::show("ST25R3916 not detected");
-    if (previousState == STATE_DETAILS) {
-      _state = STATE_DETAILS;
-      render();
-    } else {
-      _showMenu();
-    }
+    _showMenu();
     return;
   }
 
@@ -1273,12 +1271,7 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
   if (waitResult != St25WaitResult::FOUND) {
     if (waitResult == St25WaitResult::TIMEOUT)
       ShowStatusAction::show("Tag not detected", 1200);
-    if (previousState == STATE_DETAILS) {
-      _state = STATE_DETAILS;
-      render();
-    } else {
-      _showMenu();
-    }
+    _showMenu();
     return;
   }
 
@@ -1363,7 +1356,8 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
       "MIFARE Classic", "Ultralight / NTAG", "Type 4A", "Type 4B",
       "DESFire", "FeliCa", "ICODE / ST25V"
     };
-    addRow("[Press]", String(familyNames[_scanFamily]) + " Menu");
+    addRow("[Press]", "Scan again");
+    addRow("[Hold]", String(familyNames[_scanFamily]) + " Menu");
   } else addRow("[Press]", "Scan again");
 
   dev.deactivate();
