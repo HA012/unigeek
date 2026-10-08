@@ -235,6 +235,15 @@ void ChameleonMfuScreen::_read() {
     return;
   }
 
+  if (_expectedUidLen && (_info.uidLen != _expectedUidLen ||
+      memcmp(_info.uid, _expectedUid, _expectedUidLen) != 0 || _info.sak != 0x00)) {
+    c.setMode(0);
+    _busy = false;
+    ShowStatusAction::show("Different tag detected", 1500);
+    Screen.goBack();
+    return;
+  }
+
   const uint32_t total = (uint32_t)_info.pages * 4u;
   _dump = (uint8_t*)malloc(total);
   if (!_dump) {

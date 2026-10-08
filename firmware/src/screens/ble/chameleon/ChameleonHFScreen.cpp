@@ -1,5 +1,7 @@
 #include "ChameleonHFMenuScreen.h"
 #include "ChameleonMfcMenuScreen.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfuScreen.h"
 #include "ChameleonMfuMenuScreen.h"
 #include "ChameleonHFScreen.h"
 #include "core/AchievementManager.h"
@@ -42,6 +44,7 @@ void ChameleonHFScreen::_draw() {
 
 void ChameleonHFScreen::_doScan() {
   _scanning = true;
+  _dispatchRead = false;
 
   // BaseScreen calls onInit() before its first render(). Draw the complete
   // screen here so the very first scan has the same header/sidebar as retries.
@@ -89,6 +92,16 @@ void ChameleonHFScreen::_doScan() {
   _scanning  = false;
 
   if (found) {
+    if (_readMode) {
+      if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18 || _sak == 0x00) {
+        _dispatchRead = true;
+        _needsDraw = true;
+        return; // Dispatch in onUpdate, not while onInit is executing.
+      }
+      ShowStatusAction::show("Read Tag not supported", 1200);
+      Screen.goBack();
+      return;
+    }
     if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) _familyMenu = 1;
     else if (_sak == 0x00) _familyMenu = 2;
     _state    = STATE_RESULT;
@@ -145,11 +158,12 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Press]";
-    _rowValues[_rowCount] = _familyMenu == 1 ? "MIFARE Classic Menu" :
-                            _familyMenu == 2 ? "Ultralight / NTAG Menu" : "Scan again";
-    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
-    _rowCount++;
+    if (_familyMenu) {
+      _rowLabels[_rowCount] = "[Press]";
+      _rowValues[_rowCount] = _familyMenu == 1 ? "MIFARE Classic Menu" : "Ultralight / NTAG Menu";
+      _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+      _rowCount++;
+    }
 
     _scrollView.setRows(_rows, _rowCount);
 
@@ -180,6 +194,13 @@ void ChameleonHFScreen::onInit() {
 
 void ChameleonHFScreen::onUpdate() {
   if (_scanning) return;
+  if (_dispatchRead) {
+    _dispatchRead = false;
+    // Replace the temporary detector, leaving HF Tools as the parent.
+    if (_sak == 0x00) Screen.replace(new ChameleonMfuScreen(_uid, _uidLen));
+    else Screen.replace(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_READ_TAG, _uid, _uidLen));
+    return;
+  }
 
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
@@ -194,7 +215,7 @@ void ChameleonHFScreen::onUpdate() {
         else Screen.replace(new ChameleonMfuMenuScreen());
         return;
       }
-      _doScan();
+      // Unsupported families have no contextual Press action.
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);

@@ -1,10 +1,16 @@
 #pragma once
+#include <cstring>
 #include "ui/templates/BaseScreen.h"
 #include "ui/views/ScrollListView.h"
 #include "utils/ble/ChameleonClient.h"
 
 class ChameleonMfuScreen : public BaseScreen {
 public:
+  ChameleonMfuScreen() = default;
+  ChameleonMfuScreen(const uint8_t* uid, uint8_t uidLen)
+      : _expectedUidLen(uidLen <= 7 ? uidLen : 0) {
+    if (_expectedUidLen) memcpy(_expectedUid, uid, _expectedUidLen);
+  }
   const char* title() override { return _state == STATE_RESULT ? "Tag Details" : "Read Tag"; }
   bool inhibitPowerOff() override { return _busy; }
 
@@ -15,6 +21,8 @@ public:
 private:
   enum State { STATE_IDLE, STATE_RESULT };
 
+  uint8_t _expectedUid[7] = {};
+  uint8_t _expectedUidLen = 0;
   State _state = STATE_IDLE;
   bool _busy = false;
   bool _needsDraw = true;

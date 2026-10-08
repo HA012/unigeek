@@ -185,6 +185,16 @@ void ChameleonMfcScreen::_callAuth() {
 
   _waitingForTag = false;
 
+  if (_expectedUidLen && (_uidLen != _expectedUidLen ||
+      memcmp(_uid, _expectedUid, _uidLen) != 0 ||
+      (sak != 0x09 && sak != 0x08 && sak != 0x18))) {
+    c.setMode(0);
+    _running = false;
+    ShowStatusAction::show("Different tag detected", 1500);
+    Screen.goBack();
+    return;
+  }
+
   _sak = sak;
   memcpy(_atqa, atqa, sizeof(_atqa));
   if (sak == 0x18)      _sectors = 40;

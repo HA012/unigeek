@@ -4,7 +4,8 @@
 
 class ChameleonHFScreen : public BaseScreen {
 public:
-  const char* title() override { return "Scan Tag"; }
+  explicit ChameleonHFScreen(bool readMode = false) : _readMode(readMode) {}
+  const char* title() override { return _readMode ? "Read Tag" : "Scan Tag"; }
   bool inhibitPowerOff() override { return _scanning; }
 
   void onInit()   override;
@@ -14,6 +15,8 @@ public:
 private:
   enum State { STATE_IDLE, STATE_RESULT };
 
+  bool _readMode = false;
+  bool _dispatchRead = false;
   State _state     = STATE_IDLE;
   bool  _scanning  = false;
   bool  _needsDraw = true;

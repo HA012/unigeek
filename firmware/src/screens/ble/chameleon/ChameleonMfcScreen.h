@@ -1,4 +1,5 @@
 #pragma once
+#include <cstring>
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
@@ -19,6 +20,10 @@ public:
   };
 
   explicit ChameleonMfcScreen(StartAction action = ACTION_READ_TAG) : _startAction(action) {}
+  ChameleonMfcScreen(StartAction action, const uint8_t* uid, uint8_t uidLen)
+      : _startAction(action), _expectedUidLen(uidLen <= 7 ? uidLen : 0) {
+    if (_expectedUidLen) memcpy(_expectedUid, uid, _expectedUidLen);
+  }
   const char* title() override;
   bool inhibitPowerOff() override { return _running; }
 
@@ -69,6 +74,8 @@ private:
 
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
+  uint8_t _expectedUid[7] = {};
+  uint8_t _expectedUidLen = 0;
   bool _resumeReadAfterAttack = false;
   bool  _running = false;
   char _chainStage[32] = {};

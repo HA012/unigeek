@@ -585,6 +585,7 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_DETAILS) {
+    _genericReadActive = false;
     _showMfuDumpActions();
     return;
   }
@@ -605,6 +606,7 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFC_DETAILS) {
+    _genericReadActive = false;
     _showMfcDumpActions();
     return;
   }
@@ -690,6 +692,16 @@ void ST25R3916Screen::onRender() {
 }
 
 void ST25R3916Screen::onBack() {
+  if (_genericReadActive) {
+    if (_state == STATE_MFC_DETAILS || _state == STATE_MFU_DETAILS ||
+        _state == STATE_EXP_DETAILS || _state == STATE_EXP_RESULT ||
+        _state == STATE_MFC_READING || _state == STATE_MFU_READING ||
+        _state == STATE_EXP_WORKING) {
+      _genericReadActive = false;
+      _showMenu();
+      return;
+    }
+  }
   if (_state == STATE_EMULATING) { _stopEmulation(); return; }
   if (_state == STATE_SCANNING ||
       _state == STATE_SCAN_READER_RESULT || _state == STATE_DETAILS) {
@@ -960,9 +972,10 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   _selMain = index;
   switch (index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
-    case 1: _scanReader(); break;
-    case 2: _familyFromScan = false; _showFamiliesMenu(); break;
-    case 3: _showDeviceInfo(); break;
+    case 1: _genericReadTag(); break;
+    case 2: _scanReader(); break;
+    case 3: _familyFromScan = false; _showFamiliesMenu(); break;
+    case 4: _showDeviceInfo(); break;
   }
 #else
   (void)index;
@@ -1021,6 +1034,10 @@ void ST25R3916Screen::_scanReader() {
 }
 
 void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, int32_t durationMs) {
+  if (_genericReadActive) {
+    _genericReadActive = false;
+    target = STATE_MENU;
+  }
   auto showTarget = [this, target]() {
     switch (target) {
       case STATE_MENU: _showMenu(); break;
@@ -1051,8 +1068,9 @@ void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, in
 }
 
 void ST25R3916Screen::_showMenu() {
+  _genericReadActive = false;
   _state = STATE_MENU;
-  setItems(_items, 4, _selMain);
+  setItems(_items, 5, _selMain);
 }
 
 void ST25R3916Screen::_showFamiliesMenu() {
@@ -1080,6 +1098,7 @@ void ST25R3916Screen::_showMfcMenu() {
 }
 
 void ST25R3916Screen::_showMfcTagMenu() {
+  if (_genericReadActive) { _genericReadActive = false; _showMenu(); return; }
   _state = STATE_MFC_TAG_MENU;
   setItems(_mfcTagItems, 7, _selMfcTag);
   render();
@@ -1127,6 +1146,7 @@ void ST25R3916Screen::_showMfuMenu() {
 }
 
 void ST25R3916Screen::_showMfuTagMenu() {
+  if (_genericReadActive) { _genericReadActive = false; _showMenu(); return; }
   _state = STATE_MFU_TAG_MENU;
   setItems(_mfuTagItems, 5, _selMfuTag);
   render();
@@ -1157,6 +1177,74 @@ void ST25R3916Screen::_renderTagPrompt() {
   lcd.setTextSize(1);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
   TagPrompt::show(_state == STATE_SCAN_READER ? "Waiting for reader..." : "Waiting for tag...", bx, by, bw, bh);
+}
+
+bool ST25R3916Screen::_matchesGenericReadTag(const uint8_t* uid, uint8_t uidLen) const {
+  return !_genericReadActive ||
+         (uidLen == _genericReadUidLen && uidLen > 0 &&
+          uidLen <= sizeof(_genericReadUid) &&
+          memcmp(uid, _genericReadUid, uidLen) == 0);
+}
+
+void ST25R3916Screen::_genericReadTag() {
+#if defined(DEVICE_HAS_ST25R3916)
+  _genericReadActive = false;
+  _state = STATE_SCANNING;
+  render();
+  ST25R3916Backend dev;
+  if (!st25Begin(dev, _interface)) {
+    _showStatusAndReturn("ST25R3916 not detected", STATE_MENU, 1600);
+    return;
+  }
+  ST25R3916Backend::ScanResult tag;
+  const auto waitResult = st25WaitForTag(dev, ST25R3916Backend::TECH_ALL, tag, 5000, true);
+  if (waitResult != St25WaitResult::FOUND) {
+    if (waitResult == St25WaitResult::TIMEOUT)
+      ShowStatusAction::show("Tag not detected", 1200);
+    _showMenu();
+    return;
+  }
+  uint8_t family = 0xFF;
+  switch (tag.technology) {
+    case ST25R3916Backend::Technology::NFC_A:
+      if (isMifareClassic(tag.sak)) family = 0;
+      else if (tag.sak == 0x00) family = 1;
+      else if (tag.sak == 0x20 && tag.atqa[0] == 0x03) family = 4;
+      else if (tag.isoDep) family = 2;
+      break;
+    case ST25R3916Backend::Technology::NFC_B:
+      if (tag.isoDep) family = 3;
+      break;
+    case ST25R3916Backend::Technology::NFC_F: family = 5; break;
+    case ST25R3916Backend::Technology::NFC_V: family = 6; break;
+    default: break;
+  }
+  dev.deactivate();
+  if (family == 2) {
+    _showStatusAndReturn("Type 4A not implemented", STATE_MENU, 1600);
+    return;
+  }
+  if (family == 0xFF) {
+    _showStatusAndReturn("Tag not supported", STATE_MENU, 1600);
+    return;
+  }
+  if (tag.nfcidLen == 0 || tag.nfcidLen > sizeof(_genericReadUid)) {
+    _showStatusAndReturn("Tag ID unavailable", STATE_MENU, 1600);
+    return;
+  }
+  _genericReadUidLen = tag.nfcidLen;
+  memcpy(_genericReadUid, tag.nfcid, _genericReadUidLen);
+  _genericReadActive = true;
+  _familyFromScan = false;
+  switch (family) {
+    case 0: _readMfcTag(); break;
+    case 1: _readMfuTag(); break;
+    case 3: _expFamily = EXP_TYPE4B; _experimentalReadTag(); break;
+    case 4: _expFamily = EXP_DESFIRE; _experimentalReadTag(); break;
+    case 5: _expFamily = EXP_FELICA; _experimentalReadTag(); break;
+    case 6: _expFamily = EXP_NFCV; _experimentalReadTag(); break;
+  }
+#endif
 }
 
 void ST25R3916Screen::_scan(uint16_t techMask) {
@@ -1309,6 +1397,11 @@ void ST25R3916Screen::_readMfcTag() {
   if (waitResult != St25WaitResult::FOUND) {
     if (waitResult == St25WaitResult::TIMEOUT) ShowStatusAction::show("Tag not detected", 1200);
     _showMfcTagMenu();
+    return;
+  }
+  if (!_matchesGenericReadTag(tag.nfcid, tag.nfcidLen)) {
+    dev.deactivate();
+    _showStatusAndReturn("Different tag detected", STATE_MENU, 1600);
     return;
   }
   if (!isMifareClassic(tag.sak)) {
@@ -3834,6 +3927,11 @@ void ST25R3916Screen::_readMfuTag() {
     _showMfuTagMenu();
     return;
   }
+  if (!_matchesGenericReadTag(tag.nfcid, tag.nfcidLen)) {
+    dev.deactivate();
+    _showStatusAndReturn("Different tag detected", STATE_MENU, 1600);
+    return;
+  }
   if (tag.sak != 0x00) {
     ShowStatusAction::show("Tag not supported");
     _showMfuTagMenu();
@@ -5014,6 +5112,7 @@ void ST25R3916Screen::_showExperimentalMenu(ExperimentalFamily family) {
 }
 
 void ST25R3916Screen::_showExperimentalTagMenu() {
+  if (_genericReadActive) { _genericReadActive = false; _showMenu(); return; }
   _ndefExperimentalTarget = false;
   _state = STATE_EXP_TAG_MENU;
   if (_expFamily == EXP_DESFIRE) setItems(_expDesfireTagItems, 4, _selExpTag);
@@ -5112,6 +5211,11 @@ void ST25R3916Screen::_experimentalReadTag() {
       if (waitResult == St25WaitResult::TIMEOUT) ShowStatusAction::show("Tag not detected", 1600);
       _showExperimentalTagMenu(); return;
     }
+  }
+  if (!_matchesGenericReadTag(tag.nfcid, tag.nfcidLen)) {
+    dev.deactivate();
+    _showStatusAndReturn("Different tag detected", STATE_MENU, 1600);
+    return;
   }
   if ((_expFamily == EXP_DESFIRE && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) ||
       (_expFamily == EXP_NFCV && tag.technology != ST25R3916Backend::Technology::NFC_V) ||

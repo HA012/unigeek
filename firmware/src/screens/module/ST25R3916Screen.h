@@ -167,6 +167,9 @@ private:
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
   bool _familyFromScan = false;
+  bool _genericReadActive = false;
+  uint8_t _genericReadUid[10] = {};
+  uint8_t _genericReadUidLen = 0;
   uint8_t _scanFamily = 0xFF; // Index into _familyItems; 0xFF = unsupported/ambiguous
   uint8_t _selFamilies = 0;
   // Preserve the cursor when returning from child screens/operations.
@@ -181,8 +184,9 @@ private:
   uint8_t _expDesfireAid[3] = {};
   bool _expDesfireAidSelected = false;
 
-  ListItem _items[4] = {
+  ListItem _items[5] = {
     {"Scan Tag"},
+    {"Read Tag"},
     {"Scan NFC Reader"},
     {"Families"},
     {"Device Info"},
@@ -347,6 +351,8 @@ private:
 
   void _scanReader();
   void _scan(uint16_t techMask);
+  void _genericReadTag();
+  bool _matchesGenericReadTag(const uint8_t* uid, uint8_t uidLen) const;
   void _readMfcTag();
   void _emulateMfcTag();
   void _emulateMfuTag();

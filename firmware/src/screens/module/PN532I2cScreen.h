@@ -171,8 +171,8 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[4] = {
-    {"Scan Tag"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
+  ListItem _mainItems[5] = {
+    {"Scan Tag"}, {"Read Tag"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
   };
   ListItem _familyItems[7] = {
     {"MIFARE Classic"}, {"Ultralight / NTAG"},
@@ -182,7 +182,15 @@ private:
   };
   uint8_t _selFamilies = 0;
   bool _familyFromScan = false;
+  bool _genericReadActive = false;
+  // Identity captured by the generic detector, before protocol reactivation.
+  uint8_t _genericIdentity[12] = {};
+  uint8_t _genericIdentityLen = 0;
+  uint8_t _genericIdentityFamily = 0xFF;
+  bool _genericIdentityMatches(uint8_t family, const uint8_t* id, uint8_t len);
+
   int8_t _scanFamily = -1;
+  void _doGenericReadTag();
   void _goFamilies();
   void _openFamily(uint8_t index);
   void _backFromFamily();

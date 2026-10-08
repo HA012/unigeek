@@ -620,7 +620,7 @@ void PN532I2cScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) _goType4ATag();
-      else if (dir == INavigation::DIR_PRESS) _doType4AReadTag();
+      else if (dir == INavigation::DIR_PRESS && !_genericReadActive) _doType4AReadTag();
       else _scrollView.onNav(dir);
     }
     return;
@@ -633,7 +633,7 @@ void PN532I2cScreen::onUpdate() {
       } else if (dir == INavigation::DIR_PRESS) {
         if (_typeBFromMainScan) {
           if (_typeBAttribLen) { _familyFromScan = true; _openFamily(3); }
-        } else _doTypeBReadTag();
+        } else if (!_genericReadActive) _doTypeBReadTag();
       } else _scrollView.onNav(dir);
     }
     return;
@@ -869,10 +869,11 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
       switch (index) {
-        case 0: _doScan14A();         break;
-        case 1: _doScanReader();     break;
-        case 2: _goFamilies();        break;
-        case 3: _showDeviceInfo();    break;
+        case 0: _doScan14A();          break;
+        case 1: _doGenericReadTag(); break;
+        case 2: _doScanReader();      break;
+        case 3: _goFamilies();        break;
+        case 4: _showDeviceInfo();    break;
       }
       break;
     case STATE_FAMILIES_MENU:
@@ -1086,6 +1087,19 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
 }
 
 void PN532I2cScreen::onBack() {
+  if (_genericReadActive) {
+    switch (_state) {
+      case STATE_MIFARE_DUMP:
+      case STATE_ULTRALIGHT_DUMP:
+      case STATE_TYPEB_RESULT:
+      case STATE_TYPE4A_RESULT:
+      case STATE_FELICA_RESULT:
+      case STATE_TYPE1_RESULT:
+        _goMain();
+        return;
+      default: break;
+    }
+  }
   switch (_state) {
     case STATE_MAIN_MENU:
       _cleanup();
@@ -1489,11 +1503,83 @@ void PN532I2cScreen::_cleanup() {
 // ── nav helpers ────────────────────────────────────────────────────────────
 
 void PN532I2cScreen::_goMain() {
+  _genericReadActive = false;
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 4, _selMain);
+  setItems(_mainItems, 5, _selMain);
   render();
 }
 
+
+// Generic Read Tag: detect the protocol, then reuse its existing reader.
+// _familyFromScan makes the family root return to the main menu.
+bool PN532I2cScreen::_genericIdentityMatches(uint8_t family, const uint8_t* id, uint8_t len) {
+  if (!_genericReadActive) return true;
+  if (_genericIdentityFamily == family && id && len == _genericIdentityLen &&
+      memcmp(id, _genericIdentity, len) == 0) return true;
+  ShowStatusAction::show("Different tag detected", 1200);
+  _goMain();
+  return false;
+}
+
+void PN532I2cScreen::_doGenericReadTag() {
+  renderOperationTitle("Read Tag");
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  int8_t family = -1;
+  _genericIdentityLen = 0;
+  _genericIdentityFamily = 0xFF;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _goMain();
+      return;
+    }
+    uint8_t uid[7] = {}; uint8_t uidLen = 0;
+    if (_nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLen, 200)) {
+      if (uidLen > sizeof(_uid)) break;
+      memcpy(_uid, uid, uidLen);
+      _uidLen = uidLen;
+      _atqa = ((uint16_t)pn532_packetbuffer[9] << 8) | pn532_packetbuffer[10];
+      _sak = pn532_packetbuffer[11];
+      _hasCard = true;
+      memcpy(_genericIdentity, uid, uidLen);
+      _genericIdentityLen = uidLen;
+      if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) family = 0;
+      else if (_sak == 0x00) family = 1;
+      else if (_sak & 0x20) family = 2;
+      break;
+    }
+    if (_scanTypeB(150)) {
+      if (_typeBAttribLen) {
+        family = 3;
+        const uint8_t off = (_typeBAtqb[0] == 0x50) ? 1 : 0;
+        memcpy(_genericIdentity, _typeBAtqb + off, 4);
+        _genericIdentityLen = 4;
+      }
+      break;
+    }
+    if (_scanFelica(150)) { family = 5; memcpy(_genericIdentity, _felicaIdm, 8); _genericIdentityLen = 8; break; }
+    if (_scanType1(150)) { family = 6; memcpy(_genericIdentity, _type1JewelId, 4); _genericIdentityLen = 4; break; }
+    delay(20);
+  }
+  if (family < 0) {
+    ShowStatusAction::show("Tag not supported or not detected", 1200);
+    _goMain();
+    return;
+  }
+  // Generic reads are operations, not entries into a family menu.
+  // The reader may reacquire the tag when its protocol requires activation.
+  _genericIdentityFamily = (uint8_t)family;
+  _genericReadActive = true;
+  switch (family) {
+    case 0: _doReadTag(); break;
+    case 1: _doUltralightReadTag(); break;
+    case 2: _doType4AReadTag(); break;
+    case 3: _doTypeBReadTag(); break;
+    case 5: _doFelicaReadTag(); break;
+    case 6: _doType1ReadTag(); break;
+  }
+}
 
 void PN532I2cScreen::_goFamilies() {
   _state = STATE_FAMILIES_MENU;
@@ -1537,6 +1623,7 @@ void PN532I2cScreen::_goMifareKeys() {
 }
 
 void PN532I2cScreen::_goMifareTag() {
+  if (_genericReadActive) { _goMain(); return; }
   _state = STATE_MIFARE_TAG_MENU;
   setItems(_mfTagItems, 6, _selMifareTag);
   render();
@@ -1563,6 +1650,7 @@ void PN532I2cScreen::_goUltralight() {
 }
 
 void PN532I2cScreen::_goUltralightTag() {
+  if (_genericReadActive) { _goMain(); return; }
   _state = STATE_ULTRALIGHT_TAG_MENU;
   setItems(_ulTagItems, 4, _selUltralightTag);
   render();
@@ -1589,6 +1677,7 @@ void PN532I2cScreen::_goTypeB() {
 }
 
 void PN532I2cScreen::_goTypeBTag() {
+  if (_genericReadActive) { _goMain(); return; }
   _state = STATE_TYPEB_TAG_MENU;
   setItems(_typeBTagItems, 2, _selTypeBTag);
   render();
@@ -1615,6 +1704,7 @@ void PN532I2cScreen::_goType4A() {
 }
 
 void PN532I2cScreen::_goType4ATag() {
+  if (_genericReadActive) { _goMain(); return; }
   _state = STATE_TYPE4A_TAG_MENU;
   setItems(_type4ATagItems, 2, _selType4ATag);
   render();
@@ -1644,13 +1734,15 @@ void PN532I2cScreen::_goDesfireApps() { _state=STATE_DESFIRE_APPS_MENU; setItems
 void PN532I2cScreen::_goDesfireFiles() { _state=STATE_DESFIRE_FILES_MENU; setItems(_desfireFileItems,4,_selDesfireFiles); render(); }
 void PN532I2cScreen::_goDesfireAdvanced() { _state=STATE_DESFIRE_ADVANCED_MENU; setItems(_desfireAdvancedItems,2,_selDesfireAdvanced); render(); }
 void PN532I2cScreen::_goFelica() { _state=STATE_FELICA_MENU; setItems(_felicaItems,2,_selFelica); render(); }
-void PN532I2cScreen::_goFelicaTag() { _state=STATE_FELICA_TAG_MENU; setItems(_felicaTagItems,4,_selFelicaTag); render(); }
+void PN532I2cScreen::_goFelicaTag() {
+  if (_genericReadActive) { _goMain(); return; } _state=STATE_FELICA_TAG_MENU; setItems(_felicaTagItems,4,_selFelicaTag); render(); }
 void PN532I2cScreen::_goFelicaSystems() { _state=STATE_FELICA_SYSTEMS_MENU; setItems(_felicaSystemItems,1,_selFelicaSystems); render(); }
 void PN532I2cScreen::_goFelicaServices() { _state=STATE_FELICA_SERVICES_MENU; setItems(_felicaServiceItems,3,_selFelicaServices); render(); }
 void PN532I2cScreen::_goFelicaAdvanced() { _state=STATE_FELICA_ADVANCED_MENU; setItems(_felicaAdvancedItems,3,_selFelicaAdvanced); render(); }
 void PN532I2cScreen::_goFelicaNdef() { _state=STATE_FELICA_NDEF_MENU; setItems(_felicaNdefItems,4,_selFelicaNdef); render(); }
 void PN532I2cScreen::_goType1() { _state=STATE_TYPE1_MENU; setItems(_type1Items,2,_selType1); render(); }
-void PN532I2cScreen::_goType1Tag() { _state=STATE_TYPE1_TAG_MENU; setItems(_type1TagItems,2,_selType1Tag); render(); }
+void PN532I2cScreen::_goType1Tag() {
+  if (_genericReadActive) { _goMain(); return; } _state=STATE_TYPE1_TAG_MENU; setItems(_type1TagItems,2,_selType1Tag); render(); }
 void PN532I2cScreen::_goType1Ndef() { _state=STATE_TYPE1_NDEF_MENU; setItems(_type1NdefItems,1,_selType1Ndef); render(); }
 
 void PN532I2cScreen::_goNdefWrite() {
@@ -2031,7 +2123,7 @@ void PN532I2cScreen::_showType4ADetails(bool scanAgainHint) {
   snprintf(buf, sizeof(buf), "0x%02X", _sak); _pushRow("SAK", buf);
   _pushRow("ISO-DEP", "Yes");
   if (_type4AAtsLen) _pushRow("ATS", _hexBlock(_type4AAts, _type4AAtsLen));
-  if (scanAgainHint) _pushRow("[Press]", "Scan again");
+  if (scanAgainHint && !_genericReadActive) _pushRow("[Press]", "Scan again");
   _scrollView.resetScroll();
   _scrollView.setRows(_rows, _rowCount);
   render();
@@ -2044,7 +2136,7 @@ void PN532I2cScreen::_doType4AReadTag() {
   while (millis() - start < 3000) {
     Uni.update();
     if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) { _goType4ATag(); return; }
-    if (_scanType4A(250)) { _showType4ADetails(true); return; }
+    if (_scanType4A(250)) { if (!_genericIdentityMatches(2, _uid, _uidLen)) return; _showType4ADetails(true); return; }
     delay(30);
   }
   ShowStatusAction::show("No Type 4A tag detected", 1200);
@@ -2168,7 +2260,7 @@ bool PN532I2cScreen::_felicaWriteBlock(uint16_t svc,uint16_t block,const uint8_t
 bool PN532I2cScreen::_felicaReadNdef(uint8_t*out,size_t max,size_t&len,size_t&cap){len=cap=0;uint8_t a[16];if(!_felicaReadBlock(0x000B,0,a)||_felicaAttrChecksum(a)!=((uint16_t)a[14]<<8|a[15])||a[9]!=0x00)return false;cap=(((size_t)a[3]<<8)|a[4])*16U;len=((size_t)a[11]<<16)|((size_t)a[12]<<8)|a[13];if(len>cap||len>max)return false;size_t off=0;for(uint16_t b=1;off<len;b++){uint8_t d[16];if(!_felicaReadBlock(0x000B,b,d))return false;size_t take=min((size_t)16,len-off);memcpy(out+off,d,take);off+=take;}return true;}
 bool PN532I2cScreen::_felicaWriteNdef(const uint8_t*ndef,size_t len,size_t&cap){cap=0;uint8_t a[16];if(!_felicaReadBlock(0x0009,0,a)||_felicaAttrChecksum(a)!=((uint16_t)a[14]<<8|a[15])||a[10]!=1)return false;cap=(((size_t)a[3]<<8)|a[4])*16U;if(len>cap)return false;uint8_t w[16];memcpy(w,a,16);w[9]=0x0F;w[11]=w[12]=w[13]=0;uint16_t s=_felicaAttrChecksum(w);w[14]=s>>8;w[15]=s;if(!_felicaWriteBlock(0x0009,0,w))return false;size_t off=0;for(uint16_t b=1;off<len;b++){memset(w,0,16);size_t take=min((size_t)16,len-off);memcpy(w,ndef+off,take);if(!_felicaWriteBlock(0x0009,b,w))return false;off+=take;}memcpy(w,a,16);w[9]=0;w[11]=len>>16;w[12]=len>>8;w[13]=len;s=_felicaAttrChecksum(w);w[14]=s>>8;w[15]=s;return _felicaWriteBlock(0x0009,0,w);}
 
-void PN532I2cScreen::_doFelicaReadTag(){renderOperationTitle("Read Tag");renderTagPrompt("Waiting for tag...",bodyX(),bodyY(),bodyW(),bodyH());if(!_scanFelica(2500)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaTag();return;}_operationResultTitle="Tag Details";_felicaResultReturn=STATE_FELICA_TAG_MENU;_state=STATE_FELICA_RESULT;_resetRows();_pushRow("Type","FeliCa / NFC-F");_pushRow("IDm",_hexBlock(_felicaIdm,8));_pushRow("PMm",_hexBlock(_felicaPmm,8));char sc[5];snprintf(sc,sizeof(sc),"%04X",_felicaSystemCode);_pushRow("System",sc);_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
+void PN532I2cScreen::_doFelicaReadTag(){renderOperationTitle("Read Tag");renderTagPrompt("Waiting for tag...",bodyX(),bodyY(),bodyW(),bodyH());if(!_scanFelica(2500)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaTag();return;}if(!_genericIdentityMatches(5,_felicaIdm,8))return;_operationResultTitle="Tag Details";_felicaResultReturn=STATE_FELICA_TAG_MENU;_state=STATE_FELICA_RESULT;_resetRows();_pushRow("Type","FeliCa / NFC-F");_pushRow("IDm",_hexBlock(_felicaIdm,8));_pushRow("PMm",_hexBlock(_felicaPmm,8));char sc[5];snprintf(sc,sizeof(sc),"%04X",_felicaSystemCode);_pushRow("System",sc);_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
 void PN532I2cScreen::_showFelicaHex(const char* title,const uint8_t* data,size_t len,State_e returnState){_operationResultTitle=title;_felicaResultReturn=returnState;_state=STATE_FELICA_RESULT;_resetRows();_pushWrappedRow(title,len?_hexBlock(data,(uint8_t)min(len,(size_t)255)):String("(empty)"));_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
 void PN532I2cScreen::_doFelicaTagAction(uint8_t i){if(i==0){_doFelicaReadTag();return;}if(i==1){_goFelicaSystems();return;}if(i==2){_goFelicaServices();return;}_goFelicaAdvanced();}
 void PN532I2cScreen::_doFelicaSystemAction(uint8_t){if(!_scanFelica(1200)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaSystems();return;}uint16_t sys[16];size_t n=0;if(!_felicaRequestSystemCodes(sys,16,n)){ShowStatusAction::show("Request System Code failed");_goFelicaSystems();return;}_operationResultTitle="Systems";_felicaResultReturn=STATE_FELICA_SYSTEMS_MENU;_state=STATE_FELICA_RESULT;_resetRows();for(size_t k=0;k<n;k++){char v[7];snprintf(v,sizeof(v),"0x%04X",sys[k]);String l="System "+String((unsigned)k);_pushRow(l.c_str(),v);}_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
@@ -2250,6 +2342,7 @@ bool PN532I2cScreen::_type1ReadStatic(uint8_t mem[120]) {
 void PN532I2cScreen::_doType1ReadTag() {
   renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   if (!_scanType1(2500)) { ShowStatusAction::show("Type 1 tag not detected"); _goType1Tag(); return; }
+  if (!_genericIdentityMatches(6, _type1JewelId, 4)) return;
   uint8_t hr[2] = {}, uid[4] = {};
   if (!_type1Rid(hr, uid)) { ShowStatusAction::show("RID failed"); _goType1Tag(); return; }
   _state = STATE_TYPE1_RESULT; _resetRows();
@@ -2439,8 +2532,10 @@ void PN532I2cScreen::_doTypeBReadTag() {
       return;
     }
     if (_scanTypeB(250)) {
+      const uint8_t off = (_typeBAtqb[0] == 0x50) ? 1 : 0;
+      if (!_genericIdentityMatches(3, _typeBAtqb + off, 4)) return;
       _typeBFromMainScan = false;
-      _showTypeBDetails(true);
+      _showTypeBDetails(!_genericReadActive);
       return;
     }
     if (_isoATagPresent()) { otherTagDetected = true; break; }
@@ -2974,6 +3069,7 @@ void PN532I2cScreen::_doReadTag() {
   _resumeReadAfterDict = false;
   renderOperationTitle("Read Tag");
   if (!_scanCardOrShow(5000)) { _goMifareTag(); return; }
+  if (!_genericIdentityMatches(0, _uid, _uidLen)) return;
   if (_mfDims(_sak).first == 0) { ShowStatusAction::show("Tag not supported"); _goMifareTag(); return; }
 
   _discoverDefaultKeys();
@@ -3895,6 +3991,7 @@ void PN532I2cScreen::_doUltralightReadTag() {
     _goUltralightTag();
     return;
   }
+  if (!_genericIdentityMatches(1, _uid, _uidLen)) return;
   if (!_pn532EnsureUltralightAuth(_nfc, _wire, typeName, pages, true)) {
     _goUltralightTag();
     return;
