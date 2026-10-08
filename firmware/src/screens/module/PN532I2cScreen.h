@@ -53,6 +53,27 @@ private:
     STATE_TYPEB_ADVANCED_MENU,
     STATE_TYPEB_NDEF_MENU,
     STATE_TYPEB_RESULT,
+    STATE_TYPE4A_MENU,
+    STATE_TYPE4A_TAG_MENU,
+    STATE_TYPE4A_ADVANCED_MENU,
+    STATE_TYPE4A_NDEF_MENU,
+    STATE_TYPE4A_RESULT,
+    STATE_DESFIRE_MENU,
+    STATE_DESFIRE_APPS_MENU,
+    STATE_DESFIRE_FILES_MENU,
+    STATE_DESFIRE_ADVANCED_MENU,
+    STATE_DESFIRE_RESULT,
+    STATE_FELICA_MENU,
+    STATE_FELICA_TAG_MENU,
+    STATE_FELICA_SYSTEMS_MENU,
+    STATE_FELICA_SERVICES_MENU,
+    STATE_FELICA_ADVANCED_MENU,
+    STATE_FELICA_NDEF_MENU,
+    STATE_FELICA_RESULT,
+    STATE_TYPE1_MENU,
+    STATE_TYPE1_TAG_MENU,
+    STATE_TYPE1_NDEF_MENU,
+    STATE_TYPE1_RESULT,
     STATE_MAGIC_DETECT,
     STATE_RAW_RESULT,
     STATE_ULTRALIGHT_DUMP,
@@ -76,6 +97,7 @@ private:
   bool     _rawResultMifare = false;
   bool     _rawResultTypeB = false;
   bool     _rawResultTypeBRaw = false;
+  bool     _rawResultType4A = false;
 
   // Last scanned ISO/IEC 14443 Type B card. InListPassiveTarget returns the
   // 12-byte ATQB plus the ATTRIB response after activation.
@@ -86,6 +108,38 @@ private:
   bool     _hasTypeB = false;
   bool     _typeBFromMainScan = false;
   bool     _typeBRfConfigured = false;
+  size_t   _typeBMLe = 48;
+  size_t   _typeBMLc = 40;
+  uint8_t  _typeBNlenSize = 2;
+
+  // Last activated ISO/IEC 14443-4 Type A target.
+  uint8_t  _type4ATg = 1;
+  uint8_t  _type4AAts[32] = {};
+  uint8_t  _type4AAtsLen = 0;
+  bool     _hasType4A = false;
+
+  // DESFire state (uses the activated Type 4A / ISO-DEP target).
+  uint8_t  _desfireAid[3] = {};
+  bool     _desfireAidSelected = false;
+  uint8_t  _desfireAidUid[7] = {};
+  uint8_t  _desfireAidUidLen = 0;
+  State_e  _desfireResultReturn = STATE_DESFIRE_MENU;
+  State_e  _felicaResultReturn = STATE_FELICA_MENU;
+  String   _operationResultTitle;
+
+  // Last activated FeliCa target (PN532 native 212 kbps polling).
+  uint8_t  _felicaTg = 1;
+  uint8_t  _felicaIdm[8] = {};
+  uint8_t  _felicaPmm[8] = {};
+  uint16_t _felicaSystemCode = 0xFFFF;
+  bool     _hasFelica = false;
+
+  // Last activated NFC Forum Type 1 / Jewel target. PN532 BrTy 0x04.
+  uint8_t  _type1Tg = 1;
+  uint8_t  _type1SensRes[2] = {};
+  uint8_t  _type1JewelId[4] = {};
+  uint8_t  _type1Hr[2] = {};
+  bool     _hasType1 = false;
 
   // Remember the cursor position of each internal menu. PN532I2cScreen uses
   // one ListScreen instance for several menu states, so Back must restore the
@@ -95,6 +149,10 @@ private:
   uint8_t _selMifareNdef = 0, _selMifareAttacks = 0, _selMifareKeys = 0;
   uint8_t _selUltralight = 0, _selUltralightTag = 0, _selUltralightAdvanced = 0, _selUltralightNdef = 0;
   uint8_t _selTypeB = 0, _selTypeBTag = 0, _selTypeBAdvanced = 0, _selTypeBNdef = 0;
+  uint8_t _selType4A = 0, _selType4ATag = 0, _selType4AAdvanced = 0, _selType4ANdef = 0;
+  uint8_t _selDesfire = 0, _selDesfireApps = 0, _selDesfireFiles = 0, _selDesfireAdvanced = 0;
+  uint8_t _selFelica = 0, _selFelicaTag = 0, _selFelicaSystems = 0, _selFelicaServices = 0, _selFelicaAdvanced = 0, _selFelicaNdef = 0;
+  uint8_t _selType1 = 0, _selType1Tag = 0, _selType1Ndef = 0;
   uint8_t _selNdefWrite = 0;
   std::array<std::pair<NFCUtility::MIFARE_Key, NFCUtility::MIFARE_Key>, 40> _mfKeys;
 
@@ -112,12 +170,16 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[6] = {
+  ListItem _mainItems[10] = {
     {"Scan Tag"},
     {"Scan NFC Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
-    {"Type B (experimental)"},
+    {"Type 4B (experimental)"},
+    {"Type 4A (experimental)"},
+    {"DESFire (experimental)"},
+    {"FeliCa (experimental)"},
+    {"Type 1 / Jewel (experimental)"},
     {"Device Info"},
   };
 
@@ -208,6 +270,44 @@ private:
     {"Erase NDEF"},
   };
 
+
+  ListItem _type4AItems[2] = {
+    {"Tag Operations"},
+    {"NDEF Operations"},
+  };
+
+  ListItem _type4ATagItems[2] = {
+    {"Read Tag"},
+    {"Advanced"},
+  };
+
+  ListItem _type4AAdvancedItems[1] = {
+    {"Send APDU"},
+  };
+
+  ListItem _type4ANdefItems[4] = {
+    {"Read NDEF"},
+    {"Write NDEF"},
+    {"Format NDEF"},
+    {"Erase NDEF"},
+  };
+
+  ListItem _desfireItems[4] = {{"Read Tag"}, {"Applications"}, {"Files"}, {"Advanced"}};
+  ListItem _desfireAppItems[3] = {{"List Applications"}, {"Select Application"}, {"Application Details"}};
+  ListItem _desfireFileItems[4] = {{"List Files"}, {"Read File"}, {"Edit File"}, {"File Details"}};
+  ListItem _desfireAdvancedItems[2] = {{"Authenticate"}, {"Send APDU"}};
+
+  ListItem _felicaItems[2] = {{"Tag Operations"}, {"NDEF Operations"}};
+  ListItem _felicaTagItems[4] = {{"Read Tag"}, {"Systems"}, {"Services"}, {"Advanced"}};
+  ListItem _felicaSystemItems[1] = {{"List Systems"}};
+  ListItem _felicaServiceItems[3] = {{"List Services"}, {"Read Service"}, {"Service Details"}};
+  ListItem _felicaAdvancedItems[3] = {{"Read Memory"}, {"Edit Memory"}, {"Raw Commands"}};
+  ListItem _felicaNdefItems[4] = {{"Read NDEF"}, {"Write NDEF"}, {"Format NDEF"}, {"Erase NDEF"}};
+
+  ListItem _type1Items[2] = {{"Tag Operations"}, {"NDEF Operations"}};
+  ListItem _type1TagItems[2] = {{"Read Tag"}, {"Read Memory"}};
+  ListItem _type1NdefItems[1] = {{"Read NDEF"}};
+
   enum MagicUiPhase : uint8_t { MAGIC_WAITING, MAGIC_SCANNING, MAGIC_RESULT };
   MagicUiPhase _magicUiPhase = MAGIC_WAITING;
   String _magicResult;
@@ -263,6 +363,9 @@ private:
     NDEF_TARGET_ULTRALIGHT,
     NDEF_TARGET_MIFARE_CLASSIC,
     NDEF_TARGET_TYPE_B,
+    NDEF_TARGET_TYPE_4A,
+    NDEF_TARGET_FELICA,
+    NDEF_TARGET_TYPE_1,
   };
   NdefTarget_e _ndefTarget = NDEF_TARGET_ULTRALIGHT;
 
@@ -272,6 +375,10 @@ private:
   size_t   _ndefLen = 0;
   size_t   _ndefCapacity = 0;
   bool     _hasNdef = false;
+  // Type 4A NDEF transport limits from the Capability Container.
+  size_t   _type4AMLe = 48;
+  size_t   _type4AMLc = 40;
+  uint8_t  _type4ANlenSize = 2;
   bool     _ndefWritePreview = false;
   bool     _ndefWritePreviewFromFile = false;
   String   _ndefPickDir;
@@ -302,6 +409,23 @@ private:
   void _goTypeBTag();
   void _goTypeBAdvanced();
   void _goTypeBNdef();
+  void _goType4A();
+  void _goType4ATag();
+  void _goType4AAdvanced();
+  void _goType4ANdef();
+  void _goDesfire();
+  void _goDesfireApps();
+  void _goDesfireFiles();
+  void _goDesfireAdvanced();
+  void _goFelica();
+  void _goFelicaTag();
+  void _goFelicaSystems();
+  void _goFelicaServices();
+  void _goFelicaAdvanced();
+  void _goFelicaNdef();
+  void _goType1();
+  void _goType1Tag();
+  void _goType1Ndef();
   void _goDetectMagic();
 
   void _showDeviceInfo();
@@ -318,6 +442,52 @@ private:
   bool _writeTypeBNdefRecord(const uint8_t* ndef, size_t ndefLen);
   void _doTypeBEraseNdef();
   void _doTypeBFormatNdef();
+  bool _scanType4A(uint32_t timeoutMs = 500);
+  bool _type4AExchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxCap, size_t& rxLen);
+  bool _type4ASelectNdef(size_t& capacity, bool& writable);
+  void _showType4ADetails(bool scanAgainHint = false);
+  void _doType4AReadTag();
+  void _doType4ASendApdu();
+  void _doType4AReadNdef();
+  bool _writeType4ANdefRecord(const uint8_t* ndef, size_t ndefLen);
+  void _doType4AEraseNdef();
+  void _doType4AFormatNdef();
+  bool _desfireExchange(uint8_t ins, const uint8_t* data, size_t dataLen, uint8_t* out, size_t outMax, size_t& outLen, uint8_t& status);
+  bool _desfireProbe();
+  bool _desfireSelectCurrentAid();
+  bool _desfireAuthenticateAes(uint8_t keyNo, const uint8_t key[16]);
+  void _doDesfireReadTag();
+  void _doDesfireAppAction(uint8_t index);
+  void _doDesfireFileAction(uint8_t index);
+  void _doDesfireAdvancedAction(uint8_t index);
+  void _showDesfireHex(const char* title, const uint8_t* data, size_t len);
+  bool _scanFelica(uint32_t timeoutMs = 500);
+  bool _felicaExchange(const uint8_t* body, size_t bodyLen, uint8_t* rx, size_t rxCap, size_t& rxLen);
+  bool _felicaRequestSystemCodes(uint16_t* systems, size_t maxSystems, size_t& count);
+  bool _felicaSearchService(uint16_t index, uint16_t& serviceCode);
+  bool _felicaRequestService(uint16_t serviceCode, uint16_t& keyVersion);
+  bool _felicaReadBlock(uint16_t serviceCode, uint16_t block, uint8_t data[16]);
+  bool _felicaWriteBlock(uint16_t serviceCode, uint16_t block, const uint8_t data[16]);
+  bool _felicaReadNdef(uint8_t* out, size_t outMax, size_t& outLen, size_t& capacity);
+  bool _felicaWriteNdef(const uint8_t* ndef, size_t ndefLen, size_t& capacity);
+  void _doFelicaReadTag();
+  void _doFelicaTagAction(uint8_t index);
+  void _doFelicaSystemAction(uint8_t index);
+  void _doFelicaServiceAction(uint8_t index);
+  void _doFelicaAdvancedAction(uint8_t index);
+  void _showFelicaHex(const char* title, const uint8_t* data, size_t len, State_e returnState);
+  void _doFelicaReadNdef();
+  bool _writeFelicaNdefRecord(const uint8_t* ndef, size_t ndefLen);
+  void _doFelicaEraseNdef();
+  void _doFelicaFormatNdef();
+  bool _scanType1(uint32_t timeoutMs = 500);
+  bool _type1Exchange(const uint8_t* tx, size_t txLen, uint8_t* rx, size_t rxCap, size_t& rxLen);
+  bool _type1Rid(uint8_t hr[2], uint8_t uid[4]);
+  bool _type1ReadByte(uint8_t address, uint8_t& value);
+  bool _type1ReadStatic(uint8_t mem[120]);
+  void _doType1ReadTag();
+  void _doType1ReadMemory();
+  void _doType1ReadNdef();
   bool _discoverDefaultKeys(bool checkingProgress = false);
   bool _keyCheckCancelled = false;
   void _loadSavedKeys();
