@@ -6,20 +6,31 @@
 #include "core/ScreenManager.h"
 
 void ChameleonHFMenuScreen::onInit() {
-  _items[0] = {"Scan Tag"};
-  _items[1] = {"MIFARE Classic"};
-  _items[2] = {"Ultralight / NTAG"};
-  setItems(_items);
+  _mainItems[0] = {"Scan Tag"};
+  _mainItems[1] = {"Families"};
+  _items[0] = {"MIFARE Classic"};
+  _items[1] = {"Ultralight / NTAG"};
+  setItems(_mainItems, 2, _mainSelection);
 }
 
 void ChameleonHFMenuScreen::onItemSelected(uint8_t index) {
-  switch (index) {
-    case 0: Screen.push(new ChameleonHFScreen());      break;
-    case 1: Screen.push(new ChameleonMfcMenuScreen()); break;
-    case 2: Screen.push(new ChameleonMfuMenuScreen()); break;
+  if (!_families) {
+    _mainSelection = index;
+    if (index == 0) Screen.push(new ChameleonHFScreen());
+    else {
+      _families = true;
+      setItems(_items, 2, _familySelection);
+    }
+    return;
   }
+  _familySelection = index;
+  if (index == 0) Screen.push(new ChameleonMfcMenuScreen());
+  else if (index == 1) Screen.push(new ChameleonMfuMenuScreen());
 }
 
 void ChameleonHFMenuScreen::onBack() {
-  Screen.goBack();
+  if (_families) {
+    _families = false;
+    setItems(_mainItems, 2, _mainSelection);
+  } else Screen.goBack();
 }

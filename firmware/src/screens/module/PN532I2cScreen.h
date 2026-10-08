@@ -24,6 +24,7 @@ public:
 private:
   enum State_e {
     STATE_MAIN_MENU,
+    STATE_FAMILIES_MENU,
     STATE_DEVICE_INFO,
     STATE_SCAN_RESULT,
     STATE_SCAN_14A,
@@ -170,18 +171,21 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[10] = {
-    {"Scan Tag"},
-    {"Scan NFC Reader"},
-    {"MIFARE Classic"},
-    {"Ultralight / NTAG"},
-    {"Type 4A (experimental)"},
-    {"Type 4B (experimental)"},
-    {"DESFire (experimental)"},
-    {"FeliCa (experimental)"},
-    {"Type 1 / Jewel (experimental)"},
-    {"Device Info"},
+  ListItem _mainItems[4] = {
+    {"Scan Tag"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
   };
+  ListItem _familyItems[7] = {
+    {"MIFARE Classic"}, {"Ultralight / NTAG"},
+    {"Type 4A (experimental)"}, {"Type 4B (experimental)"},
+    {"DESFire (experimental)"}, {"FeliCa (experimental)"},
+    {"Type 1 / Jewel (experimental)"},
+  };
+  uint8_t _selFamilies = 0;
+  bool _familyFromScan = false;
+  int8_t _scanFamily = -1;
+  void _goFamilies();
+  void _openFamily(uint8_t index);
+  void _backFromFamily();
 
   ListItem _mfItems[4] = {
     {"Tag Operations"},

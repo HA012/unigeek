@@ -502,6 +502,7 @@ static void renderOperationTitle(const char* title) {
 const char* PN532I2cScreen::title() {
   switch (_state) {
     case STATE_MAIN_MENU:       return "PN532 I2C";
+    case STATE_FAMILIES_MENU:   return "Families";
     case STATE_DEVICE_INFO:     return "Device Info";
     case STATE_SCAN_RESULT:     return "Tag Details";
     case STATE_SCAN_14A:        return "Scan Tag";
@@ -607,7 +608,8 @@ void PN532I2cScreen::onUpdate() {
       if (dir == INavigation::DIR_BACK) {
         _goMain();
       } else if (dir == INavigation::DIR_PRESS) {
-        _doScan14A();
+        if (_scanFamily >= 0) { _familyFromScan = true; _openFamily((uint8_t)_scanFamily); }
+        else _doScan14A();
       } else {
         _scrollView.onNav(dir);
       }
@@ -629,7 +631,9 @@ void PN532I2cScreen::onUpdate() {
       if (dir == INavigation::DIR_BACK) {
         if (_typeBFromMainScan) _goMain(); else _goTypeBTag();
       } else if (dir == INavigation::DIR_PRESS) {
-        if (_typeBFromMainScan) _doScan14A(); else _doTypeBReadTag();
+        if (_typeBFromMainScan) {
+          if (_typeBAttribLen) { _familyFromScan = true; _openFamily(3); }
+        } else _doTypeBReadTag();
       } else _scrollView.onNav(dir);
     }
     return;
@@ -867,15 +871,14 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       switch (index) {
         case 0: _doScan14A();         break;
         case 1: _doScanReader();     break;
-        case 2: _goMifare();          break;
-        case 3: _goUltralight();      break;
-        case 4: _goType4A();          break;
-        case 5: _goTypeB();           break;
-        case 6: _goDesfire();         break;
-        case 7: _goFelica();          break;
-        case 8: _goType1();           break;
-        case 9: _showDeviceInfo();    break;
+        case 2: _goFamilies();        break;
+        case 3: _showDeviceInfo();    break;
       }
+      break;
+    case STATE_FAMILIES_MENU:
+      _selFamilies = index;
+      _familyFromScan = false;
+      _openFamily(index);
       break;
     case STATE_MIFARE_MENU:
       switch (index) {
@@ -1088,6 +1091,9 @@ void PN532I2cScreen::onBack() {
       _cleanup();
       Screen.goBack();
       break;
+    case STATE_FAMILIES_MENU:
+      _goMain();
+      break;
     case STATE_MIFARE_MENU:
     case STATE_ULTRALIGHT_MENU:
     case STATE_TYPEB_MENU:
@@ -1095,7 +1101,7 @@ void PN532I2cScreen::onBack() {
     case STATE_DESFIRE_MENU:
     case STATE_FELICA_MENU:
     case STATE_TYPE1_MENU:
-      _goMain();
+      _backFromFamily();
       break;
     case STATE_MAGIC_DETECT:
       _goMifareTag();
@@ -1484,10 +1490,33 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 10, _selMain);
+  setItems(_mainItems, 4, _selMain);
   render();
 }
 
+
+void PN532I2cScreen::_goFamilies() {
+  _state = STATE_FAMILIES_MENU;
+  setItems(_familyItems, 7, _selFamilies);
+  render();
+}
+
+void PN532I2cScreen::_openFamily(uint8_t index) {
+  switch (index) {
+    case 0: _goMifare(); break;
+    case 1: _goUltralight(); break;
+    case 2: _goType4A(); break;
+    case 3: _goTypeB(); break;
+    case 4: _goDesfire(); break;
+    case 5: _goFelica(); break;
+    case 6: _goType1(); break;
+  }
+}
+
+void PN532I2cScreen::_backFromFamily() {
+  if (_familyFromScan) { _familyFromScan = false; _goMain(); }
+  else _goFamilies();
+}
 
 void PN532I2cScreen::_goMifare() {
   _state = STATE_MIFARE_MENU;
@@ -2391,7 +2420,7 @@ void PN532I2cScreen::_showTypeBDetails(bool scanAgainHint) {
     _pushRow("Protocol Info", _hexBlock(_typeBAtqb + 9, 3));
   }
   if (_typeBAttribLen) _pushRow("ATTRIB_RES", _hexBlock(_typeBAttrib, _typeBAttribLen));
-  if (scanAgainHint) _pushRow("[Press]", "Scan again");
+  if (scanAgainHint && _typeBAttribLen) _pushRow("[Press]", "Type 4B Menu");
 
   _scrollView.resetScroll();
   _scrollView.setRows(_rows, _rowCount);
@@ -2687,6 +2716,7 @@ void PN532I2cScreen::_showDeviceInfo() {
 }
 
 void PN532I2cScreen::_doScan14A() {
+  _scanFamily = -1;
   _state = STATE_SCAN_14A;
 
   // Match the Chameleon HF reader scan presentation.
@@ -2742,6 +2772,9 @@ void PN532I2cScreen::_doScan14A() {
     if (concreteType) typeName = concreteType;
   }
   _pushRow("Type", typeName);
+  if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) _scanFamily = 0;
+  else if (_sak == 0x00) _scanFamily = 1;
+  else if (_sak & 0x20) _scanFamily = 2;
   if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) {
     const MagicCardType magic = _detectMagicType();
     _pushRow("Magic", magicCardTypeName(magic));
@@ -2756,7 +2789,8 @@ void PN532I2cScreen::_doScan14A() {
   snprintf(buf, sizeof(buf), "%d bytes", _uidLen);
   _pushRow("UID Len", buf);
   _pushRow("Protocol", "ISO14443A");
-  _pushRow("[Press]", "Scan again");
+  if (_scanFamily >= 0) _pushRow("[Press]", String(_scanFamily == 0 ? "MIFARE Classic" : _scanFamily == 1 ? "Ultralight / NTAG" : "Type 4A") + " Menu");
+  else _pushRow("[Press]", "Scan again");
   _scrollView.setRows(_rows, _rowCount);
   render();
 }

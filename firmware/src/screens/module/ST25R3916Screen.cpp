@@ -554,7 +554,7 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
 
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
+  if (_state == STATE_MENU || _state == STATE_FAMILIES_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
       _state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU ||
       _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_ATTACK_SELECT ||
       _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_ADVANCED_MENU ||
@@ -578,7 +578,10 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
-    _scan(_lastTechMask);
+    if (_scanFamily != 0xFF) {
+      _familyFromScan = true;
+      _openFamily(_scanFamily);
+    } else _scan(_lastTechMask);
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_DETAILS) {
@@ -704,7 +707,7 @@ void ST25R3916Screen::onBack() {
   if (_state == STATE_EXP_NDEF_MENU) { _showExperimentalMenu(_expFamily); return; }
   if (_state == STATE_EXP_ADVANCED_MENU || _state == STATE_EXP_SUB1_MENU || _state == STATE_EXP_SUB2_MENU) { _showExperimentalTagMenu(); return; }
   if (_state == STATE_EXP_TAG_MENU) { _showExperimentalMenu(_expFamily); return; }
-  if (_state == STATE_EXP_MENU) { _showMenu(); return; }
+  if (_state == STATE_EXP_MENU) { if (_familyFromScan) _showMenu(); else _showFamiliesMenu(); return; }
   if (_state == STATE_MFU_DUMP_HEX) {
     _state = STATE_MFU_DETAILS;
     render();
@@ -720,7 +723,7 @@ void ST25R3916Screen::onBack() {
     return;
   }
   if (_state == STATE_MFU_MENU) {
-    _showMenu();
+    if (_familyFromScan) _showMenu(); else _showFamiliesMenu();
     return;
   }
   if (_state == STATE_MFC_DUMP_HEX) {
@@ -777,8 +780,9 @@ void ST25R3916Screen::onBack() {
   if (_state == STATE_MFU_ADVANCED_MENU) { _showMfuTagMenu(); return; }
   if (_state == STATE_MAGIC_DETECT) { _showMfcTagMenu(); return; }
   if (_state == STATE_DEVICE_INFO) { _showMenu(); return; }
+  if (_state == STATE_FAMILIES_MENU) { _showMenu(); return; }
   if (_state == STATE_MFC_MENU) {
-    _showMenu();
+    if (_familyFromScan) _showMenu(); else _showFamiliesMenu();
     return;
   }
   Screen.goBack();
@@ -947,18 +951,18 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   if (_state == STATE_MFC_UID_FILE_SELECT) { _openMfcUidFile(index); return; }
   if (_state == STATE_MFC_UID_DUMP_SELECT) { _openMfcUidDumpFile(index); return; }
 
+  if (_state == STATE_FAMILIES_MENU) {
+    _selFamilies = index;
+    _familyFromScan = false;
+    _openFamily(index);
+    return;
+  }
   _selMain = index;
   switch (index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
     case 1: _scanReader(); break;
-    case 2: _showMfcMenu(); break;
-    case 3: _showMfuMenu(); break;
-    case 4: ShowStatusAction::show("Type 4A not implemented", 1600); break;
-    case 5: _showExperimentalMenu(EXP_TYPE4B); break;
-    case 6: _showExperimentalMenu(EXP_DESFIRE); break;
-    case 7: _showExperimentalMenu(EXP_FELICA); break;
-    case 8: _showExperimentalMenu(EXP_NFCV); break;
-    case 9: _showDeviceInfo(); break;
+    case 2: _familyFromScan = false; _showFamiliesMenu(); break;
+    case 3: _showDeviceInfo(); break;
   }
 #else
   (void)index;
@@ -1048,7 +1052,25 @@ void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, in
 
 void ST25R3916Screen::_showMenu() {
   _state = STATE_MENU;
-  setItems(_items, 9, _selMain);
+  setItems(_items, 4, _selMain);
+}
+
+void ST25R3916Screen::_showFamiliesMenu() {
+  _state = STATE_FAMILIES_MENU;
+  setItems(_familyItems, 7, _selFamilies);
+  render();
+}
+
+void ST25R3916Screen::_openFamily(uint8_t index) {
+  switch (index) {
+    case 0: _showMfcMenu(); break;
+    case 1: _showMfuMenu(); break;
+    case 2: ShowStatusAction::show("Type 4A not implemented", 1600); break;
+    case 3: _showExperimentalMenu(EXP_TYPE4B); break;
+    case 4: _showExperimentalMenu(EXP_DESFIRE); break;
+    case 5: _showExperimentalMenu(EXP_FELICA); break;
+    case 6: _showExperimentalMenu(EXP_NFCV); break;
+  }
 }
 
 void ST25R3916Screen::_showMfcMenu() {
@@ -1173,11 +1195,16 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
     return;
   }
 
+  _scanFamily = 0xFF;
   String tech = "Unknown";
   const char* protocol = "Unknown";
   switch (result.technology) {
     case ST25R3916Backend::Technology::NFC_A:
       tech = inferNfcAType(result.sak, result.atqa);
+      if (isMifareClassic(result.sak)) _scanFamily = 0;
+      else if (result.sak == 0x00) _scanFamily = 1;
+      else if (result.sak == 0x20 && result.atqa[0] == 0x03) _scanFamily = 4;
+      else if (result.isoDep) _scanFamily = 2; // Type 4A placeholder
       protocol = "ISO14443A";
       // SAK 0x00 identifies a Type-2 style NFC-A tag but ATQA alone does not
       // reliably distinguish Ultralight/NTAG variants. Probe GET_VERSION while
@@ -1192,14 +1219,17 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
       break;
     case ST25R3916Backend::Technology::NFC_B:
       tech = "NFC-B";
+      if (result.isoDep) _scanFamily = 3;
       protocol = "ISO14443B";
       break;
     case ST25R3916Backend::Technology::NFC_F:
       tech = "NFC-F / FeliCa";
+      _scanFamily = 5;
       protocol = "NFC-F";
       break;
     case ST25R3916Backend::Technology::NFC_V:
       tech = "NFC-V / ISO15693";
+      _scanFamily = 6;
       protocol = "ISO15693";
       break;
     default:
@@ -1241,7 +1271,13 @@ void ST25R3916Screen::_scan(uint16_t techMask) {
   addRow("Protocol", protocol);
   if (result.isoDep) addRow("ISO-DEP", "Yes");
   addRow("Reader", bus ? bus : "--");
-  addRow("[Press]", "Scan again");
+  if (_scanFamily != 0xFF) {
+    static const char* const familyNames[] = {
+      "MIFARE Classic", "Ultralight / NTAG", "Type 4A", "Type 4B",
+      "DESFire", "FeliCa", "ICODE / ST25V"
+    };
+    addRow("[Press]", String(familyNames[_scanFamily]) + " Menu");
+  } else addRow("[Press]", "Scan again");
 
   dev.deactivate();
   _scrollView.resetScroll();

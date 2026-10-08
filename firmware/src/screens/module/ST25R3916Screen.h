@@ -16,6 +16,7 @@ public:
 
   const char* title() override {
     switch (_state) {
+      case STATE_FAMILIES_MENU: return "Families";
       case STATE_SCANNING: return "Scan Tag";
       case STATE_SCAN_READER:
       case STATE_SCAN_READER_RESULT: return "Scan NFC Reader";
@@ -95,6 +96,7 @@ private:
 
   enum State : uint8_t {
     STATE_MENU,
+    STATE_FAMILIES_MENU,
     STATE_SCANNING,
     STATE_SCAN_READER,
     STATE_SCAN_READER_RESULT,
@@ -164,6 +166,9 @@ private:
 
   State _state = STATE_MENU;
   uint16_t _lastTechMask = 0;
+  bool _familyFromScan = false;
+  uint8_t _scanFamily = 0xFF; // Index into _familyItems; 0xFF = unsupported/ambiguous
+  uint8_t _selFamilies = 0;
   // Preserve the cursor when returning from child screens/operations.
   uint8_t _selMain = 0, _selMfc = 0, _selMfcTag = 0, _selMfcAdvanced = 0, _selMfcNdef = 0, _selMfcNdefWrite = 0;
   uint8_t _selMfcAttacks = 0, _selMfcKeys = 0;
@@ -176,9 +181,13 @@ private:
   uint8_t _expDesfireAid[3] = {};
   bool _expDesfireAidSelected = false;
 
-  ListItem _items[10] = {
+  ListItem _items[4] = {
     {"Scan Tag"},
     {"Scan NFC Reader"},
+    {"Families"},
+    {"Device Info"},
+  };
+  ListItem _familyItems[7] = {
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
     {"Type 4A (experimental)"},
@@ -186,7 +195,6 @@ private:
     {"DESFire (experimental)"},
     {"FeliCa (experimental)"},
     {"ICODE / ST25V (experimental)"},
-    {"Device Info"},
   };
   ListItem _mfcItems[4] = {
     {"Tag Operations"},
@@ -366,6 +374,8 @@ private:
   void _showDeviceInfo();
   void _showStatusAndReturn(const char* message, State target, int32_t durationMs = 1600);
   void _showMenu();
+  void _showFamiliesMenu();
+  void _openFamily(uint8_t index);
   void _showMfcMenu();
   void _showMfcTagMenu();
   void _showMfcAdvancedMenu();

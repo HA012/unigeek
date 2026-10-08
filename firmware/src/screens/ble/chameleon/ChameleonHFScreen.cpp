@@ -1,4 +1,6 @@
 #include "ChameleonHFMenuScreen.h"
+#include "ChameleonMfcMenuScreen.h"
+#include "ChameleonMfuMenuScreen.h"
 #include "ChameleonHFScreen.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
@@ -62,6 +64,7 @@ void ChameleonHFScreen::_doScan() {
 
   bool found = c.scan14A(_uid, &_uidLen, _atqa, &_sak);
   _tagType = 0;
+  _familyMenu = 0;
   if (found) {
     _tagType = ChameleonClient::inferHFTagType(_sak, _atqa);
     if (_sak == 0x00) {
@@ -86,6 +89,8 @@ void ChameleonHFScreen::_doScan() {
   _scanning  = false;
 
   if (found) {
+    if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) _familyMenu = 1;
+    else if (_sak == 0x00) _familyMenu = 2;
     _state    = STATE_RESULT;
     _rowCount = 0;
 
@@ -140,7 +145,9 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Press]"; _rowValues[_rowCount] = "Scan again";
+    _rowLabels[_rowCount] = "[Press]";
+    _rowValues[_rowCount] = _familyMenu == 1 ? "MIFARE Classic Menu" :
+                            _familyMenu == 2 ? "Ultralight / NTAG Menu" : "Scan again";
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
@@ -181,6 +188,12 @@ void ChameleonHFScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS) {
+      if (_state == STATE_RESULT && _familyMenu) {
+        // Replace Scan Tag, preserving its parent in the navigation stack.
+        if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
+        else Screen.replace(new ChameleonMfuMenuScreen());
+        return;
+      }
       _doScan();
       return;
     }

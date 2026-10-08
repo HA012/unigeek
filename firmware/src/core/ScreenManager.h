@@ -38,6 +38,15 @@ public:
     _pushMode = true;
   }
 
+  // Replace the current screen without changing the history stack.
+  // Useful for contextual navigation: Back returns to the original parent.
+  void replace(IScreen* screen) {
+    _cancelPending();
+    _pendingGoBack = false;
+    _pending = screen;
+    _pushMode = false;
+  }
+
   // Back navigation — deletes current, restores previous from stack.
   void goBack() {
     _cancelPending();

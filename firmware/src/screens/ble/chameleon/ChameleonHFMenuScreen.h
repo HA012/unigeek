@@ -10,5 +10,9 @@ public:
   void onBack()                      override;
 
 private:
-  ListItem _items[3];
+  bool _families = false;
+  ListItem _items[2];
+  ListItem _mainItems[2];
+  uint8_t _mainSelection = 0;
+  uint8_t _familySelection = 0;
 };
