@@ -30,16 +30,7 @@ void ChameleonHFScreen::_draw() {
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
 
-  Sprite sp(&lcd);
-  sp.createSprite(bw, bh);
-  sp.fillSprite(TFT_BLACK);
-  sp.setTextDatum(MC_DATUM);
-
-  sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
-
-  sp.pushSprite(bx, by);
-  sp.deleteSprite();
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 }
 
 void ChameleonHFScreen::_doScan() {
@@ -51,14 +42,6 @@ void ChameleonHFScreen::_doScan() {
   // screen here so the very first scan has the same header/sidebar as retries.
   render();
 
-  // Draw scanning state directly before blocking BLE call (MFRC pattern)
-  auto& lcd = Uni.Lcd;
-  int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 
   auto& c = ChameleonClient::get();
 
@@ -207,6 +190,14 @@ void ChameleonHFScreen::onUpdate() {
     return;
   }
 
+  if (_state == STATE_RESULT && _familyMenu &&
+      Uni.Nav->isPressed() && Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+      Uni.Nav->heldDuration() >= 700) {
+    Uni.Nav->suppressCurrentPress();
+    if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
+    else Screen.replace(new ChameleonMfuMenuScreen());
+    return;
+  }
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK) {
@@ -214,13 +205,7 @@ void ChameleonHFScreen::onUpdate() {
       return;
     }
     if (dir == INavigation::DIR_PRESS && _state == STATE_RESULT) {
-      if (Uni.Nav->pressDuration() >= 700) {
-        if (_familyMenu) {
-          // Replace Scan Tag, preserving its parent in the navigation stack.
-          if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
-          else Screen.replace(new ChameleonMfuMenuScreen());
-        }
-      } else _doScan();
+      if (Uni.Nav->pressDuration() < 700) _doScan();
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);

@@ -570,6 +570,15 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
 
+  // Fire contextual Hold while the button is still down.
+  if (_state == STATE_DETAILS && _scanFamily != 0xFF &&
+      Uni.Nav->isPressed() && Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+      Uni.Nav->heldDuration() >= 700) {
+    Uni.Nav->suppressCurrentPress();
+    _familyFromScan = true;
+    _openFamily(_scanFamily);
+    return;
+  }
   if (!Uni.Nav->wasPressed()) return;
 
   auto dir = Uni.Nav->readDirection();
@@ -578,12 +587,7 @@ void ST25R3916Screen::onUpdate() {
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_DETAILS) {
-    if (Uni.Nav->pressDuration() >= 700) {
-      if (_scanFamily != 0xFF) {
-        _familyFromScan = true;
-        _openFamily(_scanFamily);
-      }
-    } else _scan(_lastTechMask);
+    if (Uni.Nav->pressDuration() < 700) _scan(_lastTechMask);
     return;
   }
   if (dir == INavigation::DIR_PRESS && _state == STATE_MFU_DETAILS) {
@@ -661,7 +665,7 @@ void ST25R3916Screen::onRender() {
     lcd.drawString("Emulating tag...", bx + bw / 2, by + bh / 2);
     return;
   }
-  if (_state == STATE_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
+  if (_state == STATE_MENU || _state == STATE_FAMILIES_MENU || _state == STATE_MFC_MENU || _state == STATE_MFC_TAG_MENU || _state == STATE_MFC_ADVANCED_MENU ||
       _state == STATE_MFC_ATTACKS_MENU || _state == STATE_MFC_KEYS_MENU ||
       _state == STATE_MFC_DICT_SELECT || _state == STATE_MFC_DICT_ATTACK_SELECT ||
       _state == STATE_MFU_MENU || _state == STATE_MFU_TAG_MENU || _state == STATE_MFU_ADVANCED_MENU ||
@@ -5191,7 +5195,7 @@ void ST25R3916Screen::_showExperimentalHex(const char* title, const uint8_t* dat
 
 void ST25R3916Screen::_experimentalReadTag() {
 #if defined(DEVICE_HAS_ST25R3916)
-  _state = STATE_EXP_WORKING; _advancedOperationTitle = "Read Tag"; render(); _renderTagPrompt();
+  _state = STATE_EXP_WORKING; _advancedOperationTitle = "Read Tag"; render(); // onRender already draws the prompt
   ST25R3916Backend dev; if (!st25Begin(dev, _interface)) { _showStatusAndReturn("ST25R3916 not detected", STATE_EXP_TAG_MENU, 1600); return; }
   uint16_t mask = _expFamily == EXP_NFCV ? ST25R3916Backend::TECH_V : _expFamily == EXP_FELICA ? ST25R3916Backend::TECH_F : ST25R3916Backend::TECH_A;
   ST25R3916Backend::ScanResult tag;

@@ -602,15 +602,30 @@ void PN532I2cScreen::onUpdate() {
     }
     return;
   }
+  // Dispatch Scan Tag Hold before release; swallow its release event below.
+  if (Uni.Nav->isPressed() &&
+      Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+      Uni.Nav->heldDuration() >= 700) {
+    if (_state == STATE_SCAN_RESULT && _scanFamily >= 0) {
+      Uni.Nav->suppressCurrentPress();
+      _familyFromScan = true;
+      _openFamily((uint8_t)_scanFamily);
+      return;
+    }
+    if (_state == STATE_TYPEB_RESULT && _typeBFromMainScan && _typeBAttribLen) {
+      Uni.Nav->suppressCurrentPress();
+      _familyFromScan = true;
+      _openFamily(3);
+      return;
+    }
+  }
   if (_state == STATE_SCAN_RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK) {
         _goMain();
       } else if (dir == INavigation::DIR_PRESS) {
-        if (Uni.Nav->pressDuration() >= 700) {
-          if (_scanFamily >= 0) { _familyFromScan = true; _openFamily((uint8_t)_scanFamily); }
-        } else _doScan14A();
+        if (Uni.Nav->pressDuration() < 700) _doScan14A();
       } else {
         _scrollView.onNav(dir);
       }
@@ -633,9 +648,7 @@ void PN532I2cScreen::onUpdate() {
         if (_typeBFromMainScan) _goMain(); else _goTypeBTag();
       } else if (dir == INavigation::DIR_PRESS) {
         if (_typeBFromMainScan) {
-          if (Uni.Nav->pressDuration() >= 700) {
-            if (_typeBAttribLen) { _familyFromScan = true; _openFamily(3); }
-          } else _doScan14A();
+          if (Uni.Nav->pressDuration() < 700) _doScan14A();
         } else if (!_genericReadActive) _doTypeBReadTag();
       } else _scrollView.onNav(dir);
     }
@@ -2133,8 +2146,7 @@ void PN532I2cScreen::_showType4ADetails(bool scanAgainHint) {
 }
 
 void PN532I2cScreen::_doType4AReadTag() {
-  renderOperationTitle("Read Tag");
-  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  if (!_genericReadActive) { renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH()); }
   const uint32_t start = millis();
   while (millis() - start < 3000) {
     Uni.update();
@@ -2263,7 +2275,7 @@ bool PN532I2cScreen::_felicaWriteBlock(uint16_t svc,uint16_t block,const uint8_t
 bool PN532I2cScreen::_felicaReadNdef(uint8_t*out,size_t max,size_t&len,size_t&cap){len=cap=0;uint8_t a[16];if(!_felicaReadBlock(0x000B,0,a)||_felicaAttrChecksum(a)!=((uint16_t)a[14]<<8|a[15])||a[9]!=0x00)return false;cap=(((size_t)a[3]<<8)|a[4])*16U;len=((size_t)a[11]<<16)|((size_t)a[12]<<8)|a[13];if(len>cap||len>max)return false;size_t off=0;for(uint16_t b=1;off<len;b++){uint8_t d[16];if(!_felicaReadBlock(0x000B,b,d))return false;size_t take=min((size_t)16,len-off);memcpy(out+off,d,take);off+=take;}return true;}
 bool PN532I2cScreen::_felicaWriteNdef(const uint8_t*ndef,size_t len,size_t&cap){cap=0;uint8_t a[16];if(!_felicaReadBlock(0x0009,0,a)||_felicaAttrChecksum(a)!=((uint16_t)a[14]<<8|a[15])||a[10]!=1)return false;cap=(((size_t)a[3]<<8)|a[4])*16U;if(len>cap)return false;uint8_t w[16];memcpy(w,a,16);w[9]=0x0F;w[11]=w[12]=w[13]=0;uint16_t s=_felicaAttrChecksum(w);w[14]=s>>8;w[15]=s;if(!_felicaWriteBlock(0x0009,0,w))return false;size_t off=0;for(uint16_t b=1;off<len;b++){memset(w,0,16);size_t take=min((size_t)16,len-off);memcpy(w,ndef+off,take);if(!_felicaWriteBlock(0x0009,b,w))return false;off+=take;}memcpy(w,a,16);w[9]=0;w[11]=len>>16;w[12]=len>>8;w[13]=len;s=_felicaAttrChecksum(w);w[14]=s>>8;w[15]=s;return _felicaWriteBlock(0x0009,0,w);}
 
-void PN532I2cScreen::_doFelicaReadTag(){renderOperationTitle("Read Tag");renderTagPrompt("Waiting for tag...",bodyX(),bodyY(),bodyW(),bodyH());if(!_scanFelica(2500)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaTag();return;}if(!_genericIdentityMatches(5,_felicaIdm,8))return;_operationResultTitle="Tag Details";_felicaResultReturn=STATE_FELICA_TAG_MENU;_state=STATE_FELICA_RESULT;_resetRows();_pushRow("Type","FeliCa / NFC-F");_pushRow("IDm",_hexBlock(_felicaIdm,8));_pushRow("PMm",_hexBlock(_felicaPmm,8));char sc[5];snprintf(sc,sizeof(sc),"%04X",_felicaSystemCode);_pushRow("System",sc);_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
+void PN532I2cScreen::_doFelicaReadTag(){if (!_genericReadActive) { renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH()); }if(!_scanFelica(2500)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaTag();return;}if(!_genericIdentityMatches(5,_felicaIdm,8))return;_operationResultTitle="Tag Details";_felicaResultReturn=STATE_FELICA_TAG_MENU;_state=STATE_FELICA_RESULT;_resetRows();_pushRow("Type","FeliCa / NFC-F");_pushRow("IDm",_hexBlock(_felicaIdm,8));_pushRow("PMm",_hexBlock(_felicaPmm,8));char sc[5];snprintf(sc,sizeof(sc),"%04X",_felicaSystemCode);_pushRow("System",sc);_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
 void PN532I2cScreen::_showFelicaHex(const char* title,const uint8_t* data,size_t len,State_e returnState){_operationResultTitle=title;_felicaResultReturn=returnState;_state=STATE_FELICA_RESULT;_resetRows();_pushWrappedRow(title,len?_hexBlock(data,(uint8_t)min(len,(size_t)255)):String("(empty)"));_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
 void PN532I2cScreen::_doFelicaTagAction(uint8_t i){if(i==0){_doFelicaReadTag();return;}if(i==1){_goFelicaSystems();return;}if(i==2){_goFelicaServices();return;}_goFelicaAdvanced();}
 void PN532I2cScreen::_doFelicaSystemAction(uint8_t){if(!_scanFelica(1200)){ShowStatusAction::show("FeliCa tag not detected");_goFelicaSystems();return;}uint16_t sys[16];size_t n=0;if(!_felicaRequestSystemCodes(sys,16,n)){ShowStatusAction::show("Request System Code failed");_goFelicaSystems();return;}_operationResultTitle="Systems";_felicaResultReturn=STATE_FELICA_SYSTEMS_MENU;_state=STATE_FELICA_RESULT;_resetRows();for(size_t k=0;k<n;k++){char v[7];snprintf(v,sizeof(v),"0x%04X",sys[k]);String l="System "+String((unsigned)k);_pushRow(l.c_str(),v);}_scrollView.resetScroll();_scrollView.setRows(_rows,_rowCount);render();}
@@ -2343,7 +2355,7 @@ bool PN532I2cScreen::_type1ReadStatic(uint8_t mem[120]) {
 }
 
 void PN532I2cScreen::_doType1ReadTag() {
-  renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  if (!_genericReadActive) { renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH()); }
   if (!_scanType1(2500)) { ShowStatusAction::show("Type 1 tag not detected"); _goType1Tag(); return; }
   if (!_genericIdentityMatches(6, _type1JewelId, 4)) return;
   uint8_t hr[2] = {}, uid[4] = {};
@@ -2527,8 +2539,7 @@ void PN532I2cScreen::_showTypeBDetails(bool scanAgainHint) {
 }
 
 void PN532I2cScreen::_doTypeBReadTag() {
-  renderOperationTitle("Read Tag");
-  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  if (!_genericReadActive) { renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH()); }
   const uint32_t start = millis();
   bool otherTagDetected = false;
   while (millis() - start < 3000) {
@@ -3989,8 +4000,7 @@ void PN532I2cScreen::_showUltralightDumpActions() {
 }
 
 void PN532I2cScreen::_doUltralightReadTag() {
-  renderOperationTitle("Read Tag");
-  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  if (!_genericReadActive) { renderOperationTitle("Read Tag"); renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH()); }
   uint16_t pages = 0; const char* typeName = nullptr;
   if (!_detectUltralightTag(pages, typeName)) {
     ShowStatusAction::show("Tag not supported", 1600);

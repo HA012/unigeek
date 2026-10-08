@@ -6,6 +6,7 @@
 #include "core/Device.h"
 #include "core/INavigation.h"
 #include "core/ConfigManager.h"
+#include <cstring>
 
 class ScrollListView
 {
@@ -99,11 +100,15 @@ private:
       sp.fillSprite(TFT_BLACK);
       sp.setTextSize(1);
 
-      sp.setTextColor(TFT_DARKGREY);
+      // Highlight action hints consistently in every details-style list.
+      const char* label = _rows[idx].label;
+      const bool actionHint = label &&
+          (strncmp(label, "[Press]", 7) == 0 || strncmp(label, "[Hold]", 6) == 0);
+      sp.setTextColor(actionHint ? TFT_YELLOW : TFT_DARKGREY);
       sp.setTextDatum(TL_DATUM);
-      sp.drawString(_rows[idx].label, 2, 3);
+      sp.drawString(label ? label : "", 2, 3);
 
-      sp.setTextColor(TFT_WHITE);
+      sp.setTextColor(actionHint ? TFT_YELLOW : TFT_WHITE);
       sp.setTextDatum(TR_DATUM);
       sp.drawString(_rows[idx].value.c_str(), textW, 3);
 
