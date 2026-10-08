@@ -869,8 +869,8 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
         case 1: _doScanReader();     break;
         case 2: _goMifare();          break;
         case 3: _goUltralight();      break;
-        case 4: _goTypeB();           break;
-        case 5: _goType4A();          break;
+        case 4: _goType4A();          break;
+        case 5: _goTypeB();           break;
         case 6: _goDesfire();         break;
         case 7: _goFelica();          break;
         case 8: _goType1();           break;

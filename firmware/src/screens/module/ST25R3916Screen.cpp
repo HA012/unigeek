@@ -953,11 +953,12 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     case 1: _scanReader(); break;
     case 2: _showMfcMenu(); break;
     case 3: _showMfuMenu(); break;
-    case 4: _showExperimentalMenu(EXP_DESFIRE); break;
-    case 5: _showExperimentalMenu(EXP_NFCV); break;
-    case 6: _showExperimentalMenu(EXP_FELICA); break;
-    case 7: _showExperimentalMenu(EXP_TYPE4B); break;
-    case 8: _showDeviceInfo(); break;
+    case 4: ShowStatusAction::show("Type 4A not implemented", 1600); break;
+    case 5: _showExperimentalMenu(EXP_TYPE4B); break;
+    case 6: _showExperimentalMenu(EXP_DESFIRE); break;
+    case 7: _showExperimentalMenu(EXP_FELICA); break;
+    case 8: _showExperimentalMenu(EXP_NFCV); break;
+    case 9: _showDeviceInfo(); break;
   }
 #else
   (void)index;

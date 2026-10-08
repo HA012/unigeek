@@ -176,15 +176,16 @@ private:
   uint8_t _expDesfireAid[3] = {};
   bool _expDesfireAidSelected = false;
 
-  ListItem _items[9] = {
+  ListItem _items[10] = {
     {"Scan Tag"},
     {"Scan NFC Reader"},
     {"MIFARE Classic"},
     {"Ultralight / NTAG"},
-    {"DESFire (experimental)"},
-    {"ICODE / ST25V (experimental)"},
-    {"FeliCa (experimental)"},
+    {"Type 4A (experimental)"},
     {"Type 4B (experimental)"},
+    {"DESFire (experimental)"},
+    {"FeliCa (experimental)"},
+    {"ICODE / ST25V (experimental)"},
     {"Device Info"},
   };
   ListItem _mfcItems[4] = {
