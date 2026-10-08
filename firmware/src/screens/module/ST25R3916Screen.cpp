@@ -816,7 +816,7 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
       if (index == 0) _experimentalReadTag(); else if (index == 1) _experimentalNfcvAction(10); else if (index == 2) _experimentalNfcvAction(11); else if (index == 3) _showExperimentalAdvancedMenu();
     } else if (_expFamily == EXP_FELICA) {
       if (index == 0) _experimentalReadTag(); else if (index == 1) _showExperimentalSub1Menu(); else if (index == 2) _showExperimentalSub2Menu(); else if (index == 3) _showExperimentalAdvancedMenu();
-    } else if (_expFamily == EXP_TYPE4B) {
+    } else if (_expFamily == EXP_TYPE4B || _expFamily == EXP_TYPE4A) {
       if (index == 0) _experimentalReadTag(); else if (index == 1) _showExperimentalAdvancedMenu();
     }
     return;
@@ -827,12 +827,14 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
     else if (_expFamily == EXP_NFCV) _experimentalNfcvAction(index);
     else if (_expFamily == EXP_FELICA) _experimentalFelicaAction(3, index);
     else if (_expFamily == EXP_TYPE4B) _experimentalType4bAction(index);
+    else if (_expFamily == EXP_TYPE4A && index == 0) _experimentalSendApdu(false);
     return;
   }
   if (_state == STATE_EXP_SUB1_MENU) { _selExpSub1=index; if(_expFamily==EXP_DESFIRE)_experimentalDesfireAction(1,index); else if(_expFamily==EXP_FELICA)_experimentalFelicaAction(1,index); return; }
   if (_state == STATE_EXP_SUB2_MENU) { _selExpSub2=index; if(_expFamily==EXP_DESFIRE)_experimentalDesfireAction(2,index); else if(_expFamily==EXP_FELICA)_experimentalFelicaAction(2,index); return; }
   if (_state == STATE_EXP_NDEF_MENU) {
     _selExpNdef=index;
+    if (_expFamily == EXP_TYPE4A) { if (index == 0) _experimentalReadNdef(); return; }
     if(index==0)_experimentalReadNdef(); else if(index==1)_showExperimentalNdefWriteMenu(); else if(index==2)_experimentalEraseNdef(true); else if(index==3)_experimentalEraseNdef(false);
     return;
   }
@@ -1083,7 +1085,7 @@ void ST25R3916Screen::_openFamily(uint8_t index) {
   switch (index) {
     case 0: _showMfcMenu(); break;
     case 1: _showMfuMenu(); break;
-    case 2: ShowStatusAction::show("Type 4A not implemented", 1600); break;
+    case 2: _showExperimentalMenu(EXP_TYPE4A); break;
     case 3: _showExperimentalMenu(EXP_TYPE4B); break;
     case 4: _showExperimentalMenu(EXP_DESFIRE); break;
     case 5: _showExperimentalMenu(EXP_FELICA); break;
@@ -1220,10 +1222,6 @@ void ST25R3916Screen::_genericReadTag() {
     default: break;
   }
   dev.deactivate();
-  if (family == 2) {
-    _showStatusAndReturn("Type 4A not implemented", STATE_MENU, 1600);
-    return;
-  }
   if (family == 0xFF) {
     _showStatusAndReturn("Tag not supported", STATE_MENU, 1600);
     return;
@@ -1238,6 +1236,7 @@ void ST25R3916Screen::_genericReadTag() {
   _familyFromScan = false;
   switch (family) {
     case 0: _readMfcTag(); break;
+    case 2: _expFamily = EXP_TYPE4A; _experimentalReadTag(); break;
     case 1: _readMfuTag(); break;
     case 3: _expFamily = EXP_TYPE4B; _experimentalReadTag(); break;
     case 4: _expFamily = EXP_DESFIRE; _experimentalReadTag(); break;
@@ -5087,6 +5086,7 @@ const char* ST25R3916Screen::_expFamilyTitle() const {
     case EXP_NFCV: return "ICODE / ST25V (experimental)";
     case EXP_FELICA: return "FeliCa (experimental)";
     case EXP_TYPE4B: return "Type 4B (experimental)";
+    case EXP_TYPE4A: return "Type 4A (experimental)";
     default: return "Experimental";
   }
 }
@@ -5119,6 +5119,7 @@ void ST25R3916Screen::_showExperimentalTagMenu() {
   else if (_expFamily == EXP_NFCV) setItems(_expNfcvTagItems, 4, _selExpTag);
   else if (_expFamily == EXP_FELICA) setItems(_expFelicaTagItems, 4, _selExpTag);
   else if (_expFamily == EXP_TYPE4B) setItems(_expType4bTagItems, 2, _selExpTag);
+  else if (_expFamily == EXP_TYPE4A) setItems(_expType4aTagItems, 2, _selExpTag);
   render();
 }
 
@@ -5128,6 +5129,7 @@ void ST25R3916Screen::_showExperimentalAdvancedMenu() {
   else if (_expFamily == EXP_NFCV) setItems(_expNfcvAdvancedItems, 5, _selExpAdvanced);
   else if (_expFamily == EXP_FELICA) setItems(_expFelicaAdvancedItems, 3, _selExpAdvanced);
   else if (_expFamily == EXP_TYPE4B) setItems(_expType4bAdvancedItems, 2, _selExpAdvanced);
+  else if (_expFamily == EXP_TYPE4A) setItems(_expType4aAdvancedItems, 1, _selExpAdvanced);
   render();
 }
 
@@ -5151,7 +5153,8 @@ void ST25R3916Screen::_showExperimentalNdefMenu() {
   _ndefWritePreview = false;
   _ndefWritePreviewFromFile = false;
   _state = STATE_EXP_NDEF_MENU;
-  setItems(_expNdefItems, 4, _selExpNdef);
+  if (_expFamily == EXP_TYPE4A) setItems(_expType4aNdefItems, 1, 0);
+  else setItems(_expNdefItems, 4, _selExpNdef);
   render();
 }
 
@@ -5218,6 +5221,7 @@ void ST25R3916Screen::_experimentalReadTag() {
     return;
   }
   if ((_expFamily == EXP_DESFIRE && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) ||
+      (_expFamily == EXP_TYPE4A && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) ||
       (_expFamily == EXP_NFCV && tag.technology != ST25R3916Backend::Technology::NFC_V) ||
       (_expFamily == EXP_FELICA && tag.technology != ST25R3916Backend::Technology::NFC_F)) {
     dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_EXP_TAG_MENU, 1600); return;
@@ -5228,7 +5232,11 @@ void ST25R3916Screen::_experimentalReadTag() {
   _rowCount = 0;
   auto add=[&](const char* l,const String& v){ if(_rowCount>=kMaxRows)return; _rowLabels[_rowCount]=l;_rowValues[_rowCount]=v;_rows[_rowCount]={_rowLabels[_rowCount].c_str(),_rowValues[_rowCount]};++_rowCount; };
   String id; for(uint8_t i=0;i<tag.nfcidLen;++i){char h[4];snprintf(h,sizeof(h),"%s%02X",i?":":"",tag.nfcid[i]);id+=h;} if(!id.length())id="--";
-  if (_expFamily == EXP_DESFIRE) {
+  if (_expFamily == EXP_TYPE4A) {
+    add("Type", "Type 4A"); add("UID", id);
+    char a[8]; snprintf(a,sizeof(a),"%02X:%02X",tag.atqa[0],tag.atqa[1]); add("ATQA",a);
+    char sk[6]; snprintf(sk,sizeof(sk),"0x%02X",tag.sak); add("SAK",sk); add("ISO-DEP",tag.isoDep?"Yes":"No");
+  } else if (_expFamily == EXP_DESFIRE) {
     add("Type", "DESFire / Type 4A"); add("UID", id);
     char a[8]; snprintf(a,sizeof(a),"%02X:%02X",tag.atqa[0],tag.atqa[1]); add("ATQA",a);
     char sk[6]; snprintf(sk,sizeof(sk),"0x%02X",tag.sak); add("SAK",sk); add("ISO-DEP",tag.isoDep?"Yes":"No");
@@ -5337,7 +5345,7 @@ void ST25R3916Screen::_experimentalType4bAction(uint8_t index) { if(index==0)_ex
 
 void ST25R3916Screen::_experimentalSendApdu(bool desfire) {
 #if defined(DEVICE_HAS_ST25R3916)
-  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){_showStatusAndReturn("Invalid APDU", STATE_EXP_ADVANCED_MENU, 1600); return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not detected", STATE_EXP_ADVANCED_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(desfire){const auto waitResult=st25WaitForTag(dev,ST25R3916Backend::TECH_A,tag,5000,true);if(waitResult!=St25WaitResult::FOUND){if(waitResult==St25WaitResult::TIMEOUT)ShowStatusAction::show("Tag not detected",1600);_showExperimentalAdvancedMenu();return;}if(!tag.isoDep){_showStatusAndReturn("Tag not supported",STATE_EXP_ADVANCED_MENU,1600);return;}}else{const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag not supported", STATE_EXP_ADVANCED_MENU, 1600); return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_ADVANCED_MENU, 1600); return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
+  String h=InputTextAction::popup(desfire?"APDU (hex)":"ISO-DEP APDU (hex)",desfire?"906000000000":"00A4040000",InputTextAction::INPUT_HEX);if(InputTextAction::wasCancelled()){_showExperimentalAdvancedMenu();return;}uint8_t tx[240];size_t tl=0;if(!st25ParseHex(h,tx,sizeof(tx),tl)||!tl){_showStatusAndReturn("Invalid APDU", STATE_EXP_ADVANCED_MENU, 1600); return;}_state=STATE_EXP_WORKING;_advancedOperationTitle="APDU Response";render();StatusBar::refresh();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not detected", STATE_EXP_ADVANCED_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(desfire || _expFamily==EXP_TYPE4A){const auto waitResult=st25WaitForTag(dev,ST25R3916Backend::TECH_A,tag,5000,true);if(waitResult!=St25WaitResult::FOUND){if(waitResult==St25WaitResult::TIMEOUT)ShowStatusAction::show("Tag not detected",1600);_showExperimentalAdvancedMenu();return;}if(!tag.isoDep){_showStatusAndReturn("Tag not supported",STATE_EXP_ADVANCED_MENU,1600);return;}}else{const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalAdvancedMenu();return;}}if(desfire&&!ST25R3916Experimental::desfireProbe(dev)){dev.deactivate();_showStatusAndReturn("Tag not supported", STATE_EXP_ADVANCED_MENU, 1600); return;}uint8_t rx[512]={};size_t n=0;bool ok=dev.isoDepTransceive(tx,tl,rx,sizeof(rx),n);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_ADVANCED_MENU, 1600); return;}_expResultReturn=STATE_EXP_ADVANCED_MENU;_showExperimentalHex("APDU Response",rx,n);
 #endif
 }
 
@@ -5349,7 +5357,7 @@ void ST25R3916Screen::_experimentalRawCommand() {
 
 void ST25R3916Screen::_experimentalReadNdef() {
 #if defined(DEVICE_HAS_ST25R3916)
-  _state=STATE_EXP_WORKING;_advancedOperationTitle="Read NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not detected", STATE_EXP_NDEF_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(_expFamily==EXP_TYPE4B){const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalNdefMenu();return;}}else{uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:ST25R3916Backend::TECH_A;const auto waitResult=st25WaitForTag(dev,mask,tag,5000,true);if(waitResult!=St25WaitResult::FOUND){if(waitResult==St25WaitResult::TIMEOUT)ShowStatusAction::show("Tag not detected",1600);_showExperimentalNdefMenu();return;}}uint8_t b[kMaxNdefBytes]={};size_t n=0,cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVReadNdef(dev,tag,b,sizeof(b),n,cap);else if(_expFamily==EXP_FELICA)ok=ST25R3916Experimental::felicaReadNdef(dev,tag,b,sizeof(b),n,cap);else if(tag.isoDep)ok=ST25R3916Experimental::type4ReadNdef(dev,b,sizeof(b),n,cap);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_NDEF_MENU, 2000); return;}_ndefCapacity=cap;_ndefExperimentalTarget=true;_showNdefDetails(tag.nfcid,tag.nfcidLen,b,n);
+  _state=STATE_EXP_WORKING;_advancedOperationTitle="Read NDEF";render();_renderTagPrompt();ST25R3916Backend dev;if(!st25Begin(dev, _interface)){_showStatusAndReturn("ST25R3916 not detected", STATE_EXP_NDEF_MENU, 1600); return;}ST25R3916Backend::ScanResult tag;if(_expFamily==EXP_TYPE4B){const auto scanResult=st25ScanType4b(dev,tag,true);if(scanResult!=St25Type4bScanResult::FOUND){st25ShowType4bScanError(scanResult);_showExperimentalNdefMenu();return;}}else{uint16_t mask=_expFamily==EXP_NFCV?ST25R3916Backend::TECH_V:_expFamily==EXP_FELICA?ST25R3916Backend::TECH_F:ST25R3916Backend::TECH_A;const auto waitResult=st25WaitForTag(dev,mask,tag,5000,true);if(waitResult!=St25WaitResult::FOUND){if(waitResult==St25WaitResult::TIMEOUT)ShowStatusAction::show("Tag not detected",1600);_showExperimentalNdefMenu();return;}}if (_expFamily == EXP_TYPE4A && (tag.technology != ST25R3916Backend::Technology::NFC_A || !tag.isoDep)) { dev.deactivate(); _showStatusAndReturn("Tag not supported", STATE_EXP_NDEF_MENU, 1600); return; }uint8_t b[kMaxNdefBytes]={};size_t n=0,cap=0;bool ok=false;if(_expFamily==EXP_NFCV)ok=ST25R3916Experimental::typeVReadNdef(dev,tag,b,sizeof(b),n,cap);else if(_expFamily==EXP_FELICA)ok=ST25R3916Experimental::felicaReadNdef(dev,tag,b,sizeof(b),n,cap);else if(tag.isoDep)ok=ST25R3916Experimental::type4ReadNdef(dev,b,sizeof(b),n,cap);dev.deactivate();if(!ok){_showStatusAndReturn("Failed", STATE_EXP_NDEF_MENU, 2000); return;}_ndefCapacity=cap;_ndefExperimentalTarget=true;_showNdefDetails(tag.nfcid,tag.nfcidLen,b,n);
 #endif
 }
 

@@ -178,7 +178,7 @@ private:
   uint8_t _selMfu = 0, _selMfuTag = 0, _selMfuNdef = 0, _selMfuAdvanced = 0, _selMfuNdefWrite = 0;
   uint8_t _selExp = 0, _selExpTag = 0, _selExpAdvanced = 0, _selExpSub1 = 0, _selExpSub2 = 0, _selExpNdef = 0, _selExpNdefWrite = 0;
 
-  enum ExperimentalFamily : uint8_t { EXP_NONE, EXP_DESFIRE, EXP_NFCV, EXP_FELICA, EXP_TYPE4B };
+  enum ExperimentalFamily : uint8_t { EXP_NONE, EXP_DESFIRE, EXP_NFCV, EXP_FELICA, EXP_TYPE4B, EXP_TYPE4A };
   ExperimentalFamily _expFamily = EXP_NONE;
   State _expResultReturn = STATE_EXP_TAG_MENU;
   uint8_t _expDesfireAid[3] = {};
@@ -266,6 +266,9 @@ private:
   ListItem _expFelicaSystemItems[1] = {{"List Systems"}};
   ListItem _expFelicaServiceItems[3] = {{"List Services"}, {"Read Service"}, {"Service Details"}};
   ListItem _expFelicaAdvancedItems[3] = {{"Read Memory"}, {"Edit Memory"}, {"Raw Commands"}};
+  ListItem _expType4aTagItems[2] = {{"Read Tag"}, {"Advanced"}};
+  ListItem _expType4aAdvancedItems[1] = {{"Send APDU"}};
+  ListItem _expType4aNdefItems[1] = {{"Read NDEF"}};
   ListItem _expType4bTagItems[2] = {{"Read Tag"}, {"Advanced"}};
   ListItem _expType4bAdvancedItems[2] = {{"Send APDU"}, {"Raw Commands"}};
   ListItem _mfcNdefWriteItems[6] = {
