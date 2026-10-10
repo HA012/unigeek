@@ -16,7 +16,7 @@ public:
 
   const char* title() override {
     switch (_state) {
-      case STATE_FAMILIES_MENU: return "Families";
+      case STATE_FAMILIES_MENU: return "Families & Protocols";
       case STATE_SCANNING: return "Scan Tag";
       case STATE_SCAN_READER:
       case STATE_SCAN_READER_RESULT: return "Scan NFC Reader";
@@ -188,7 +188,7 @@ private:
     {"Scan Tag"},
     {"Read Tag"},
     {"Scan NFC Reader"},
-    {"Families"},
+    {"Families & Protocols"},
     {"Device Info"},
   };
   ListItem _familyItems[7] = {

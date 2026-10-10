@@ -548,7 +548,7 @@ static void renderOperationTitle(const char* title) {
 const char* PN532I2cScreen::title() {
   switch (_state) {
     case STATE_MAIN_MENU:       return "PN532 I2C";
-    case STATE_FAMILIES_MENU:   return "Families";
+    case STATE_FAMILIES_MENU:   return "Families & Protocols";
     case STATE_DEVICE_INFO:     return "Device Info";
     case STATE_SCAN_RESULT:     return "Tag Details";
     case STATE_SCAN_14A:        return "Scan Tag";
@@ -2619,7 +2619,7 @@ void PN532I2cScreen::_doType4AReadTag() {
   while (millis() - start < 3000) {
     Uni.update();
     if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) { _goType4ATag(); return; }
-    if (_scanType4A(250)) { if (!_genericIdentityMatches(2, _uid, _uidLen)) return; _showType4ADetails(true); return; }
+    if (_scanType4A(250)) { if (!_genericIdentityMatches(2, _uid, _uidLen)) return; _showType4ADetails(false); return; }
     delay(30);
   }
   ShowStatusAction::show("No Type 4A tag detected", 1200);
@@ -3020,7 +3020,7 @@ void PN532I2cScreen::_doTypeBReadTag() {
       const uint8_t off = (_typeBAtqb[0] == 0x50) ? 1 : 0;
       if (!_genericIdentityMatches(3, _typeBAtqb + off, 4)) return;
       _typeBFromMainScan = false;
-      _showTypeBDetails(!_genericReadActive);
+      _showTypeBDetails(false);
       return;
     }
     if (_isoATagPresent()) { otherTagDetected = true; break; }

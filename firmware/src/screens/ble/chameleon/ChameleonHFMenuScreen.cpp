@@ -8,7 +8,7 @@
 void ChameleonHFMenuScreen::onInit() {
   _mainItems[0] = {"Scan Tag"};
   _mainItems[1] = {"Read Tag"};
-  _mainItems[2] = {"Families"};
+  _mainItems[2] = {"Families & Protocols"};
   _items[0] = {"MIFARE Classic"};
   _items[1] = {"Ultralight / NTAG"};
   setItems(_mainItems, 3, _mainSelection);
