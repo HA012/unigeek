@@ -172,7 +172,7 @@ private:
   uint16_t _rowCount = 0;
 
   ListItem _mainItems[6] = {
-    {"Scan Tag"}, {"Read Tag"}, {"Read EMV (experimental)"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
+    {"Scan Tag"}, {"Read Tag"}, {"Read EMV"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
   };
   ListItem _familyItems[7] = {
     {"MIFARE Classic"}, {"Ultralight / NTAG"},
@@ -185,6 +185,18 @@ private:
   bool _genericReadActive = false;
   bool _emvResultActive = false;
   bool _emvResultFromMain = false;
+  bool _emvDetailsVisible = false;
+  String _emvDetailsAid;
+  String _emvDetailsAip;
+  String _emvDetailsAfl;
+  String _emvDetailsPdol;
+  String _emvDetailsApplications;
+  String _emvDetailsRecords;
+  String _emvSummaryBrand;
+  String _emvSummaryApplication;
+  String _emvSummaryPan;
+  String _emvSummaryExpiry;
+  bool _emvDetailsAvailable = false;
   // Snapshot of the FIRST Type A discovery, used by EMV diagnostics.
   uint8_t _emvDiscoveryResponse[64] = {};
   size_t _emvDiscoveryLen = 0;
@@ -297,8 +309,8 @@ private:
 
   ListItem _type4ATagItems[3] = {
     {"Read Tag"},
+    {"Read EMV"},
     {"Advanced"},
-    {"Read EMV (experimental)"},
   };
 
   ListItem _type4AAdvancedItems[1] = {
