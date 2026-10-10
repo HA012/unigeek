@@ -876,6 +876,82 @@ bool Adafruit_PN532::inListPassiveTarget() {
 
 /***** Mifare Classic Functions ******/
 
+bool Adafruit_PN532::inListPassiveTarget(uint32_t timeoutMs, bool (*cancelRequested)(), bool *cancelled) {
+  if (cancelled) *cancelled = false;
+  const uint32_t started = millis();
+  pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
+  pn532_packetbuffer[1] = 1;
+  pn532_packetbuffer[2] = 0;
+
+#ifdef PN532DEBUG
+  PN532DEBUGPRINT.print(F("About to inList passive target"));
+#endif
+
+  if (!sendCommandCheckAck(pn532_packetbuffer, 3, 1000)) {
+#ifdef PN532DEBUG
+    PN532DEBUGPRINT.println(F("Could not send inlist message"));
+#endif
+    return false;
+  }
+
+  // Keep this command's response pending until ready; never issue another
+  // InListPassiveTarget while it is outstanding.
+  while (!isready()) {
+    if (cancelRequested && cancelRequested()) {
+      if (cancelled) *cancelled = true;
+      return false;
+    }
+    if ((uint32_t)(millis() - started) >= timeoutMs) return false;
+    delay(10);
+  }
+
+  readdata(pn532_packetbuffer, sizeof(pn532_packetbuffer));
+
+  if (pn532_packetbuffer[0] == 0 && pn532_packetbuffer[1] == 0 &&
+      pn532_packetbuffer[2] == 0xff) {
+    uint8_t length = pn532_packetbuffer[3];
+    if (pn532_packetbuffer[4] != (uint8_t)(~length + 1)) {
+#ifdef PN532DEBUG
+      PN532DEBUGPRINT.println(F("Length check invalid"));
+      PN532DEBUGPRINT.println(length, HEX);
+      PN532DEBUGPRINT.println((~length) + 1, HEX);
+#endif
+      return false;
+    }
+    if (pn532_packetbuffer[5] == PN532_PN532TOHOST &&
+        pn532_packetbuffer[6] == PN532_RESPONSE_INLISTPASSIVETARGET) {
+      if (pn532_packetbuffer[7] != 1) {
+#ifdef PN532DEBUG
+        PN532DEBUGPRINT.println(F("Unhandled number of targets inlisted"));
+#endif
+        PN532DEBUGPRINT.println(F("Number of tags inlisted:"));
+        PN532DEBUGPRINT.println(pn532_packetbuffer[7]);
+        return false;
+      }
+
+      _inListedTag = pn532_packetbuffer[8];
+      PN532DEBUGPRINT.print(F("Tag number: "));
+      PN532DEBUGPRINT.println(_inListedTag);
+
+      return true;
+    } else {
+#ifdef PN532DEBUG
+      PN532DEBUGPRINT.print(F("Unexpected response to inlist passive host"));
+#endif
+      return false;
+    }
+  } else {
+#ifdef PN532DEBUG
+    PN532DEBUGPRINT.println(F("Preamble missing"));
+#endif
+    return false;
+  }
+
+  return true;
+}
+
+/***** Mifare Classic Functions ******/
+
 /**************************************************************************/
 /*!
     @brief   Indicates whether the specified block number is the first block

@@ -169,6 +169,7 @@ public:
   bool inDataExchange(uint8_t *send, uint8_t sendLength, uint8_t *response,
                       uint8_t *responseLength);
   bool inListPassiveTarget();
+  bool inListPassiveTarget(uint32_t timeoutMs, bool (*cancelRequested)(), bool *cancelled);
   uint8_t AsTarget();
   uint8_t getDataTarget(uint8_t *cmd, uint8_t *cmdlen);
   uint8_t setDataTarget(uint8_t *cmd, uint8_t cmdlen);

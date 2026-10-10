@@ -2411,18 +2411,29 @@ void PN532I2cScreen::_doType4AReadEmv() {
   // while inDataExchange() uses _inListedTag as Tg. Calling both methods also
   // tries to activate the same card twice. inListPassiveTarget() both activates
   // the ISO14443-A target and stores its target number for inDataExchange().
-  bool targetActive = false;
-  while (!targetActive) {
-    Uni.update();
-    if (Uni.Nav->wasPressed() &&
-        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
-      _emvResultActive = false;
-      if (_emvResultFromMain) _goMain();
-      else _goType4ATag();
-      return;
-    }
-    targetActive = _nfc->inListPassiveTarget();
-    if (!targetActive) delay(80);
+  // One activation command only: repeating after a host-side timeout can
+  // consume a stale PN532 response and break subsequent EMV exchanges.
+  bool cancelled = false;
+  const bool targetActive = _nfc->inListPassiveTarget(
+      5000,
+      []() -> bool {
+        Uni.update();
+        return Uni.Nav->wasPressed() &&
+               Uni.Nav->readDirection() == INavigation::DIR_BACK;
+      },
+      &cancelled);
+  if (cancelled) {
+    _emvResultActive = false;
+    if (_emvResultFromMain) _goMain();
+    else _goType4ATag();
+    return;
+  }
+  if (!targetActive) {
+    _emvResultActive = false;
+    ShowStatusAction::show("Card not detected", 1200);
+    if (_emvResultFromMain) _goMain();
+    else _goType4ATag();
+    return;
   }
 
   uint8_t apdu[20] = {};
