@@ -3298,6 +3298,7 @@ void PN532I2cScreen::_showDeviceInfo() {
 void PN532I2cScreen::_doScan14A() {
   _scanFamily = -1;
   _state = STATE_SCAN_14A;
+  renderOperationTitle("Scan Tag");
 
   // Match the Chameleon HF reader scan presentation.
   auto& lcd = Uni.Lcd;
