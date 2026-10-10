@@ -171,8 +171,8 @@ private:
   String _rowValues[MAX_ROWS];
   uint16_t _rowCount = 0;
 
-  ListItem _mainItems[5] = {
-    {"Scan Tag"}, {"Read Tag"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
+  ListItem _mainItems[6] = {
+    {"Scan Tag"}, {"Read Tag"}, {"Read EMV (experimental)"}, {"Scan NFC Reader"}, {"Families"}, {"Device Info"},
   };
   ListItem _familyItems[7] = {
     {"MIFARE Classic"}, {"Ultralight / NTAG"},
@@ -183,6 +183,13 @@ private:
   uint8_t _selFamilies = 0;
   bool _familyFromScan = false;
   bool _genericReadActive = false;
+  bool _emvResultActive = false;
+  bool _emvResultFromMain = false;
+  // Snapshot of the FIRST Type A discovery, used by EMV diagnostics.
+  uint8_t _emvDiscoveryResponse[64] = {};
+  size_t _emvDiscoveryLen = 0;
+  bool _emvDiscoveryCommandOk = false;
+  bool _emvDiscoveryCaptured = false;
   // Identity captured by the generic detector, before protocol reactivation.
   uint8_t _genericIdentity[12] = {};
   uint8_t _genericIdentityLen = 0;
@@ -288,9 +295,10 @@ private:
     {"NDEF Operations"},
   };
 
-  ListItem _type4ATagItems[2] = {
+  ListItem _type4ATagItems[3] = {
     {"Read Tag"},
     {"Advanced"},
+    {"Read EMV (experimental)"},
   };
 
   ListItem _type4AAdvancedItems[1] = {
@@ -459,6 +467,8 @@ private:
   bool _type4ASelectNdef(size_t& capacity, bool& writable);
   void _showType4ADetails(bool scanAgainHint = false);
   void _doType4AReadTag();
+  void _doType4AReadEmv();
+  void _showEmvDetectionDiagnostics();
   void _doType4ASendApdu();
   void _doType4AReadNdef();
   bool _writeType4ANdefRecord(const uint8_t* ndef, size_t ndefLen);

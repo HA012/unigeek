@@ -20,6 +20,7 @@
 #include "../../utils/nfc/HfDumpParser.h"
 
 #include "utils/nfc/MfcKeyStore.h"
+#include "utils/nfc/EmvCore.h"
 #include "utils/IdentityFile.h"
 // ── raw I2C helpers for Gen1a / Gen3 ──────────────────────────────────────
 // Adafruit_PN532 exposes sendCommandCheckAck() publicly but readdata() is
@@ -59,18 +60,60 @@ static bool _parseHexBytesI2c(const String& text, uint8_t* out, size_t outCap, s
 // parse a normal (non-extended) PN532 response frame from the I2C transport.
 // This keeps Type B support local to this screen without modifying the vendor
 // library, which currently exposes only the Type A high-level polling API.
+enum class _Pn532CmdFailure : uint8_t { None, InvalidArgs, AckFailed, ReadyTimeout, ShortRead, InvalidPreamble, InvalidLength, UnexpectedResponse, InvalidPayloadLength, InvalidChecksum };
+static _Pn532CmdFailure _emvCmdFailure = _Pn532CmdFailure::None;
+static int _emvI2cReadCount = -1;
+static uint32_t _emvAckElapsedMs = 0;
+static uint16_t _emvAckTimeoutMs = 0;
+// Stage 13: use a separate ACK-only probe for the EMV discovery command.
+static bool _emvProbeDiscovery = false;
+static bool _emvProbeAckOk = false;
+// Stage 14: finite passive-activation retries, restricted to Read EMV.
+static bool _emvFiniteRetriesTest = false;
+static bool _emvRetryConfigOk = false;
+static bool _emvRetryRestoreOk = false;
+static bool _nfcSendCmdReadAckProbe(TwoWire*, const uint8_t*, uint8_t, uint32_t);
+// Stage 18: diagnostic-only snapshot for the LAST Type 4A APDU exchange.
+static const char* _emvApduTransportStage = "Not attempted";
+static _Pn532CmdFailure _emvApduCommandFailure = _Pn532CmdFailure::None;
+static int _emvApduI2cBytes = -1;
+static uint32_t _emvApduCommandElapsedMs = 0;
+static int _emvApduPn532Status = -1;
+static size_t _emvApduPayloadBytes = 0;
+static size_t _emvApduResponseCap = 0;
+
+
 static bool _nfcCommandResponse(Adafruit_PN532* nfc, TwoWire* wire,
                                 const uint8_t* cmd, uint8_t cmdLen,
                                 uint8_t expectedResponse,
                                 uint8_t* out, size_t outCap, size_t& outLen,
-                                uint16_t timeoutMs = 800) {
+                                uint16_t timeoutMs = 800, bool largeEmvFrame = false) {
+  _emvCmdFailure = _Pn532CmdFailure::None;
+  _emvI2cReadCount = -1;
+  _emvAckElapsedMs = 0;
+  _emvAckTimeoutMs = timeoutMs;
   outLen = 0;
-  if (!nfc || !wire || !cmd || !cmdLen) return false;
+  if (!nfc || !wire || !cmd || !cmdLen) { _emvCmdFailure = _Pn532CmdFailure::InvalidArgs; return false; }
   for (uint8_t i = 0; i < cmdLen; ++i) pn532_packetbuffer[i] = cmd[i];
-  if (!nfc->sendCommandCheckAck(pn532_packetbuffer, cmdLen, timeoutMs)) return false;
+  const uint32_t ackStart = millis();
+  // The Adafruit helper also waits for command completion after ACK.
+  // For EMV discovery, probe ACK independently so these waits are distinguishable.
+  const bool ackOk = _emvProbeDiscovery
+      ? _nfcSendCmdReadAckProbe(wire, cmd, cmdLen, timeoutMs)
+      : nfc->sendCommandCheckAck(pn532_packetbuffer, cmdLen, timeoutMs);
+  _emvAckElapsedMs = millis() - ackStart;
+  _emvProbeAckOk = ackOk;
+  if (!ackOk) { _emvCmdFailure = _Pn532CmdFailure::AckFailed; return false; }
 
-  // All Type B operations below deliberately use response chunks <= 64 bytes,
-  // keeping this safely below the ESP32 Wire receive buffer used by UniGeek.
+  // EMV responses (especially SELECT AID) can exceed the legacy 80-byte
+  // frame. PN532 I2C returns a frame from its start for each read request;
+  // do not try to concatenate multiple requestFrom() transactions.
+  // Keep legacy operations unchanged, and enlarge the ESP32 Wire RX buffer
+  // before requesting the entire normal PN532 frame in a single transaction.
+  constexpr size_t kLegacyFrameBytes = 80;
+  constexpr size_t kEmvFrameBytes = 262; // 5-byte header + LEN(<=255) + DCS + postamble
+  const size_t frameBytes = largeEmvFrame ? kEmvFrameBytes : kLegacyFrameBytes;
+
   uint32_t readyStart = millis();
   bool ready = false;
   while (millis() - readyStart < timeoutMs) {
@@ -80,27 +123,29 @@ static bool _nfcCommandResponse(Adafruit_PN532* nfc, TwoWire* wire,
     }
     delay(2);
   }
-  if (!ready) return false;
+  if (!ready) { _emvCmdFailure = _Pn532CmdFailure::ReadyTimeout; return false; }
 
-  uint8_t frame[80] = {};
-  const uint8_t want = sizeof(frame);
-  if (wire->requestFrom((uint8_t)PN532_I2C_ADDRESS, (uint8_t)(want + 1)) != want + 1) return false;
+  uint8_t frame[kEmvFrameBytes] = {};
+  const size_t want = frameBytes;
+  const size_t got = wire->requestFrom((uint8_t)PN532_I2C_ADDRESS, want + 1, true);
+  _emvI2cReadCount = (int)got;
+  if (got != want + 1) { _emvCmdFailure = _Pn532CmdFailure::ShortRead; return false; }
   wire->read(); // PN532 I2C status byte
-  for (uint8_t i = 0; i < want; ++i) frame[i] = wire->available() ? wire->read() : 0;
+  for (size_t i = 0; i < want; ++i) frame[i] = wire->available() ? wire->read() : 0;
 
-  if (frame[0] != 0x00 || frame[1] != 0x00 || frame[2] != 0xFF) return false;
+  if (frame[0] != 0x00 || frame[1] != 0x00 || frame[2] != 0xFF) { _emvCmdFailure = _Pn532CmdFailure::InvalidPreamble; return false; }
   const uint8_t len = frame[3];
-  if ((uint8_t)(len + frame[4]) != 0x00 || len < 2) return false;
-  if (frame[5] != PN532_PN532TOHOST || frame[6] != expectedResponse) return false;
+  if ((uint8_t)(len + frame[4]) != 0x00 || len < 2) { _emvCmdFailure = _Pn532CmdFailure::InvalidLength; return false; }
+  if (frame[5] != PN532_PN532TOHOST || frame[6] != expectedResponse) { _emvCmdFailure = _Pn532CmdFailure::UnexpectedResponse; return false; }
 
   const size_t payloadLen = len - 2; // strip TFI + response command
   const size_t dcsIndex = 5u + len;
   const size_t postambleIndex = dcsIndex + 1u;
-  if (payloadLen > outCap || 7u + payloadLen > sizeof(frame) || postambleIndex >= sizeof(frame)) return false;
+  if (payloadLen > outCap || 7u + payloadLen > want || postambleIndex >= want) { _emvCmdFailure = _Pn532CmdFailure::InvalidPayloadLength; return false; }
 
   uint8_t sum = 0;
   for (size_t i = 5; i < dcsIndex; ++i) sum = (uint8_t)(sum + frame[i]);
-  if ((uint8_t)(sum + frame[dcsIndex]) != 0x00 || frame[postambleIndex] != 0x00) return false;
+  if ((uint8_t)(sum + frame[dcsIndex]) != 0x00 || frame[postambleIndex] != 0x00) { _emvCmdFailure = _Pn532CmdFailure::InvalidChecksum; return false; }
 
   if (payloadLen && out) memcpy(out, frame + 7, payloadLen);
   outLen = payloadLen;
@@ -635,8 +680,11 @@ void PN532I2cScreen::onUpdate() {
   if (_state == STATE_TYPE4A_RESULT) {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) _goType4ATag();
-      else if (dir == INavigation::DIR_PRESS && !_genericReadActive) _doType4AReadTag();
+      if (dir == INavigation::DIR_BACK) {
+        if (_emvResultActive && _emvResultFromMain) _goMain();
+        else _goType4ATag();
+        _emvResultActive = false;
+      } else if (dir == INavigation::DIR_PRESS && !_genericReadActive && !_emvResultActive) _doType4AReadTag();
       else _scrollView.onNav(dir);
     }
     return;
@@ -887,9 +935,10 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       switch (index) {
         case 0: _doScan14A();          break;
         case 1: _doGenericReadTag(); break;
-        case 2: _doScanReader();      break;
-        case 3: _goFamilies();        break;
-        case 4: _showDeviceInfo();    break;
+        case 2: _doType4AReadEmv(); break;
+        case 3: _doScanReader();      break;
+        case 4: _goFamilies();        break;
+        case 5: _showDeviceInfo();    break;
       }
       break;
     case STATE_FAMILIES_MENU:
@@ -1020,6 +1069,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
     case STATE_TYPE4A_TAG_MENU:
       if (index == 0) _doType4AReadTag();
       else if (index == 1) _goType4AAdvanced();
+      else if (index == 2) _doType4AReadEmv();
       break;
     case STATE_TYPE4A_ADVANCED_MENU:
       if (index == 0) _doType4ASendApdu();
@@ -1204,7 +1254,9 @@ void PN532I2cScreen::onBack() {
       else _goTypeBTag();
       break;
     case STATE_TYPE4A_RESULT:
-      _goType4ATag();
+      if (_emvResultActive && _emvResultFromMain) _goMain();
+      else _goType4ATag();
+      _emvResultActive = false;
       break;
     case STATE_MIFARE_UID_SOURCE_FORM:
       _goMifareTag();
@@ -1521,7 +1573,7 @@ void PN532I2cScreen::_cleanup() {
 void PN532I2cScreen::_goMain() {
   _genericReadActive = false;
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5, _selMain);
+  setItems(_mainItems, 6, _selMain);
   render();
 }
 
@@ -1722,7 +1774,7 @@ void PN532I2cScreen::_goType4A() {
 void PN532I2cScreen::_goType4ATag() {
   if (_genericReadActive) { _goMain(); return; }
   _state = STATE_TYPE4A_TAG_MENU;
-  setItems(_type4ATagItems, 2, _selType4ATag);
+  setItems(_type4ATagItems, 3, _selType4ATag);
   render();
 }
 
@@ -2071,16 +2123,61 @@ bool PN532I2cScreen::_scanCardOrShow(uint32_t timeoutMs) {
 
 bool PN532I2cScreen::_scanType4A(uint32_t timeoutMs) {
   if (!_nfc || !_wire) return false;
+  _emvDiscoveryCaptured = true;
+  _emvDiscoveryCommandOk = false;
+  _emvDiscoveryLen = 0;
+  memset(_emvDiscoveryResponse, 0, sizeof(_emvDiscoveryResponse));
   _hasType4A = false;
   _type4AAtsLen = 0;
   memset(_type4AAts, 0, sizeof(_type4AAts));
 
+  // RFConfiguration CfgItem=0x05: MaxRtyATR, MaxRtyPSL, MxRtyPassiveActivation.
+  // Try two passive activations instead of the default unlimited polling.
+  // Restore the default (0xFF) immediately after the discovery attempt.
+  if (_emvFiniteRetriesTest) {
+    const uint8_t retries[] = {PN532_COMMAND_RFCONFIGURATION, 0x05, 0xFF, 0x01, 0x02};
+    uint8_t configRsp[4] = {};
+    size_t configLen = 0;
+    _emvProbeDiscovery = true; // ACK-only path also for RFConfiguration.
+    _emvRetryConfigOk = _nfcCommandResponse(_nfc, _wire, retries, sizeof(retries),
+        (uint8_t)(PN532_COMMAND_RFCONFIGURATION + 1),
+        configRsp, sizeof(configRsp), configLen, 1000);
+    _emvProbeDiscovery = false;
+    if (!_emvRetryConfigOk) return false;
+  }
+
   const uint8_t cmd[] = {PN532_COMMAND_INLISTPASSIVETARGET, 0x01, 0x00};
   uint8_t rsp[64] = {};
   size_t n = 0;
-  if (!_nfcCommandResponse(_nfc, _wire, cmd, sizeof(cmd),
+  _emvProbeDiscovery = true;
+  _emvDiscoveryCommandOk = _nfcCommandResponse(_nfc, _wire, cmd, sizeof(cmd),
                            (uint8_t)(PN532_COMMAND_INLISTPASSIVETARGET + 1),
-                           rsp, sizeof(rsp), n, timeoutMs)) return false;
+                           rsp, sizeof(rsp), n, timeoutMs);
+  _emvProbeDiscovery = false;
+  if (_emvFiniteRetriesTest) {
+    // Preserve discovery diagnostics: restoration itself uses the command helper.
+    const auto discoveryFailure = _emvCmdFailure;
+    const int discoveryReadCount = _emvI2cReadCount;
+    const uint32_t discoveryAckElapsed = _emvAckElapsedMs;
+    const uint16_t discoveryAckTimeout = _emvAckTimeoutMs;
+    const bool discoveryAckOk = _emvProbeAckOk;
+    const uint8_t restore[] = {PN532_COMMAND_RFCONFIGURATION, 0x05, 0xFF, 0x01, 0xFF};
+    uint8_t restoreRsp[4] = {};
+    size_t restoreLen = 0;
+    _emvProbeDiscovery = true;
+    _emvRetryRestoreOk = _nfcCommandResponse(_nfc, _wire, restore, sizeof(restore),
+        (uint8_t)(PN532_COMMAND_RFCONFIGURATION + 1),
+        restoreRsp, sizeof(restoreRsp), restoreLen, 1000);
+    _emvProbeDiscovery = false;
+    _emvCmdFailure = discoveryFailure;
+    _emvI2cReadCount = discoveryReadCount;
+    _emvAckElapsedMs = discoveryAckElapsed;
+    _emvAckTimeoutMs = discoveryAckTimeout;
+    _emvProbeAckOk = discoveryAckOk;
+  }
+  if (!_emvDiscoveryCommandOk) return false;
+  _emvDiscoveryLen = n;
+  if (n) memcpy(_emvDiscoveryResponse, rsp, n);
   if (n < 6 || rsp[0] == 0) return false;
 
   _type4ATg = rsp[1];
@@ -2113,23 +2210,356 @@ bool PN532I2cScreen::_scanType4A(uint32_t timeoutMs) {
 bool PN532I2cScreen::_type4AExchange(const uint8_t* tx, size_t txLen,
                                      uint8_t* rx, size_t rxCap, size_t& rxLen) {
   rxLen = 0;
+  _emvApduTransportStage = "Arguments";
+  _emvApduCommandFailure = _Pn532CmdFailure::None;
+  _emvApduI2cBytes = -1;
+  _emvApduCommandElapsedMs = 0;
+  _emvApduPn532Status = -1;
+  _emvApduPayloadBytes = 0;
+  _emvApduResponseCap = rxCap;
   if (!_hasType4A || !tx || txLen == 0 || txLen > 60 || !rx || rxCap == 0) return false;
   uint8_t cmd[64] = {PN532_COMMAND_INDATAEXCHANGE, _type4ATg};
   memcpy(cmd + 2, tx, txLen);
-  uint8_t rsp[68] = {};
+  uint8_t rsp[256] = {};
   size_t n = 0;
-  if (!_nfcCommandResponse(_nfc, _wire, cmd, (uint8_t)(txLen + 2),
-                           PN532_RESPONSE_INDATAEXCHANGE,
-                           rsp, sizeof(rsp), n, 1200)) return false;
-  if (n < 1 || (rsp[0] & 0x3FU) != 0) return false;
+  const uint32_t start = millis();
+  const bool ok = _nfcCommandResponse(_nfc, _wire, cmd, (uint8_t)(txLen + 2),
+                                      PN532_RESPONSE_INDATAEXCHANGE,
+                                      rsp, sizeof(rsp), n, 1200, true);
+  _emvApduCommandElapsedMs = millis() - start;
+  _emvApduCommandFailure = _emvCmdFailure;
+  _emvApduI2cBytes = _emvI2cReadCount;
+  if (!ok) { _emvApduTransportStage = "PN532 command/frame"; return false; }
+  _emvApduPayloadBytes = n;
+  if (n < 1) { _emvApduTransportStage = "Empty PN532 payload"; return false; }
+  _emvApduPn532Status = rsp[0];
+  if ((rsp[0] & 0x3FU) != 0) { _emvApduTransportStage = "PN532 status error"; return false; }
   const size_t dataLen = n - 1;
-  if (dataLen > rxCap) return false;
+  if (dataLen > rxCap) { _emvApduTransportStage = "APDU response > buffer"; return false; }
   if (dataLen) memcpy(rx, rsp + 1, dataLen);
   rxLen = dataLen;
+  _emvApduTransportStage = "OK";
   return true;
 }
 
+// Diagnostic fallback when the normal Type 4A activation fails.
+// Do not send APDUs; show the raw 106 kbps Type A discovery result.
+void PN532I2cScreen::_showEmvDetectionDiagnostics() {
+  _state = STATE_TYPE4A_RESULT;
+  _resetRows();
+  _pushRow("Type", "EMV detection diagnostics");
+  _pushRow("EMV stage", "Before SELECT PPSE");
+  _pushRow("APDU attempts", "0");
+  _pushRow("Discovery timeout", "1000 ms (experimental)");
+  _pushRow("RF retries configured", _emvRetryConfigOk ? "Yes (2 attempts)" : "No/failed");
+  _pushRow("RF retries restored", _emvRetryRestoreOk ? "Yes (0xFF)" : "No/failed");
+  if (!_nfc || !_wire) {
+    _pushRow("Discovery", "PN532 not initialized");
+  } else {
+    // Report the original discovery attempt. Do not issue a second poll:
+    // it could succeed even when the attempt used by Read EMV failed.
+    const uint8_t* rsp = _emvDiscoveryResponse;
+    const size_t n = _emvDiscoveryLen;
+    const bool ok = _emvDiscoveryCaptured && _emvDiscoveryCommandOk;
+    _pushRow("Discovery source", "Original attempt");
+    const char* failure = "None";
+    switch (_emvCmdFailure) {
+      case _Pn532CmdFailure::None: break;
+      case _Pn532CmdFailure::InvalidArgs: failure = "Invalid arguments"; break;
+      case _Pn532CmdFailure::AckFailed: failure = "ACK/send failed"; break;
+      case _Pn532CmdFailure::ReadyTimeout: failure = "Response ready timeout"; break;
+      case _Pn532CmdFailure::ShortRead: failure = "I2C short read"; break;
+      case _Pn532CmdFailure::InvalidPreamble: failure = "Invalid frame preamble"; break;
+      case _Pn532CmdFailure::InvalidLength: failure = "Invalid frame length"; break;
+      case _Pn532CmdFailure::UnexpectedResponse: failure = "Unexpected response"; break;
+      case _Pn532CmdFailure::InvalidPayloadLength: failure = "Invalid payload length"; break;
+      case _Pn532CmdFailure::InvalidChecksum: failure = "Invalid frame checksum"; break;
+    }
+    _pushRow("Command failure", failure);
+    _pushRow("ACK path elapsed", String((unsigned long)_emvAckElapsedMs) + " ms");
+    _pushRow("ACK path timeout", String((unsigned)_emvAckTimeoutMs) + " ms");
+    _pushRow("ACK-only probe", _emvProbeAckOk ? "ACK received" : "ACK missing/invalid");
+    _pushRow("Post-ACK stage", _emvProbeAckOk ?
+        (_emvCmdFailure == _Pn532CmdFailure::ReadyTimeout ? "Response timeout" : "Response/frame processing") :
+        "Not reached");
+    if (_emvCmdFailure == _Pn532CmdFailure::AckFailed)
+      _pushRow("ACK detail", "Library returned false; send vs ACK unknown");
+    if (_emvI2cReadCount >= 0) {
+      _pushRow("I2C requested", "81");
+      _pushRow("I2C received", String(_emvI2cReadCount));
+    }
+
+    if (!ok) {
+      _pushRow("Discovery", "Command/timeout error");
+    } else {
+      _pushRow("Response bytes", String((unsigned)n));
+      // Stage 15: show the ORIGINAL decoded InListPassiveTarget payload,
+      // before interpreting NbTg. No extra discovery command is sent.
+      // Split into short rows to avoid truncation on small displays.
+      if (n > 0) {
+        const size_t shown = n < 32 ? n : 32;
+        for (size_t offset = 0; offset < shown; offset += 8) {
+          const size_t chunk = (shown - offset < 8) ? shown - offset : 8;
+          const String label = String("Raw +") + String((unsigned)offset);
+          _pushRow(label.c_str(), _hexBlock(rsp + offset, chunk));
+        }
+        if (n > shown) _pushRow("Raw payload", "First 32 bytes only");
+      }
+      if (n < 1) {
+        _pushRow("Discovery", "Empty response");
+      } else {
+        _pushRow("Targets", String((unsigned)rsp[0]));
+        if (rsp[0] == 0) {
+          _pushRow("Discovery", "No Type A target");
+        } else if (n < 6) {
+          _pushRow("Discovery", "Truncated target header");
+        } else {
+          _pushRow("Target #", String((unsigned)rsp[1]));
+          char hex[8];
+          snprintf(hex, sizeof(hex), "%02X%02X", rsp[2], rsp[3]);
+          _pushRow("ATQA", hex);
+          snprintf(hex, sizeof(hex), "%02X", rsp[4]);
+          _pushRow("SAK", hex);
+          _pushRow("ISO-DEP bit", (rsp[4] & 0x20U) ? "Set" : "Not set");
+          const size_t uidLen = rsp[5];
+          if (!uidLen || uidLen > 10 || uidLen > n - 6) {
+            _pushRow("Discovery", "Invalid/truncated UID");
+          } else {
+            _pushRow("UID", _hexBlock(rsp + 6, uidLen));
+            const size_t pos = 6 + uidLen;
+            if (pos < n) {
+              const size_t tl = rsp[pos];
+              if (tl && tl <= n - pos) {
+                _pushRow("ATS", _hexBlock(rsp + pos, tl));
+              } else {
+                _pushRow("ATS", "Invalid/truncated");
+              }
+            } else {
+              _pushRow("ATS", "Not provided");
+            }
+            _pushRow("Discovery", (rsp[4] & 0x20U) ? "Type A ISO-DEP candidate" : "Not Type A ISO-DEP");
+          }
+        }
+      }
+    }
+  }
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  render();
+}
+
+// Experimental EMV bridge. The existing PN532 Type 4A exchange is limited
+// to 60 command bytes and 67 response bytes (after the controller status).
+// Reject oversized APDUs explicitly; never truncate payment responses.
+void PN532I2cScreen::_doType4AReadEmv() {
+  _emvResultFromMain = (_state == STATE_MAIN_MENU);
+  _emvResultActive = true;
+  _emvDiscoveryCaptured = false;
+  _emvApduTransportStage = "Not attempted";
+  renderOperationTitle("EMV (experimental)");
+  renderTagPrompt("Waiting for card...", bodyX(), bodyY(), bodyW(), bodyH());
+  // Stage 17: Bruce-style discovery through Adafruit_PN532. Keep the
+  // experimental raw-command path out of EMV discovery; other NFC menus
+  // continue using their existing discovery helpers.
+  _emvFiniteRetriesTest = false;
+  _emvRetryConfigOk = false;
+  _emvRetryRestoreOk = false;
+  _hasType4A = false;
+  _type4AAtsLen = 0;
+  memset(_type4AAts, 0, sizeof(_type4AAts));
+  const uint32_t scanStart = millis();
+  bool detected = false;
+  bool typeACandidate = false;
+  uint8_t lastSak = 0;
+  while (millis() - scanStart < 3000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() &&
+        Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _emvResultActive = false;
+      if (_emvResultFromMain) _goMain();
+      else _goType4ATag();
+      return;
+    }
+    uint8_t uid[7] = {};
+    uint8_t uidLen = 0;
+    if (_nfc && _nfc->readPassiveTargetID(PN532_MIFARE_ISO14443A,
+                                         uid, &uidLen, 100)) {
+      // The project's existing Adafruit-based reader obtains SAK from
+      // pn532_packetbuffer[11] (see _scanCardOrShow).
+      if (uidLen > 0 && uidLen <= sizeof(_uid)) {
+        typeACandidate = true;
+        lastSak = pn532_packetbuffer[11];
+        if (lastSak & 0x20U) {
+          memcpy(_uid, uid, uidLen);
+          _uidLen = uidLen;
+          _atqa = ((uint16_t)pn532_packetbuffer[9] << 8) |
+                  pn532_packetbuffer[10];
+          _sak = lastSak;
+          _type4ATg = 1; // InListPassiveTarget requested MaxTg=1.
+          _hasCard = true;
+          _hasType4A = true;
+          detected = true;
+          break;
+        }
+      }
+    }
+    delay(50);
+  }
+  if (!detected) {
+    // Do not run the old raw InListPassiveTarget diagnostic here: it would
+    // perform a second, different discovery and obscure the Bruce test.
+    _state = STATE_TYPE4A_RESULT;
+    _resetRows();
+    _pushRow("Type", "EMV detection diagnostics");
+    _pushRow("Discovery method", "Adafruit (Bruce-style)");
+    _pushRow("Discovery", typeACandidate ? "Type A, not ISO-DEP" : "No Type A target");
+    if (typeACandidate) {
+      char sakText[8];
+      snprintf(sakText, sizeof(sakText), "%02X", lastSak);
+      _pushRow("Last SAK", sakText);
+    }
+    _pushRow("Scan window", "3000 ms");
+    _scrollView.resetScroll();
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  // Stage 19 revised: configure the Wire RX buffer once, after discovery and
+  // before APDU exchange. The PN532 I2C status byte adds one byte to the frame.
+  // Wire has no public getter for the prior buffer size in Arduino-ESP32 2.x;
+  // retain the enlarged capacity rather than guessing a size to restore.
+  constexpr size_t kEmvWireRxBytes = 263;
+  if (!_wire || _wire->setBufferSize(kEmvWireRxBytes) < kEmvWireRxBytes) {
+    _state = STATE_TYPE4A_RESULT;
+    _resetRows();
+    _pushRow("Type", "EMV (experimental)");
+    _pushRow("Status", "Transport setup error");
+    _pushRow("APDU transport", "Wire RX buffer setup");
+    _pushRow("Required I2C bytes", "263");
+    _scrollView.resetScroll();
+    _scrollView.setRows(_rows, _rowCount);
+    render();
+    return;
+  }
+
+  struct Bridge {
+    PN532I2cScreen* screen;
+    bool sizeLimit;
+    const char* lastStage;
+    const char* failedStage;
+    uint16_t exchangeCount;
+    uint16_t responseBytes;
+    uint8_t sw1, sw2;
+    bool hasSw;
+  } bridge = {this, false, "None", nullptr, 0, 0, 0, 0, false};
+
+  auto exchange = [](void* ctx, const uint8_t* cmd, size_t cmdLen,
+                     uint8_t* rsp, size_t rspCap, size_t& rspLen) -> bool {
+    Bridge* b = static_cast<Bridge*>(ctx);
+    rspLen = 0;
+    // Classify the APDU before sending it. This remains diagnostic only.
+    if (cmdLen >= 2) {
+      if (cmd[1] == 0xA4) {
+        static const uint8_t ppse[] = {'2','P','A','Y','.','S','Y','S','.','D','D','F','0','1'};
+        b->lastStage = (cmdLen >= 5 + sizeof(ppse) && cmd[4] == sizeof(ppse) &&
+                        memcmp(cmd + 5, ppse, sizeof(ppse)) == 0) ? "SELECT PPSE" : "SELECT AID";
+      } else if (cmd[1] == 0xA8) b->lastStage = "GPO";
+      else if (cmd[1] == 0xB2) b->lastStage = "READ RECORD";
+      else b->lastStage = "Other APDU";
+    }
+    ++b->exchangeCount;
+    if (cmdLen > 60) {
+      b->sizeLimit = true;
+      b->failedStage = b->lastStage;
+      return false;
+    }
+    // _type4AExchange checks response size and strips PN532 status.
+    if (!b->screen->_type4AExchange(cmd, cmdLen, rsp, rspCap, rspLen)) {
+      b->failedStage = b->lastStage;
+      return false;
+    }
+    b->responseBytes = (uint16_t)rspLen;
+    if (rspLen >= 2) {
+      b->sw1 = rsp[rspLen - 2]; b->sw2 = rsp[rspLen - 1];
+      b->hasSw = true;
+    }
+    return true;
+  };
+
+  unigeek_emv::ReadResult result;
+  // No synthetic terminal parameters: unsupported PDOL fields are zero-filled
+  // by EmvCore. This is a diagnostic read, not a payment transaction.
+  const auto status = unigeek_emv::readEmv(exchange, &bridge, nullptr, 0, result);
+  _state = STATE_TYPE4A_RESULT;
+  _resetRows();
+  _pushRow("Type", "EMV (experimental)");
+  _pushRow("UID", _hexBlock(_uid, _uidLen));
+  const char* statusText = "Unknown";
+  switch (status) {
+    case unigeek_emv::ReadStatus::Ok: statusText = "OK"; break;
+    case unigeek_emv::ReadStatus::PartialRecords: statusText = "Partial records"; break;
+    case unigeek_emv::ReadStatus::NoRecords: statusText = "No records"; break;
+    case unigeek_emv::ReadStatus::InvalidArgument: statusText = "Invalid arguments"; break;
+    case unigeek_emv::ReadStatus::TransportError: statusText = "Transport error"; break;
+    case unigeek_emv::ReadStatus::InvalidResponse: statusText = "Invalid response"; break;
+    case unigeek_emv::ReadStatus::PpseFailed: statusText = "PPSE rejected"; break;
+    case unigeek_emv::ReadStatus::NoApplication: statusText = "No EMV application"; break;
+    case unigeek_emv::ReadStatus::SelectFailed: statusText = "SELECT failed"; break;
+    case unigeek_emv::ReadStatus::GpoFailed: statusText = "GPO failed"; break;
+    case unigeek_emv::ReadStatus::InvalidAfl: statusText = "Invalid AFL"; break;
+    case unigeek_emv::ReadStatus::RecordError: statusText = "Record error"; break;
+  }
+  _pushRow("Status", bridge.sizeLimit ? "APDU > 60 bytes" : statusText);
+  _pushRow("APDU attempts", String((unsigned)bridge.exchangeCount));
+  _pushRow("Last APDU", bridge.lastStage);
+  if (bridge.failedStage) _pushRow("Failed stage", bridge.failedStage);
+  _pushRow("Last response bytes", String((unsigned)bridge.responseBytes));
+  // Stage 18: failure details refer to the current APDU, not the last successful response.
+  _pushRow("APDU transport", _emvApduTransportStage);
+  if (_emvApduCommandFailure != _Pn532CmdFailure::None) {
+    const char* reason = "Unknown";
+    switch (_emvApduCommandFailure) {
+      case _Pn532CmdFailure::InvalidArgs: reason = "Invalid args"; break;
+      case _Pn532CmdFailure::AckFailed: reason = "ACK/send failed"; break;
+      case _Pn532CmdFailure::ReadyTimeout: reason = "Response timeout"; break;
+      case _Pn532CmdFailure::ShortRead: reason = "I2C short read"; break;
+      case _Pn532CmdFailure::InvalidPreamble: reason = "Invalid preamble"; break;
+      case _Pn532CmdFailure::InvalidLength: reason = "Invalid frame length"; break;
+      case _Pn532CmdFailure::UnexpectedResponse: reason = "Unexpected response"; break;
+      case _Pn532CmdFailure::InvalidPayloadLength: reason = "Frame/payload too large"; break;
+      case _Pn532CmdFailure::InvalidChecksum: reason = "Checksum failed"; break;
+      case _Pn532CmdFailure::None: break;
+    }
+    _pushRow("APDU command failure", reason);
+  }
+  _pushRow("APDU elapsed", String((unsigned long)_emvApduCommandElapsedMs) + " ms");
+  if (_emvApduI2cBytes >= 0) _pushRow("APDU I2C bytes", String(_emvApduI2cBytes));
+  if (_emvApduPn532Status >= 0) {
+    char pnStatus[8];
+    snprintf(pnStatus, sizeof(pnStatus), "%02X", (unsigned)_emvApduPn532Status);
+    _pushRow("PN532 status", pnStatus);
+  }
+  _pushRow("PN532 payload bytes", String((unsigned)_emvApduPayloadBytes));
+  _pushRow("APDU buffer cap", String((unsigned)_emvApduResponseCap));
+
+  if (bridge.hasSw) {
+    char sw[8];
+    snprintf(sw, sizeof(sw), "%02X %02X", bridge.sw1, bridge.sw2);
+    _pushRow("Last SW1/SW2", sw);
+  }
+  if (result.hasSelectedAid) _pushRow("AID", _hexBlock(result.selectedAid.bytes, result.selectedAid.length));
+  if (result.info.hasApplicationLabel) _pushRow("Application", result.info.applicationLabel);
+  if (result.info.hasPreferredName) _pushRow("Preferred name", result.info.preferredName);
+  _pushRow("Records read", String((unsigned)result.recordsRead));
+  _pushRow("Records failed", String((unsigned)result.recordsFailed));
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  render();
+}
+
 void PN532I2cScreen::_showType4ADetails(bool scanAgainHint) {
+  _emvResultActive = false;
   _state = STATE_TYPE4A_RESULT;
   _resetRows();
   _pushRow("Type", "Type 4A");
