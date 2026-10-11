@@ -33,7 +33,7 @@ namespace ModuleRegistry
     "Sub-GHz",
     "M5 RF433",
     "NRF24L01",
-    "Pin Setting",
+    "Pin Settings",
   };
 
   inline uint32_t hiddenMask()

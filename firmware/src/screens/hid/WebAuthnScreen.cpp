@@ -53,7 +53,7 @@ void WebAuthnScreen::onInit()
 
   // No master key generated yet — every CTAP2 op would fail at storage. Skip
   // USB FIDO HID claim and render a setup-required message instead so the
-  // user knows where to go (Utility > Manage WebAuthn > Generate BIP39).
+  // user knows where to go (Utilities > Manage WebAuthn > Generate BIP39).
   if (!webauthn::CredentialStore::hasMaster()) {
     _noMaster = true;
     return;
@@ -147,7 +147,7 @@ void WebAuthnScreen::onRender()
     lcd.drawString("No master key on device.", cx, y); y += 14;
     lcd.drawString("Create one first via:",   cx, y); y += 14;
     lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-    lcd.drawString("Utility > Manage WebAuthn",  cx, y); y += 12;
+    lcd.drawString("Utilities > Manage WebAuthn",  cx, y); y += 12;
     lcd.drawString(">  Generate BIP39",          cx, y);
     lcd.setTextDatum(BC_DATUM);
     lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
@@ -170,7 +170,7 @@ void WebAuthnScreen::onRender()
     sp.setTextDatum(MC_DATUM);
     sp.setTextSize(2);
     sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-    sp.drawString("Confirm:", bodyW() / 2, 12);
+    sp.drawString("Confirm", bodyW() / 2, 12);
     sp.setTextSize(1);
     sp.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     sp.drawString(_promptRpId ? _promptRpId : "(unknown)", bodyW() / 2, 36);
@@ -201,7 +201,7 @@ void WebAuthnScreen::onRender()
     sp.setTextDatum(MC_DATUM);
     sp.setTextSize(3);
     sp.setTextColor(connected ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    sp.drawString(connected ? "Active" : "Idle", bodyW() / 2, 14);
+    sp.drawString(connected ? "Connected" : "Waiting...", bodyW() / 2, 14);
     sp.pushSprite(bodyX(), statusY - 14);
     sp.deleteSprite();
   }

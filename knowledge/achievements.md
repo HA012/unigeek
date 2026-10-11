@@ -37,7 +37,7 @@ Your current rank and a progress bar toward the next rank are shown on the **Cha
 
 ## Viewing Achievements
 
-Go to **Utility > Achievements**. The screen has two levels:
+Go to **Utilities > Achievements**. The screen has two levels:
 
 1. **Domain list** — each of the 13 domains shows how many achievements you've unlocked (e.g. `3/10`) and total EXP earned in that domain
 2. **Achievement list** — tap a domain to see all achievements inside it; each row shows the title, tier label (`B` / `S` / `G` / `P`), and how to unlock it
@@ -51,7 +51,7 @@ Locked top-tier achievements show `???` as the tier and `Unlock to reveal` as th
 Any unlocked achievement can be set as your **Agent Title** — a personal badge shown on the Character Screen.
 
 **To set a title:**
-1. Go to **Utility > Achievements**
+1. Go to **Utilities > Achievements**
 2. Navigate into any domain
 3. Scroll to an unlocked achievement
 4. **Long-press** (hold ~0.6 s) — a "Title saved" confirmation appears

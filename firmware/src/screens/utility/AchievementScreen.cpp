@@ -53,11 +53,11 @@ void AchievementScreen::onUpdate()
     uint8_t ci   = _achCatIdx[_selectedIndex];
     bool    done = Achievement.isUnlocked(cat.defs[ci].id);
     if (!done) {
-      ShowStatusAction::show("Unlock first", 1500);
+      ShowStatusAction::show("Locked", 1500);
     } else {
       Config.set(APP_CONFIG_AGENT_TITLE, cat.defs[ci].title);
       Config.save(Uni.Storage);
-      ShowStatusAction::show("Title saved", 1500);
+      ShowStatusAction::show("Saved", 1500);
     }
     render();
     return;

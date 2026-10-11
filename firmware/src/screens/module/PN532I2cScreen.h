@@ -194,9 +194,20 @@ private:
   String         _dictPickDir;   // current dir in the dict picker
   String         _keyDbPickDir;  // current dir in the key database browser
   String         _keyDbViewTitle;
+  String         _pickerRestoreName;
 
   bool _initModule();
   void _cleanup();
+  uint8_t _mainMenuIndex = 0;
+  uint8_t _mifareMenuIndex = 0;
+  uint8_t _mifareTagIndex = 0;
+  uint8_t _mifareNdefIndex = 0;
+  uint8_t _mifareAttacksIndex = 0;
+  uint8_t _mifareKeysIndex = 0;
+  uint8_t _ultralightMenuIndex = 0;
+  uint8_t _ultralightTagIndex = 0;
+  uint8_t _ultralightNdefIndex = 0;
+
   void _goMain();
   void _goMifare();
   void _goMifareTag();

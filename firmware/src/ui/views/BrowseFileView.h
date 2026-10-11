@@ -78,7 +78,7 @@ struct BrowseFileView {
   // never resolves above it. Default "/" = no confinement (filesystem root).
   String root = "/";
 
-  // Show "Loading..." status bar overlay.
+  // Show "Loading" status bar overlay.
   static void showLoading();
 
   // Load a directory: flash loading, sort dirs-first then alpha, build Item

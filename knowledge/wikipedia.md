@@ -5,7 +5,7 @@ Browse Wikipedia straight from the device over WiFi — search, open random arti
 There are two ways in:
 
 - **WiFi → Network → Wikipedia** — the full experience. Search, Random, and On This Day all **download** fresh articles over WiFi and cache them. Requires a WiFi connection and available storage.
-- **Utility → Wikipedia** — **read-only**. No WiFi and no downloading; you only browse articles already cached on storage (Favorites, All Cached, Search Cached, Language).
+- **Utilities → Wikipedia** — **read-only**. No WiFi and no downloading; you only browse articles already cached on storage (Favorites, All Cached, Search Cached, Language).
 
 ## Menu
 

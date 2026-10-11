@@ -17,7 +17,7 @@ void BarcodeScreen::onBack() {
     if (_currentPath == _barcodePath || _currentPath.length() == 0) {
       _state = STATE_MENU;
       _refreshMenu();
-      setItems(_menuItems);
+      setItems(_menuItems, 3, 2);
       return;
     }
     int last = _currentPath.lastIndexOf('/');
@@ -87,7 +87,7 @@ void BarcodeScreen::_scanFiles(const String& path) {
   _browser.root = _barcodePath;
   uint8_t n = _browser.load(this, path, nullptr, "FILE");
   if (n == 0) {
-    ShowStatusAction::show("Cannot open directory", 1500);
+    ShowStatusAction::show("Failed to open directory", 1500);
     _state = STATE_MENU;
     render();
     return;
@@ -98,7 +98,7 @@ void BarcodeScreen::_scanFiles(const String& path) {
 void BarcodeScreen::_generateFromFile(const String& path) {
   String data = Uni.Storage->readFile(path.c_str());
   if (data.isEmpty()) {
-    ShowStatusAction::show("Cannot open file", 1500);
+    ShowStatusAction::show("Failed", 1500);
     render();
     return;
   }
@@ -109,7 +109,7 @@ void BarcodeScreen::_generateFromFile(const String& path) {
   data.trim();
 
   if (data.length() == 0) {
-    ShowStatusAction::show("File is empty", 1500);
+    ShowStatusAction::show("Empty file", 1500);
     render();
     return;
   }

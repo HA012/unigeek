@@ -221,7 +221,7 @@ void FileManagerScreen::_handleMenuAction(uint8_t index)
         if (Uni.Storage->exists(newPath.c_str())) {
           ShowStatusAction::show("Already exists", 1500);
         } else if (!Uni.Storage->renameFile(targetPath.c_str(), newPath.c_str())) {
-          ShowStatusAction::show("Rename failed", 1500);
+          ShowStatusAction::show("Failed", 1500);
         }
       }
       break;
@@ -232,7 +232,7 @@ void FileManagerScreen::_handleMenuAction(uint8_t index)
       bool ok = _browser.entry(_menuSelIdx).isDir
                   ? _removeDir(targetPath)
                   : Uni.Storage->deleteFile(targetPath.c_str());
-      if (!ok) ShowStatusAction::show("Delete failed", 1500);
+      if (!ok) ShowStatusAction::show("Failed", 1500);
       else {
         int n = Achievement.inc("filemgr_delete_first");
         if (n == 1) Achievement.unlock("filemgr_delete_first");
@@ -256,14 +256,13 @@ void FileManagerScreen::_handleMenuAction(uint8_t index)
 
     case ACT_PASTE: {
       if (_clipPath.isEmpty()) {
-        ShowStatusAction::show("Clipboard empty", 1200);
+        ShowStatusAction::show("Clipboard is empty", 1200);
         break;
       }
       int slash = _clipPath.lastIndexOf('/');
       String clipName = (slash >= 0) ? _clipPath.substring(slash + 1) : _clipPath;
       String destPath = base + "/" + clipName;
-      String msg = _clipOp + " File...";
-      ShowStatusAction::show(msg.c_str(), 0);
+      ShowStatusAction::show(_clipOp == "Copy" ? "Copying..." : "Moving...", 0);
       bool ok = false;
       if (_clipOp == "Copy") {
         String content = Uni.Storage->readFile(_clipPath.c_str());
@@ -272,7 +271,7 @@ void FileManagerScreen::_handleMenuAction(uint8_t index)
         ok = Uni.Storage->renameFile(_clipPath.c_str(), destPath.c_str());
       }
       if (!ok) {
-        ShowStatusAction::show("Operation failed", 1500);
+        ShowStatusAction::show("Failed", 1500);
       } else {
         _clipPath = "";
         _clipOp   = "";

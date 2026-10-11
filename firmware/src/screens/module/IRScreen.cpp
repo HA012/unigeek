@@ -47,7 +47,7 @@ void IRScreen::_openPendingSendFile() {
   _pendingSendFile = "";
 
   if (_txPin < 0) {
-    ShowStatusAction::show("Set TX pin first");
+    ShowStatusAction::show("TX pin not set");
     Screen.goBack();
     return;
   }
@@ -79,7 +79,7 @@ void IRScreen::_showMenu() {
   // Re-read pins in case they were changed under Settings > Pin Setting.
   _txPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_TX, PIN_CONFIG_IR_TX_DEFAULT);
   _rxPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_RX, PIN_CONFIG_IR_RX_DEFAULT);
-  setItems(_menuItems);
+  setItems(_menuItems, 3, _menuReturnIndex);
 }
 
 void IRScreen::onUpdate() {
@@ -165,10 +165,11 @@ void IRScreen::onBack() {
 
 void IRScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     switch (index) {
       case 0: { // Receive
         if (_rxPin < 0) {
-          ShowStatusAction::show("Set RX pin first");
+          ShowStatusAction::show("RX pin not set");
           render();
           return;
         }
@@ -190,7 +191,7 @@ void IRScreen::onItemSelected(uint8_t index) {
       }
       case 1: { // Send
         if (_txPin < 0) {
-          ShowStatusAction::show("Set TX pin first");
+          ShowStatusAction::show("TX pin not set");
           render();
           return;
         }
@@ -204,7 +205,7 @@ void IRScreen::onItemSelected(uint8_t index) {
       }
       case 2: { // TV-B-Gone
         if (_txPin < 0) {
-          ShowStatusAction::show("Set TX pin first");
+          ShowStatusAction::show("TX pin not set");
           render();
           return;
         }
@@ -240,7 +241,7 @@ void IRScreen::onItemSelected(uint8_t index) {
         if (_tvbCancelled) {
           ShowStatusAction::show("Stopped", 1000);
         } else {
-          ShowStatusAction::show("All codes sent!", 1500);
+          ShowStatusAction::show("All codes sent", 1500);
           int n = Achievement.inc("ir_tvbgone_complete");
           if (n == 1) Achievement.unlock("ir_tvbgone_complete");
         }
@@ -266,7 +267,7 @@ void IRScreen::onItemSelected(uint8_t index) {
       String path = String(kRootPath) + "/" + filename + ".ir";
       Uni.Storage->makeDir(kRootPath);
       if (Uni.Storage->writeFile(path.c_str(), content.c_str())) {
-        ShowStatusAction::show("Saved!");
+        ShowStatusAction::show("Saved");
         {
           int n = Achievement.inc("ir_signal_saved");
           if (n == 1)  Achievement.unlock("ir_signal_saved");
@@ -278,7 +279,7 @@ void IRScreen::onItemSelected(uint8_t index) {
           if (n == 1) Achievement.unlock("ir_remote_collection");
         }
       } else {
-        ShowStatusAction::show("Save failed");
+        ShowStatusAction::show("Failed");
       }
       _ir.end();
       _showMenu();
@@ -313,7 +314,7 @@ void IRScreen::onItemSelected(uint8_t index) {
         int n = Achievement.inc("ir_send_first");
         if (n == 1) Achievement.unlock("ir_send_first");
       }
-      ShowStatusAction::show(("Sent: " + _sendSignals[index].name).c_str(), 800);
+      ShowStatusAction::show("Sent", 800);
       render();
     }
     return;
@@ -382,7 +383,7 @@ void IRScreen::_onRecvItemAction(uint8_t index) {
 
   if (strcmp(sel, "replay") == 0) {
     if (_txPin < 0) {
-      ShowStatusAction::show("Set TX pin first");
+      ShowStatusAction::show("TX pin not set");
     } else {
       #if defined(DEVICE_M5STICK_S3)
       if (_txPin == IR_TX_PIN) Uni.Power.setExtOutput(true);
@@ -395,7 +396,7 @@ void IRScreen::_onRecvItemAction(uint8_t index) {
         int n = Achievement.inc("ir_send_first");
         if (n == 1) Achievement.unlock("ir_send_first");
       }
-      ShowStatusAction::show("Sent!", 800);
+      ShowStatusAction::show("Sent", 800);
     }
   } else if (strcmp(sel, "rename") == 0) {
     String newName = InputTextAction::popup("New Name", _captured[index].name);
@@ -429,7 +430,7 @@ void IRScreen::_loadBrowseDir(const String& path) {
   uint8_t n = _browser.load(this, path, ".ir");
 
   if (n == 0 && path == kRootPath) {
-    ShowStatusAction::show("No IR files found in /unigeek/ir/");
+    ShowStatusAction::show("No IR files");
     _showMenu();
     return;
   }
@@ -497,7 +498,7 @@ void IRScreen::_onSendItemAction(uint8_t index) {
       int n = Achievement.inc("ir_send_first");
       if (n == 1) Achievement.unlock("ir_send_first");
     }
-    ShowStatusAction::show("Sent!", 800);
+    ShowStatusAction::show("Sent", 800);
   } else if (strcmp(sel, "rename") == 0) {
     String newName = InputTextAction::popup("New Name", _sendSignals[index].name);
     if (newName.length() > 0) {
@@ -518,10 +519,10 @@ void IRScreen::_onSendItemAction(uint8_t index) {
 void IRScreen::_saveSendFile() {
   String content = IRUtil::saveToString(_sendSignals, _sendCount);
   if (Uni.Storage->writeFile(_sendFilePath.c_str(), content.c_str())) {
-    ShowStatusAction::show("Saved!");
+    ShowStatusAction::show("Saved");
     _sendDirty = false;
   } else {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed");
   }
   _refreshSendList();
 }

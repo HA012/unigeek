@@ -37,6 +37,7 @@ private:
   int8_t _txPin = -1;
   int8_t _rxPin = -1;
   char _titleBuf[32] = "IR Remote";
+  uint8_t _menuReturnIndex = 0;
 
   // Menu — IR TX/RX pins are configured under Settings > Pin Setting.
   ListItem _menuItems[3] = {

@@ -34,7 +34,7 @@ void WifiESPNowChatScreen::onInit()
   WiFi.mode(WIFI_STA);
 
   if (esp_now_init() != ESP_OK) {
-    ShowStatusAction::show("ESP-NOW init failed!", 1500);
+    ShowStatusAction::show("Failed to start ESP-NOW", 1500);
     Screen.goBack();
     return;
   }
@@ -46,7 +46,7 @@ void WifiESPNowChatScreen::onInit()
 
   if (!esp_now_is_peer_exist(_broadcast)) {
     if (esp_now_add_peer(&peer) != ESP_OK) {
-      ShowStatusAction::show("Failed to add peer!", 1500);
+      ShowStatusAction::show("Failed to add peer", 1500);
       Screen.goBack();
       return;
     }
@@ -176,7 +176,7 @@ void WifiESPNowChatScreen::sendMessage(const char* text)
                                reinterpret_cast<uint8_t*>(&msg),
                                sizeof(msg));
   if (res != ESP_OK) {
-    ShowStatusAction::show("Send failed!", 1500);
+    ShowStatusAction::show("Failed", 1500);
     render();
     return;
   }

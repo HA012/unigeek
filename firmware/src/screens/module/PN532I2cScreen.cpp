@@ -279,6 +279,7 @@ void PN532I2cScreen::onRender() {
 void PN532I2cScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
+      _mainMenuIndex = index;
       switch (index) {
         case 0: _doScan14A();         break;
         case 1: _goMifare();          break;
@@ -288,6 +289,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_MENU:
+      _mifareMenuIndex = index;
       switch (index) {
         case 0: _goMifareTag(); break;
         case 1: _goMifareNdef(); break;
@@ -296,9 +298,11 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_ATTACKS_MENU:
+      _mifareAttacksIndex = index;
       if (index == 0) { _resumeReadAfterDict = false; _doDictionaryPicker(); }
       break;
     case STATE_MIFARE_KEYS_MENU:
+      _mifareKeysIndex = index;
       if (index == 0) _doShowKeys();
       else if (index == 1) { _keyDbPickDir = _dictPath; _openKeyDatabases(); }
       break;
@@ -306,6 +310,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       _openKeyDatabase(index);
       break;
     case STATE_MIFARE_TAG_MENU:
+      _mifareTagIndex = index;
       switch (index) {
         case 0: _doReadTag(); break;
         case 1: _doWriteDumpFromFilePicker(); break;
@@ -313,6 +318,7 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_NDEF_MENU:
+      _mifareNdefIndex = index;
       switch (index) {
         case 0:
           _ndefTarget = NDEF_TARGET_MIFARE_CLASSIC;
@@ -337,14 +343,17 @@ void PN532I2cScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_ULTRALIGHT_MENU:
+      _ultralightMenuIndex = index;
       if (index == 0) _goUltralightTag();
       else if (index == 1) _goUltralightNdef();
       break;
     case STATE_ULTRALIGHT_TAG_MENU:
+      _ultralightTagIndex = index;
       if (index == 0) _doUltralightDump();
       else if (index == 1) _doUltralightWrite();
       break;
     case STATE_ULTRALIGHT_NDEF_MENU:
+      _ultralightNdefIndex = index;
       switch (index) {
         case 0:
           _ndefTarget = NDEF_TARGET_ULTRALIGHT;
@@ -425,6 +434,7 @@ void PN532I2cScreen::onBack() {
         _dumpPickDir = "";
         _goMifareTag();
       } else {
+        _pickerRestoreName = _dumpPickDir.substring(_dumpPickDir.lastIndexOf('/') + 1);
         int slash = _dumpPickDir.lastIndexOf('/');
         _dumpPickDir = (slash > 0) ? _dumpPickDir.substring(0, slash) : _dumpPath;
         _doWriteDumpFromFilePicker();
@@ -435,6 +445,7 @@ void PN532I2cScreen::onBack() {
         _keyDbPickDir = "";
         _goMifareKeys();
       } else {
+        _pickerRestoreName = _keyDbPickDir.substring(_keyDbPickDir.lastIndexOf('/') + 1);
         int slash = _keyDbPickDir.lastIndexOf('/');
         _keyDbPickDir = (slash > 0) ? _keyDbPickDir.substring(0, slash) : _dictPath;
         _openKeyDatabases();
@@ -445,6 +456,7 @@ void PN532I2cScreen::onBack() {
         _dictPickDir = "";
         _goMifareAttacks();
       } else {
+        _pickerRestoreName = _dictPickDir.substring(_dictPickDir.lastIndexOf('/') + 1);
         int slash = _dictPickDir.lastIndexOf('/');
         _dictPickDir = (slash > 0) ? _dictPickDir.substring(0, slash) : _dictPath;
         _doDictionaryPicker();
@@ -475,6 +487,7 @@ void PN532I2cScreen::onBack() {
         _ndefPickDir = "";
         _goNdefWrite();
       } else {
+        _pickerRestoreName = _ndefPickDir.substring(_ndefPickDir.lastIndexOf('/') + 1);
         int slash = _ndefPickDir.lastIndexOf('/');
         String parent = (slash > 0) ? _ndefPickDir.substring(0, slash) : String(_ndefPath);
         if (!parent.startsWith(_ndefPath)) parent = _ndefPath;
@@ -586,25 +599,25 @@ void PN532I2cScreen::_cleanup() {
 
 void PN532I2cScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, 5);
+  setItems(_mainItems, 5, _mainMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifare() {
   _state = STATE_MIFARE_MENU;
-  setItems(_mfItems);
+  setItems(_mfItems, sizeof(_mfItems) / sizeof(_mfItems[0]), _mifareMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareAttacks() {
   _state = STATE_MIFARE_ATTACKS_MENU;
-  setItems(_mfAttackItems);
+  setItems(_mfAttackItems, sizeof(_mfAttackItems) / sizeof(_mfAttackItems[0]), _mifareAttacksIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareKeys() {
   _state = STATE_MIFARE_KEYS_MENU;
-  setItems(_mfKeysItems);
+  setItems(_mfKeysItems, sizeof(_mfKeysItems) / sizeof(_mfKeysItems[0]), _mifareKeysIndex);
   render();
 }
 
@@ -621,31 +634,31 @@ void PN532I2cScreen::_goScan14A() {
 
 void PN532I2cScreen::_goMifareTag() {
   _state = STATE_MIFARE_TAG_MENU;
-  setItems(_mfTagItems);
+  setItems(_mfTagItems, sizeof(_mfTagItems) / sizeof(_mfTagItems[0]), _mifareTagIndex);
   render();
 }
 
 void PN532I2cScreen::_goMifareNdef() {
   _state = STATE_MIFARE_NDEF_MENU;
-  setItems(_mfNdefItems);
+  setItems(_mfNdefItems, sizeof(_mfNdefItems) / sizeof(_mfNdefItems[0]), _mifareNdefIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralight() {
   _state = STATE_ULTRALIGHT_MENU;
-  setItems(_ulItems);
+  setItems(_ulItems, sizeof(_ulItems) / sizeof(_ulItems[0]), _ultralightMenuIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralightTag() {
   _state = STATE_ULTRALIGHT_TAG_MENU;
-  setItems(_ulTagItems);
+  setItems(_ulTagItems, sizeof(_ulTagItems) / sizeof(_ulTagItems[0]), _ultralightTagIndex);
   render();
 }
 
 void PN532I2cScreen::_goUltralightNdef() {
   _state = STATE_ULTRALIGHT_NDEF_MENU;
-  setItems(_ulNdefItems);
+  setItems(_ulNdefItems, sizeof(_ulNdefItems) / sizeof(_ulNdefItems[0]), _ultralightNdefIndex);
   render();
 }
 
@@ -1522,7 +1535,14 @@ void PN532I2cScreen::_openKeyDatabases() {
   if (!_keyDbPickDir.length()) _keyDbPickDir = _dictPath;
   _browser.root = _dictPath;
   uint8_t n = _browser.load(this, _keyDbPickDir, ".txt");
-  setItems(_browser.items(), n);
+  uint8_t selected = 0;
+  if (_pickerRestoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_browser.entry(i).name == _pickerRestoreName) { selected = i; break; }
+    }
+    _pickerRestoreName = "";
+  }
+  setItems(_browser.items(), n, selected);
   render();
   if (!n && _keyDbPickDir == _dictPath) ShowStatusAction::show("No key databases");
 }
@@ -1530,7 +1550,10 @@ void PN532I2cScreen::_openKeyDatabases() {
 void PN532I2cScreen::_openKeyDatabase(uint8_t index) {
   if (index >= _browser.count()) return;
   const auto& e = _browser.entry(index);
-  if (e.isDir) { _keyDbPickDir = e.path; _openKeyDatabases(); return; }
+  if (e.isDir) {
+    if (e.name == "..") _pickerRestoreName = _keyDbPickDir.substring(_keyDbPickDir.lastIndexOf('/') + 1);
+    _keyDbPickDir = e.path; _openKeyDatabases(); return;
+  }
   if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable"); return; }
   String content = Uni.Storage->readFile(e.path.c_str());
   _resetRows();
@@ -1588,11 +1611,19 @@ void PN532I2cScreen::_doDictionaryPicker() {
   _browser.root = _dictPath;
   uint8_t n = _browser.load(this, _dictPickDir, ".txt");
   if (n == 0 && _dictPickDir == _dictPath) {
+    _pickerRestoreName = "";
     ShowStatusAction::show("No dictionary files");
     _goMifareAttacks();
     return;
   }
-  setItems(_browser.items(), n);
+  uint8_t selected = 0;
+  if (_pickerRestoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_browser.entry(i).name == _pickerRestoreName) { selected = i; break; }
+    }
+    _pickerRestoreName = "";
+  }
+  setItems(_browser.items(), n, selected);
 }
 
 static bool _parseHexKeyI2c(const String& line, uint8_t out[6]) {
@@ -1614,6 +1645,7 @@ void PN532I2cScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (fileIndex >= _browser.count()) return;
   const auto& e = _browser.entry(fileIndex);
   if (e.isDir) {
+    if (e.name == "..") _pickerRestoreName = _dictPickDir.substring(_dictPickDir.lastIndexOf('/') + 1);
     _dictPickDir = e.path;
     _doDictionaryPicker();
     return;
@@ -3142,7 +3174,14 @@ void PN532I2cScreen::_doWriteNdefFromFile() {
   _browser.root = _ndefPath;
 
   uint8_t n = _browser.load(this, _ndefPickDir, ".ndef");
-  setItems(_browser.items(), n);
+  uint8_t selected = 0;
+  if (_pickerRestoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_browser.entry(i).name == _pickerRestoreName) { selected = i; break; }
+    }
+    _pickerRestoreName = "";
+  }
+  setItems(_browser.items(), n, selected);
   render();
 }
 
@@ -3151,6 +3190,7 @@ void PN532I2cScreen::_doWriteNdefFileSelected(uint8_t fileIndex) {
 
   const auto& e = _browser.entry(fileIndex);
   if (e.isDir) {
+    if (e.name == "..") _pickerRestoreName = _ndefPickDir.substring(_ndefPickDir.lastIndexOf('/') + 1);
     _ndefPickDir = e.path;
     _doWriteNdefFromFile();
     return;
@@ -3608,17 +3648,26 @@ void PN532I2cScreen::_doWriteDumpFromFilePicker() {
 
   uint8_t n = _browser.load(this, _dumpPickDir, BrowseFileView::Mode(".bin", 320, 1024, 4096));
   if (n == 0 && _dumpPickDir == _dumpPath) {
+    _pickerRestoreName = "";
     ShowStatusAction::show("No compatible Classic .bin");
     _goMifareTag();
     return;
   }
-  setItems(_browser.items(), n);
+  uint8_t selected = 0;
+  if (_pickerRestoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_browser.entry(i).name == _pickerRestoreName) { selected = i; break; }
+    }
+    _pickerRestoreName = "";
+  }
+  setItems(_browser.items(), n, selected);
 }
 
 void PN532I2cScreen::_doWriteDumpFileSelected(uint8_t fileIndex) {
   if (fileIndex >= _browser.count()) return;
   const auto& e = _browser.entry(fileIndex);
   if (e.isDir) {
+    if (e.name == "..") _pickerRestoreName = _dumpPickDir.substring(_dumpPickDir.lastIndexOf('/') + 1);
     _dumpPickDir = e.path;
     _doWriteDumpFromFilePicker();
     return;

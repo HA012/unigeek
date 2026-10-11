@@ -7,7 +7,7 @@ A serial terminal that communicates with external hardware over configurable GPI
 
 ## Setup
 
-Open **Utility → UART Terminal** and configure:
+Open **Utilities → UART Terminal** and configure:
 
 | Field | Default | Notes |
 |-------|---------|-------|

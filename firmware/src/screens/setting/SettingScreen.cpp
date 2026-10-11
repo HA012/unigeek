@@ -117,7 +117,7 @@ void SettingScreen::onItemSelected(uint8_t index) {
         int n = Achievement.inc("settings_name_changed");
         if (n == 1) Achievement.unlock("settings_name_changed");
       } else if (result.length() > 15) {
-        ShowStatusAction::show("Name must be 1-15 characters.", 1500);
+        ShowStatusAction::show("Name must be 1-15 characters", 1500);
       }
       _refresh();
       break;
@@ -133,7 +133,7 @@ void SettingScreen::onItemSelected(uint8_t index) {
 
     case SETT_DISP_OFF: {
       int cur    = Config.get(APP_CONFIG_INTERVAL_DISPLAY_OFF, APP_CONFIG_INTERVAL_DISPLAY_OFF_DEFAULT).toInt();
-      int result = InputNumberAction::popup("Display Off (secs)", 5, 3600, cur);
+      int result = InputNumberAction::popup("Display Off (s)", 5, 3600, cur);
       if (result != 0) {
         Config.set(APP_CONFIG_INTERVAL_DISPLAY_OFF, String(result));
         Config.save(Uni.Storage);
@@ -153,7 +153,7 @@ void SettingScreen::onItemSelected(uint8_t index) {
 
     case SETT_POWER_OFF: {
       int cur    = Config.get(APP_CONFIG_INTERVAL_POWER_OFF, APP_CONFIG_INTERVAL_POWER_OFF_DEFAULT).toInt();
-      int result = InputNumberAction::popup("Power Off (secs)", 5, 3600, cur);
+      int result = InputNumberAction::popup("Power Off (s)", 5, 3600, cur);
       if (result != 0) {
         Config.set(APP_CONFIG_INTERVAL_POWER_OFF, String(result));
         Config.save(Uni.Storage);

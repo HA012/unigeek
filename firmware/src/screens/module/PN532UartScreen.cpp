@@ -102,6 +102,7 @@ void PN532UartScreen::onRender() {
 void PN532UartScreen::onItemSelected(uint8_t index) {
   switch (_state) {
     case STATE_MAIN_MENU:
+      _mainMenuIndex = index;
       switch (index) {
         case 0: _doScan14A();         break;
         case 1: _doScan15();          break;
@@ -115,6 +116,7 @@ void PN532UartScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_MIFARE_MENU:
+      _mifareMenuIndex = index;
       switch (index) {
         case 0: _doAuthenticate();    break;
         case 1: _doDumpMemory();      break;
@@ -123,12 +125,14 @@ void PN532UartScreen::onItemSelected(uint8_t index) {
       }
       break;
     case STATE_ULTRALIGHT_MENU:
+      _ultralightMenuIndex = index;
       switch (index) {
         case 0: _doUltralightDump();  break;
         case 1: _doUltralightWrite(); break;
       }
       break;
     case STATE_MAGIC_MENU:
+      _magicMenuIndex = index;
       switch (index) {
         case 0: _doDetectGen1a();     break;
         case 1: _doGen3SetUid();      break;
@@ -180,7 +184,7 @@ bool PN532UartScreen::_initModule() {
   int rx = PinConfig.getInt(PIN_CONFIG_PN532_RX, PIN_CONFIG_PN532_RX_DEFAULT);
   int baud = PinConfig.getInt(PIN_CONFIG_PN532_BAUD, PIN_CONFIG_PN532_BAUD_DEFAULT);
   if (tx < 0 || rx < 0) {
-    ShowStatusAction::show("Configure PN532 TX/RX pins first");
+    ShowStatusAction::show("PN532 TX/RX pins not set");
     Screen.goBack();
     return false;
   }
@@ -191,7 +195,7 @@ bool PN532UartScreen::_initModule() {
   // GPS shares the same HardwareSerial(2) — make sure it's idle before we claim it.
   _hsu = new PN532HSU(2, (int8_t)tx, (int8_t)rx, (uint32_t)baud);
   if (!_hsu->begin()) {
-    ShowStatusAction::show("UART begin failed");
+    ShowStatusAction::show("Failed to start UART");
     delete _hsu; _hsu = nullptr;
     Screen.goBack();
     return false;
@@ -231,25 +235,25 @@ void PN532UartScreen::_cleanup() {
 
 void PN532UartScreen::_goMain() {
   _state = STATE_MAIN_MENU;
-  setItems(_mainItems, _isKiller ? 9 : 7);
+  setItems(_mainItems, _isKiller ? 9 : 7, _mainMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goMifare() {
   _state = STATE_MIFARE_MENU;
-  setItems(_mfItems);
+  setItems(_mfItems, sizeof(_mfItems) / sizeof(_mfItems[0]), _mifareMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goUltralight() {
   _state = STATE_ULTRALIGHT_MENU;
-  setItems(_ulItems);
+  setItems(_ulItems, sizeof(_ulItems) / sizeof(_ulItems[0]), _ultralightMenuIndex);
   render();
 }
 
 void PN532UartScreen::_goMagic() {
   _state = STATE_MAGIC_MENU;
-  setItems(_magicItems);
+  setItems(_magicItems, sizeof(_magicItems) / sizeof(_magicItems[0]), _magicMenuIndex);
   render();
 }
 
@@ -313,7 +317,7 @@ bool PN532UartScreen::_scanCardOrShow(uint32_t timeoutMs) {
     }
     delay(50);
   }
-  ShowStatusAction::show("No card found");
+  ShowStatusAction::show("Tag not detected");
   return false;
 }
 
@@ -357,7 +361,7 @@ void PN532UartScreen::_showFirmwareInfo() {
 void PN532UartScreen::_doScan14A() {
   _state = STATE_SCAN_14A;
   PN532::Target14A t;
-  ShowStatusAction::show("Scanning 14A...", 0);
+  ShowStatusAction::show("Scanning...", 0);
   bool ok = false;
   uint32_t start = millis();
   while (millis() - start < 5000) {
@@ -370,7 +374,7 @@ void PN532UartScreen::_doScan14A() {
   }
 
   if (!ok) {
-    ShowStatusAction::show("No card");
+    ShowStatusAction::show("Tag not detected");
     _goMain();
     return;
   }
@@ -403,7 +407,7 @@ void PN532UartScreen::_doScan14A() {
 
 void PN532UartScreen::_doScan15() {
   _state = STATE_SCAN_15;
-  ShowStatusAction::show("Scanning 15693...", 0);
+  ShowStatusAction::show("Scanning...", 0);
   PN532::Target15 t;
   bool ok = false;
   uint32_t start = millis();
@@ -415,7 +419,7 @@ void PN532UartScreen::_doScan15() {
     if (_pn->listPassiveTarget15(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No 15693 tag"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMain(); return; }
 
   _state = STATE_SCAN_RESULT;
   _resetRows();
@@ -432,7 +436,7 @@ void PN532UartScreen::_doScan15() {
 
 void PN532UartScreen::_doScanLF() {
   _state = STATE_SCAN_LF;
-  ShowStatusAction::show("Scanning EM4100...", 0);
+  ShowStatusAction::show("Scanning...", 0);
   PN532::TargetLF t;
   bool ok = false;
   uint32_t start = millis();
@@ -444,7 +448,7 @@ void PN532UartScreen::_doScanLF() {
     if (_pn->listPassiveTargetEM4100(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No LF tag"); _goMain(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMain(); return; }
 
   _state = STATE_SCAN_RESULT;
   _resetRows();
@@ -513,7 +517,7 @@ void PN532UartScreen::_doAuthenticate() {
 }
 
 void PN532UartScreen::_doDumpMemory() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
 
@@ -591,7 +595,7 @@ void PN532UartScreen::_doDumpMemory() {
 }
 
 void PN532UartScreen::_doShowKeys() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
 
@@ -607,7 +611,7 @@ void PN532UartScreen::_doShowKeys() {
 }
 
 void PN532UartScreen::_doDictionaryPicker() {
-  if (!_hasCard) { ShowStatusAction::show("Authenticate first"); _goMifare(); return; }
+  if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
 
   _state = STATE_DICT_SELECT;
   if (_dictPickDir.length() == 0) _dictPickDir = _dictPath;
@@ -718,7 +722,7 @@ void PN532UartScreen::_doUltralightDump() {
     if (_pn->listPassiveTarget14A(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goUltralight(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goUltralight(); return; }
 
   _state = STATE_RAW_RESULT;
   _resetRows();
@@ -753,7 +757,7 @@ void PN532UartScreen::_doUltralightWrite() {
     if (_pn->listPassiveTarget14A(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goUltralight(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goUltralight(); return; }
 
   int page = InputNumberAction::popup("Page (4..39)", 4, 39, 4);
   if (InputNumberAction::wasCancelled()) { _goUltralight(); return; }
@@ -761,7 +765,7 @@ void PN532UartScreen::_doUltralightWrite() {
   String hex = InputTextAction::popup("Page data (8 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) { _goUltralight(); return; }
   hex.replace(" ", "");
-  if (hex.length() != 8) { ShowStatusAction::show("Need 8 hex chars"); _goUltralight(); return; }
+  if (hex.length() != 8) { ShowStatusAction::show("Enter 8 hex characters"); _goUltralight(); return; }
 
   uint8_t data[4];
   for (int i = 0; i < 4; i++) {
@@ -772,9 +776,9 @@ void PN532UartScreen::_doUltralightWrite() {
   }
 
   if (_pn->ultralightWrite4((uint8_t)page, data)) {
-    ShowStatusAction::show("Write OK");
+    ShowStatusAction::show("Written");
   } else {
-    ShowStatusAction::show("Write failed");
+    ShowStatusAction::show("Failed");
   }
   _goUltralight();
 }
@@ -791,7 +795,7 @@ void PN532UartScreen::_doDetectGen1a() {
     if (_pn->listPassiveTarget14A(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goMagic(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMagic(); return; }
   bool gen1a = _pn->isGen1a();
   if (gen1a) {
     int n = Achievement.inc("pn532_magic_detect");
@@ -813,7 +817,7 @@ void PN532UartScreen::_doGen3SetUid() {
     if (_pn->listPassiveTarget14A(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goMagic(); return; }
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMagic(); return; }
 
   String hex = InputTextAction::popup("New UID (8 or 14 hex)", "", InputTextAction::INPUT_HEX);
   if (InputTextAction::wasCancelled()) { _goMagic(); return; }
@@ -838,7 +842,7 @@ void PN532UartScreen::_doGen3SetUid() {
     int n = Achievement.inc("pn532_magic_detect");
     if (n == 1) Achievement.unlock("pn532_magic_detect");
   }
-  ShowStatusAction::show(ok2 ? "Gen3 UID set" : "Set UID failed");
+  ShowStatusAction::show(ok2 ? "Gen3 UID set" : "Failed");
   _goMagic();
 }
 
@@ -854,8 +858,8 @@ void PN532UartScreen::_doGen3LockUid() {
     if (_pn->listPassiveTarget14A(t, 200)) { ok = true; break; }
     delay(50);
   }
-  if (!ok) { ShowStatusAction::show("No card"); _goMagic(); return; }
-  ShowStatusAction::show(_pn->gen3LockUid() ? "Gen3 UID locked" : "Lock failed");
+  if (!ok) { ShowStatusAction::show("Tag not detected"); _goMagic(); return; }
+  ShowStatusAction::show(_pn->gen3LockUid() ? "Gen3 UID locked" : "Failed");
   _goMagic();
 }
 
@@ -958,7 +962,7 @@ void PN532UartScreen::_doSaveDump() {
 
   fs::File f = Uni.Storage->open(path.c_str(), "w");
   if (!f) {
-    ShowStatusAction::show("Save failed");
+    ShowStatusAction::show("Failed");
     render();
     return;
   }
@@ -990,7 +994,7 @@ void PN532UartScreen::_doLoadAndEmulate(uint8_t fileIndex) {
   uint8_t img[1024];
   memset(img, 0x00, sizeof(img));
   fs::File f = Uni.Storage->open(path.c_str(), "r");
-  if (!f) { ShowStatusAction::show("Read failed"); _goMain(); return; }
+  if (!f) { ShowStatusAction::show("Failed"); _goMain(); return; }
   f.read(img, sizeof(img));
   f.close();
 

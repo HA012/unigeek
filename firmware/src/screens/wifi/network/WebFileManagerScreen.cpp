@@ -72,19 +72,20 @@ void WebFileManagerScreen::_drawRunning() {
 }
 
 void WebFileManagerScreen::_start() {
-  ShowStatusAction::show("Starting server...", 0);
+  _state = STATE_RUNNING;
+  setItems(nullptr, 0);
+  render();
+  ShowStatusAction::show("Starting...", 0);
   auto& sw = Uni.Server;
   if (!sw.enableFileManager()) {
     ShowStatusAction::show(sw.lastError().c_str());
     _showMenu();
     return;
   }
-  _state   = STATE_RUNNING;
   _ipUrl   = sw.fileManagerUrl();
   _mdnsUrl = sw.fileManagerMdnsUrl();
   int nw = Achievement.inc("wifi_wfm_started");
   if (nw == 1) Achievement.unlock("wifi_wfm_started");
-  setItems(nullptr, 0);
   render();
 }
 

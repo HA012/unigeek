@@ -145,7 +145,7 @@ void PortScannerScreen::_showInput(uint8_t selectedIndex) {
 void PortScannerScreen::_scan() {
   if (WiFi.localIP()[0] == 0 && WiFi.localIP()[1] == 0 &&
       WiFi.localIP()[2] == 0 && WiFi.localIP()[3] == 0) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -208,7 +208,7 @@ void PortScannerScreen::_scan() {
       ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
-        ShowStatusAction::show("Could not resolve target", 900);
+        ShowStatusAction::show("Failed to resolve target", 900);
         done++;
         continue;
       }

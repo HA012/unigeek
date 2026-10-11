@@ -26,11 +26,12 @@ void TotpScreen::_reloadMenu() {
   for (uint8_t i = 0; i < _accountCount; i++) _items[i] = { _accounts[i].name, nullptr };
   _items[_accountCount] = { "Add New", nullptr };
   _state = STATE_MENU;
-  setItems(_items, _accountCount + 1);
+  setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
 }
 
 void TotpScreen::onUpdate() {
   if (_state == STATE_MENU || _state == STATE_ADD) {
+    if (_state == STATE_MENU) _menuIndex = _selectedIndex;
     if (_state == STATE_MENU && _selectedIndex < _accountCount) {
       if (!Uni.Nav->isPressed()) _holdFired = false;
       if (!_holdFired && Uni.Nav->isPressed() && Uni.Nav->heldDuration() >= 700) {
@@ -55,7 +56,7 @@ void TotpScreen::onUpdate() {
   auto dir = Uni.Nav->readDirection();
   if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
     _state = STATE_MENU;
-    setItems(_items, _accountCount + 1);
+    setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
     render();
   }
 }
@@ -71,7 +72,7 @@ void TotpScreen::onRender() {
 void TotpScreen::onBack() {
   if (_state == STATE_ADD) {
     _state = STATE_MENU;
-    setItems(_items, _accountCount + 1);
+    setItems(_items, _accountCount + 1, (_menuIndex <= _accountCount) ? _menuIndex : _accountCount);
     render();
     return;
   }
@@ -221,7 +222,7 @@ void TotpScreen::_updateAddLabels() {
 
 void TotpScreen::_saveNew() {
   if (_pendingName.length() == 0 || _pendingSecret.length() == 0) {
-    ShowStatusAction::show("Name+Secret required", 1200);
+    ShowStatusAction::show("Name or secret not set", 1200);
     render();
     return;
   }
@@ -233,9 +234,9 @@ void TotpScreen::_saveNew() {
   if (ok) {
     int n = Achievement.inc("totp_add_account");
     if (n == 1) Achievement.unlock("totp_add_account");
-    ShowStatusAction::show("Saved!", 1000);
+    ShowStatusAction::show("Saved", 1000);
   } else {
-    ShowStatusAction::show("Save failed", 1000);
+    ShowStatusAction::show("Failed", 1000);
   }
   _reloadMenu();
 }
@@ -261,7 +262,7 @@ void TotpScreen::_showAccountMenu(uint8_t index) {
 void TotpScreen::_deleteAccount(uint8_t index) {
   String path = String(DIR) + "/" + _accounts[index].name + ".key";
   bool ok = Uni.Storage->deleteFile(path.c_str());
-  ShowStatusAction::show(ok ? "Deleted" : "Delete failed", 1000);
+  ShowStatusAction::show(ok ? "Deleted" : "Failed", 1000);
   _reloadMenu();
 }
 

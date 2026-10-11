@@ -239,7 +239,7 @@ void UartTerminalScreen::_configNetwork() {
     _networkBssid = bssid;
     ShowStatusAction::show(("Connected to " + String(sel)).c_str(), 1500);
   } else if (res == WifiUtility::CONNECT_FAILED) {
-    ShowStatusAction::show("Connection failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
   }
   _updateLabels();
   render();
@@ -373,7 +373,7 @@ void UartTerminalScreen::_openLog() {
     int n = Achievement.inc("uart_log_saved");
     if (n == 1) Achievement.unlock("uart_log_saved");
   } else {
-    _log.addLine("Log open failed", TFT_RED);
+    _log.addLine("Failed to open log", TFT_RED);
   }
 }
 
@@ -401,7 +401,7 @@ void UartTerminalScreen::_startWifiStream() {
   } else {
     // SAVE_STREAM_NET — connection already established in _configNetwork
     if (WiFi.status() != WL_CONNECTED) {
-      _log.addLine("WiFi not connected", TFT_RED);
+      _log.addLine("Not connected", TFT_RED);
       return;
     }
     _tcpServer.begin();

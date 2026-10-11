@@ -52,7 +52,7 @@ void FtpClientScreen::onUpdate() {
       return;
     }
     if (_workerState == WORKER_FAILED || _workerState == WORKER_CLOSED) {
-      String err = "FTP connection failed";
+      String err = "Failed";
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_commandError.length()) err = _commandError;
         xSemaphoreGive(_mutex);
@@ -74,7 +74,7 @@ void FtpClientScreen::onUpdate() {
 
   if (_state == STATE_REMOTE_LOADING) {
     if (_workerState == WORKER_FAILED || _workerState == WORKER_CLOSED) {
-      String err = "FTP session closed";
+      String err = "Session closed";
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_commandError.length()) err = _commandError;
         xSemaphoreGive(_mutex);
@@ -88,7 +88,7 @@ void FtpClientScreen::onUpdate() {
       bool ok = _commandOk;
       _commandDone = false;
       if (!ok) {
-        String err = "Directory read failed";
+        String err = "Failed to read directory";
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
           if (_commandError.length()) err = _commandError;
           xSemaphoreGive(_mutex);
@@ -135,12 +135,12 @@ void FtpClientScreen::onUpdate() {
       render();
 
       if (ok) {
-        ShowStatusAction::show(upload ? "Upload complete" : "Download complete", 1400);
+        ShowStatusAction::show(upload ? "Uploaded" : "Downloaded", 1400);
       } else if (err == "Cancelled") {
-        ShowStatusAction::show(upload ? "Upload cancelled" : "Download cancelled", 1200);
+        ShowStatusAction::show("Cancelled", 1200);
       } else {
         ShowStatusAction::show(
-          err.length() ? err.c_str() : (upload ? "Upload failed" : "Download failed"),
+          err.length() ? err.c_str() : "Failed",
           1600);
       }
       render();
@@ -244,7 +244,10 @@ void FtpClientScreen::onBack() {
     return;
   }
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath != "." && _remotePath != "/") {
+      _remoteRestoreName = _baseName(_remotePath);
+      _requestList(_parentRemotePath(_remotePath));
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       _state = STATE_LOCAL_BROWSER;
       render();
     } else {
@@ -253,7 +256,14 @@ void FtpClientScreen::onBack() {
     return;
   }
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalUploadDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
   Screen.goBack();
@@ -333,18 +343,18 @@ void FtpClientScreen::_configPassword() {
 
 void FtpClientScreen::_connect() {
   if (!_host.length()) {
-    ShowStatusAction::show("Host required", 1200); render(); return;
+    ShowStatusAction::show("Host not set", 1200); render(); return;
   }
   if (!_username.length()) {
-    ShowStatusAction::show("Username required", 1200); render(); return;
+    ShowStatusAction::show("Username not set", 1200); render(); return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected", 1500); render(); return;
+    ShowStatusAction::show("Not connected", 1500); render(); return;
   }
 
   if (!_mutex) _mutex = xSemaphoreCreateMutex();
   if (!_mutex || !_startWorker()) {
-    ShowStatusAction::show("FTP task failed", 1500);
+    ShowStatusAction::show("Failed to start", 1500);
     render();
     return;
   }
@@ -375,7 +385,7 @@ void FtpClientScreen::_beginDownload() {
 
 void FtpClientScreen::_beginUpload() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -386,11 +396,17 @@ void FtpClientScreen::_beginUpload() {
   _loadLocalUploadDir("/");
 }
 
-void FtpClientScreen::_loadLocalUploadDir(const String& path) {
+void FtpClientScreen::_loadLocalUploadDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -398,7 +414,12 @@ void FtpClientScreen::_selectLocalUpload(uint8_t index) {
   if (index >= _localBrowser.count()) return;
   const auto& e = _localBrowser.entry(index);
   if (e.isDir) {
-    _loadLocalUploadDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalUploadDir(e.path, child);
+    } else {
+      _loadLocalUploadDir(e.path);
+    }
     return;
   }
   _chooseUploadSource(e.path, e.name, false);
@@ -445,7 +466,10 @@ void FtpClientScreen::_chooseUploadDestinationMode() {
 }
 
 void FtpClientScreen::_requestList(const String& path) {
-  if (_workerState != WORKER_READY || !_mutex) return;
+  if (_workerState != WORKER_READY || !_mutex) {
+    _remoteRestoreName = "";
+    return;
+  }
 
   if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     _commandPath = path;
@@ -482,7 +506,7 @@ void FtpClientScreen::_copyRemoteListing() {
     out++;
   }
 
-  if (_remotePath != ".") {
+  if (_remotePath != "." && _remotePath != "/") {
     _remoteNames[out] = "..";
     _remoteSubs[out] = "DIR";
     _remotePaths[out] = _parentRemotePath(_remotePath);
@@ -510,7 +534,14 @@ void FtpClientScreen::_copyRemoteListing() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void FtpClientScreen::_selectRemote(uint8_t index) {
@@ -520,12 +551,14 @@ void FtpClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       _requestList(_remotePaths[index]);
     }
     return;
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     _requestList(_remotePaths[index]);
     return;
   }
@@ -575,7 +608,7 @@ bool FtpClientScreen::_confirmTransfer(const char* title) {
 
 void FtpClientScreen::_requestDownload(const String& remotePath, bool directory) {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -605,7 +638,7 @@ void FtpClientScreen::_requestDownload(const String& remotePath, bool directory)
 
   ProgressView::init();
   ProgressView::progress(
-    directory ? "Preparing directory..." : _progressName.c_str(), 0);
+    directory ? "Preparing..." : (_transferIsUpload ? "Uploading..." : "Downloading..."), 0);
 }
 
 void FtpClientScreen::_requestUpload(const String& remoteDir) {
@@ -632,7 +665,7 @@ void FtpClientScreen::_requestUpload(const String& remoteDir) {
 
   ProgressView::init();
   ProgressView::progress(
-    _uploadIsDir ? "Preparing directory..." : _uploadName.c_str(), 0);
+    _uploadIsDir ? "Preparing..." : "Uploading...", 0);
 }
 
 void FtpClientScreen::_updateTransferProgress() {
@@ -650,11 +683,11 @@ void FtpClientScreen::_updateTransferProgress() {
   }
 
   uint8_t pct = total ? (uint8_t)min<uint64_t>(100, (done * 100) / total) : 0;
-  String msg;
-  if (filesTotal > 1)
-    msg = name + "\n" + String(filesDone) + "/" + String(filesTotal) + " files";
-  else
-    msg = name.length() ? name : (_transferIsUpload ? "Uploading..." : "Downloading...");
+  String msg = _transferIsUpload ? "Uploading..." : "Downloading...";
+  if (filesTotal > 1) {
+    msg = String(_transferIsUpload ? "Uploading (" : "Downloading (") +
+          String(filesDone) + "/" + String(filesTotal) + ")...";
+  }
 
   ProgressView::progress(msg.c_str(), pct);
 }
@@ -719,7 +752,7 @@ void FtpClientScreen::_workerEntry(void* arg) {
 
 void FtpClientScreen::_setWorkerError(const char* message) {
   if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    _commandError = message ? message : "FTP failed";
+    _commandError = message ? message : "Failed";
     xSemaphoreGive(_mutex);
   }
   _workerState = WORKER_FAILED;
@@ -1023,7 +1056,7 @@ bool FtpClientScreen::_workerList(void* controlOpaque, const String& path) {
   uint8_t count = 0;
   if (!_ftpList(controlOpaque, path, temp, count)) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "FTP list failed";
+      _commandError = "Failed to list directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1460,7 +1493,7 @@ void FtpClientScreen::_worker() {
   int port = _port;
 
   if (!control.connect(host.c_str(), port)) {
-    _setWorkerError("FTP connect failed");
+    _setWorkerError("Failed to connect");
     goto cleanup;
   }
 
@@ -1480,17 +1513,17 @@ void FtpClientScreen::_worker() {
     if (code == 331) {
       if (!_ftpCommand(&control, "PASS " + password, code, reply) ||
           (code != 230 && code != 202)) {
-        _setWorkerError("FTP authentication failed");
+        _setWorkerError("Authentication failed");
         goto cleanup;
       }
     } else if (code != 230) {
-      _setWorkerError("FTP authentication failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
 
     // Binary mode is required for arbitrary files.
     if (!_ftpCommand(&control, "TYPE I", code, reply) || code != 200) {
-      _setWorkerError("FTP binary mode failed");
+      _setWorkerError("Failed to set binary mode");
       goto cleanup;
     }
   }
@@ -1551,7 +1584,7 @@ void FtpClientScreen::_worker() {
       }
     } else if (!ok && _mutex &&
                xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      if (!_commandError.length()) _commandError = "FTP operation failed";
+      if (!_commandError.length()) _commandError = "Failed";
       xSemaphoreGive(_mutex);
     }
 
@@ -1585,8 +1618,8 @@ void FtpClientScreen::_renderConnecting() {
   lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
 
   String msg = (_state == STATE_REMOTE_LOADING)
-             ? "Loading remote files..."
-             : "Connecting to " + _host + ":" + String(_port) + "...";
+             ? "Loading..."
+             : "Connecting...";
   lcd.drawString(msg.c_str(), x + w / 2, y + h / 2);
   lcd.setTextDatum(TL_DATUM);
 }

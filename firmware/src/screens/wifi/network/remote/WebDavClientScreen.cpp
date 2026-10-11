@@ -260,7 +260,11 @@ void WebDavClientScreen::onBack() {
   }
 
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath.length()) {
+      _remoteRestoreName = _baseName(_remotePath);
+      if (!_loadRemote(_parentRemote(_remotePath)))
+        ShowStatusAction::show(_lastError.length() ? _lastError.c_str() : "Failed to list remote files", 1500);
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       _state = STATE_LOCAL_BROWSER;
       render();
     } else {
@@ -270,7 +274,14 @@ void WebDavClientScreen::onBack() {
   }
 
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
 
@@ -353,7 +364,7 @@ void WebDavClientScreen::_connect() {
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     render();
     return;
   }
@@ -361,7 +372,7 @@ void WebDavClientScreen::_connect() {
   uint8_t count = 0;
   if (!_propfind("", nullptr, count)) {
     ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "WebDAV connection failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to connect",
         1700);
     render();
     return;
@@ -374,7 +385,7 @@ void WebDavClientScreen::_beginDownload() {
   _remoteMode = REMOTE_DOWNLOAD;
   if (!_loadRemote("")) {
     ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "Remote listing failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
         1500);
     _showActions();
   }
@@ -382,7 +393,7 @@ void WebDavClientScreen::_beginDownload() {
 
 void WebDavClientScreen::_beginUpload() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -394,10 +405,17 @@ void WebDavClientScreen::_beginUpload() {
   _loadLocalDir("/");
 }
 
-void WebDavClientScreen::_loadLocalDir(const String& path) {
+void WebDavClientScreen::_loadLocalDir(const String& path, const String& restoreName) {
+  _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -406,7 +424,12 @@ void WebDavClientScreen::_selectLocal(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadLocalDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalDir(e.path, child);
+    } else {
+      _loadLocalDir(e.path);
+    }
     return;
   }
   _chooseUploadSource(e.path, e.name, false);
@@ -451,7 +474,7 @@ void WebDavClientScreen::_chooseUploadDestinationMode() {
   _remoteMode = REMOTE_UPLOAD_DEST;
   if (!_loadRemote("")) {
     ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "Remote listing failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
         1500);
     _state = STATE_LOCAL_BROWSER;
     render();
@@ -517,7 +540,14 @@ void WebDavClientScreen::_buildRemoteItems() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void WebDavClientScreen::_selectRemote(uint8_t index) {
@@ -527,18 +557,20 @@ void WebDavClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       if (!_loadRemote(_remotePaths[index]))
         ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "Remote listing failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
         1500);
     }
     return;
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     if (!_loadRemote(_remotePaths[index]))
       ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "Remote listing failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to list remote files",
         1500);
     return;
   }
@@ -559,7 +591,7 @@ void WebDavClientScreen::_selectRemote(uint8_t index) {
   _startProgress(false, _remoteNames[index], _remoteSizes[index], 1);
   bool ok = _getFile(_remotePaths[index], local, _remoteSizes[index]);
   _finishProgress(ok,
-      ok ? "" : (_lastError.length() ? _lastError.c_str() : "Download failed"));
+      ok ? "" : (_lastError.length() ? _lastError.c_str() : "Failed"));
 }
 
 void WebDavClientScreen::_holdRemote(uint8_t index) {
@@ -596,7 +628,7 @@ void WebDavClientScreen::_holdRemote(uint8_t index) {
   }
   _finishProgress(ok,
       ok ? "" : (_lastError.length() ? _lastError.c_str()
-                                     : "Directory download failed"));
+                                     : "Failed to download directory"));
 }
 
 void WebDavClientScreen::_chooseUploadDestination(const String& path) {
@@ -609,7 +641,7 @@ void WebDavClientScreen::_chooseUploadDestination(const String& path) {
   String dir = _normalizeRemote(path, true);
   if (!_ensureCollection(dir)) {
     ShowStatusAction::show(
-        _lastError.length() ? _lastError.c_str() : "Remote directory failed",
+        _lastError.length() ? _lastError.c_str() : "Failed to access remote directory",
         1500);
     _state = STATE_LOCAL_BROWSER;
     render();
@@ -628,7 +660,7 @@ void WebDavClientScreen::_chooseUploadDestination(const String& path) {
     }
     _finishProgress(ok,
         ok ? "" : (_lastError.length() ? _lastError.c_str()
-                                       : "Directory upload failed"));
+                                       : "Failed to upload directory"));
   } else {
     fs::File f = Uni.Storage->open(_uploadLocalPath.c_str(), "r");
     uint64_t size = f ? (uint64_t)f.size() : 0;
@@ -637,7 +669,7 @@ void WebDavClientScreen::_chooseUploadDestination(const String& path) {
     _startProgress(true, _uploadName, size, 1);
     bool ok = _putFile(_uploadLocalPath, _joinRemote(dir, _uploadName), size);
     _finishProgress(ok,
-        ok ? "" : (_lastError.length() ? _lastError.c_str() : "Upload failed"));
+        ok ? "" : (_lastError.length() ? _lastError.c_str() : "Failed"));
   }
 }
 
@@ -701,7 +733,7 @@ bool WebDavClientScreen::_propfind(const String& path,
   String xml;
   if (!_davReadBodyLimited(http, xml, MAX_PROPFIND_BYTES)) {
     http.end();
-    _lastError = "WebDAV response too large";
+    _lastError = "Response too large";
     return false;
   }
   http.end();
@@ -847,7 +879,7 @@ bool WebDavClientScreen::_getFile(const String& remotePath,
 
   fs::File out = Uni.Storage->open(localPath.c_str(), "w");
   if (!out) {
-    _lastError = "Local file open failed";
+    _lastError = "Failed to open local file";
     return false;
   }
 
@@ -892,7 +924,7 @@ bool WebDavClientScreen::_getFile(const String& remotePath,
     http.end();
     out.close();
     Uni.Storage->deleteFile(localPath.c_str());
-    _lastError = "HTTP stream unavailable";
+    _lastError = "HTTP stream not available";
     return false;
   }
 
@@ -913,7 +945,7 @@ bool WebDavClientScreen::_getFile(const String& remotePath,
       }
 
       if (out.write(buf, n) != (size_t)n) {
-        _lastError = "SD write failed";
+        _lastError = "Failed to write to SD";
         ok = false;
         break;
       }
@@ -926,7 +958,7 @@ bool WebDavClientScreen::_getFile(const String& remotePath,
     } else {
       if (remaining == 0) break;
       if (millis() - lastData > 12000) {
-        _lastError = "Download timed out";
+        _lastError = "Download timeout";
         ok = false;
         break;
       }
@@ -1009,7 +1041,7 @@ bool WebDavClientScreen::_scanRemote(const String& path,
 
   RemoteEntry* temp = new (std::nothrow) RemoteEntry[MAX_REMOTE_ENTRIES];
   if (!temp) {
-    _lastError = "Not enough memory";
+    _lastError = "Out of memory";
     return false;
   }
 
@@ -1049,7 +1081,7 @@ bool WebDavClientScreen::_downloadTree(const String& remote,
 
   RemoteEntry* temp = new (std::nothrow) RemoteEntry[MAX_REMOTE_ENTRIES];
   if (!temp) {
-    _lastError = "Not enough memory";
+    _lastError = "Out of memory";
     return false;
   }
 
@@ -1390,8 +1422,8 @@ const char* WebDavClientScreen::_httpStatusText(int code) const {
     case 401: return "Authentication failed";
     case 403: return "Permission denied";
     case 404: return "Remote path not found";
-    case 405: return "WebDAV method not allowed";
-    case 409: return "Remote parent missing";
+    case 405: return "Method not allowed";
+    case 409: return "Remote parent not found";
     case 412: return "Precondition failed";
     case 423: return "Remote resource locked";
     case 507: return "Remote storage full";
@@ -1430,7 +1462,7 @@ void WebDavClientScreen::_startProgress(bool upload,
   _progressName = name;
   _state = STATE_TRANSFER;
   ProgressView::init();
-  ProgressView::progress(name.c_str(), 0);
+  ProgressView::progress(upload ? "Uploading..." : "Downloading...", 0);
 }
 
 void WebDavClientScreen::_updateProgress() {
@@ -1438,10 +1470,11 @@ void WebDavClientScreen::_updateProgress() {
       ? (uint8_t)min<uint64_t>(100, (_progressDone * 100) / _progressTotal)
       : 0;
 
-  String msg = _progressName;
-  if (_progressFilesTotal > 1)
-    msg += "\n" + String(_progressFilesDone) + "/" +
-           String(_progressFilesTotal) + " files";
+  String msg = _transferIsUpload ? "Uploading..." : "Downloading...";
+  if (_progressFilesTotal > 1) {
+    msg = String(_transferIsUpload ? "Uploading (" : "Downloading (") +
+          String(_progressFilesDone) + "/" + String(_progressFilesTotal) + ")...";
+  }
 
   ProgressView::progress(msg.c_str(), pct);
 }
@@ -1452,13 +1485,12 @@ void WebDavClientScreen::_finishProgress(bool ok, const char* error) {
   render();
 
   if (_cancelTransfer) {
-    ShowStatusAction::show(
-        _transferIsUpload ? "Upload cancelled" : "Download cancelled", 1300);
+    ShowStatusAction::show("Cancelled", 1300);
   } else if (ok) {
     ShowStatusAction::show(
-        _transferIsUpload ? "Upload complete" : "Download complete", 1400);
+        _transferIsUpload ? "Uploaded" : "Downloaded", 1400);
   } else {
-    ShowStatusAction::show(error && *error ? error : "Transfer failed", 1600);
+    ShowStatusAction::show(error && *error ? error : "Failed", 1600);
   }
   render();
 }

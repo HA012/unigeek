@@ -1,6 +1,6 @@
 ## File Manager
 
-Accessed from **Utility > File Manager**. Browse, view, and manage files on the active storage (SD if present, otherwise LittleFS). Directories are listed first, then files, both sorted alphabetically. The title bar shows the current folder name (or `File Manager` at the root).
+Accessed from **Utilities > File Manager**. Browse, view, and manage files on the active storage (SD if present, otherwise LittleFS). Directories are listed first, then files, both sorted alphabetically. The title bar shows the current folder name (or `File Manager` at the root).
 
 > [!note]
 > Operates on `Uni.Storage` — the same primary storage used by every other module. Renames, deletes, and pastes affect real files. There is no undo.

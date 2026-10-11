@@ -53,7 +53,7 @@ void M5RF433Screen::_showMenu() {
   _chromeDrawn = false;
   strcpy(_titleBuf, "M5 RF433");
   _updateMfcodesSub();
-  setItems(_menuItems, kMenuCount);
+  setItems(_menuItems, kMenuCount, _menuReturnIndex);
 }
 
 void M5RF433Screen::_updateMfcodesSub() {
@@ -61,7 +61,7 @@ void M5RF433Screen::_updateMfcodesSub() {
   if (store.isLoaded()) {
     _mfcodesSub = String((unsigned)store.count()) + " keys";
   } else {
-    _mfcodesSub = "not loaded";
+    _mfcodesSub = "Not loaded";
   }
   _menuItems[3].sublabel = _mfcodesSub.c_str();
 }
@@ -71,10 +71,9 @@ void M5RF433Screen::_reloadMfcodes() {
   store.reload();
   char msg[80];
   if (store.count() > 0) {
-    snprintf(msg, sizeof(msg), "Loaded %u keys from %s",
-             (unsigned)store.count(), KeeloqKeystore::PATH);
+    snprintf(msg, sizeof(msg), "Loaded %u keys", (unsigned)store.count());
   } else {
-    snprintf(msg, sizeof(msg), "No keys at %s", KeeloqKeystore::PATH);
+    snprintf(msg, sizeof(msg), "No keys");
   }
   ShowStatusAction::show(msg, 2500);
   _updateMfcodesSub();
@@ -82,6 +81,7 @@ void M5RF433Screen::_reloadMfcodes() {
 }
 
 void M5RF433Screen::_onMenuSelected(uint8_t index) {
+  _menuReturnIndex = index;
   switch (index) {
     case 0: { // Receive
       if (_rxPin < 0) {

@@ -97,7 +97,7 @@ void SftpClientScreen::onUpdate() {
     }
 
     if (_workerState == WORKER_FAILED || _workerState == WORKER_CLOSED) {
-      String err = "SFTP connection failed";
+      String err = "Failed";
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_commandError.length()) err = _commandError;
         xSemaphoreGive(_mutex);
@@ -123,7 +123,7 @@ void SftpClientScreen::onUpdate() {
 
   if (_state == STATE_REMOTE_LOADING) {
     if (_workerState == WORKER_FAILED || _workerState == WORKER_CLOSED) {
-      String err = "SFTP list failed";
+      String err = "Failed to list directory";
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
         if (_commandError.length()) err = _commandError;
         xSemaphoreGive(_mutex);
@@ -137,7 +137,7 @@ void SftpClientScreen::onUpdate() {
       bool ok = _commandOk;
       _commandDone = false;
       if (!ok) {
-        String err = "Directory read failed";
+        String err = "Failed to read directory";
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
           if (_commandError.length()) err = _commandError;
           xSemaphoreGive(_mutex);
@@ -184,12 +184,12 @@ void SftpClientScreen::onUpdate() {
       render();
 
       if (ok) {
-        ShowStatusAction::show(upload ? "Upload complete" : "Download complete", 1400);
+        ShowStatusAction::show(upload ? "Uploaded" : "Downloaded", 1400);
       } else if (err == "Cancelled") {
-        ShowStatusAction::show(upload ? "Upload cancelled" : "Download cancelled", 1200);
+        ShowStatusAction::show("Cancelled", 1200);
       } else {
         ShowStatusAction::show(
-          err.length() ? err.c_str() : (upload ? "Upload failed" : "Download failed"),
+          err.length() ? err.c_str() : "Failed",
           1600);
       }
       render();
@@ -331,7 +331,22 @@ void SftpClientScreen::onBack() {
     return;
   }
 
-  if (_state == STATE_SELECT_AUTH || _state == STATE_SELECT_KEY) {
+  if (_state == STATE_SELECT_KEY) {
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadKeyDir(parent, child);
+    } else {
+      _state = STATE_CONFIG;
+      _updateLabels();
+      _rebuildConfig();
+      render();
+    }
+    return;
+  }
+
+  if (_state == STATE_SELECT_AUTH) {
     _state = STATE_CONFIG;
     _updateLabels();
     _rebuildConfig();
@@ -340,7 +355,10 @@ void SftpClientScreen::onBack() {
   }
 
   if (_state == STATE_REMOTE_BROWSER) {
-    if (_remoteMode == REMOTE_UPLOAD_DEST) {
+    if (_remotePath != "." && _remotePath != "/") {
+      _remoteRestoreName = _baseName(_remotePath);
+      _requestList(_parentRemotePath(_remotePath));
+    } else if (_remoteMode == REMOTE_UPLOAD_DEST) {
       // Cancel destination selection and return to the local upload browser.
       _state = STATE_LOCAL_BROWSER;
       render();
@@ -352,7 +370,14 @@ void SftpClientScreen::onBack() {
   }
 
   if (_state == STATE_LOCAL_BROWSER) {
-    _showActions();
+    if (_localBrowsePath != _localBrowser.root) {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      int slash = _localBrowsePath.lastIndexOf('/');
+      String parent = (slash > 0) ? _localBrowsePath.substring(0, slash) : _localBrowser.root;
+      _loadLocalUploadDir(parent, child);
+    } else {
+      _showActions();
+    }
     return;
   }
 
@@ -386,7 +411,7 @@ void SftpClientScreen::_beginUpload() {
   }
 
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -519,7 +544,7 @@ void SftpClientScreen::_selectAuth(uint8_t index) {
 
 void SftpClientScreen::_openKeyPicker() {
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -535,10 +560,16 @@ void SftpClientScreen::_openKeyPicker() {
   _loadKeyDir(_localBrowsePath);
 }
 
-void SftpClientScreen::_loadKeyDir(const String& path) {
+void SftpClientScreen::_loadKeyDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "KEY");
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -547,7 +578,12 @@ void SftpClientScreen::_selectKey(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadKeyDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadKeyDir(e.path, child);
+    } else {
+      _loadKeyDir(e.path);
+    }
     return;
   }
 
@@ -560,11 +596,17 @@ void SftpClientScreen::_selectKey(uint8_t index) {
 }
 
 
-void SftpClientScreen::_loadLocalUploadDir(const String& path) {
+void SftpClientScreen::_loadLocalUploadDir(const String& path, const String& restoreName) {
   _localBrowsePath = path;
   uint8_t n = _localBrowser.load(this, path, {}, "SD");
   _state = STATE_LOCAL_BROWSER;
-  setItems(_localBrowser.items(), n);
+  uint8_t selected = 0;
+  if (restoreName.length()) {
+    for (uint8_t i = 0; i < n; ++i) {
+      if (_localBrowser.entry(i).name == restoreName) { selected = i; break; }
+    }
+  }
+  setItems(_localBrowser.items(), n, selected);
   render();
 }
 
@@ -573,7 +615,12 @@ void SftpClientScreen::_selectLocalUpload(uint8_t index) {
   const auto& e = _localBrowser.entry(index);
 
   if (e.isDir) {
-    _loadLocalUploadDir(e.path);
+    if (e.name == "..") {
+      String child = _localBrowsePath.substring(_localBrowsePath.lastIndexOf('/') + 1);
+      _loadLocalUploadDir(e.path, child);
+    } else {
+      _loadLocalUploadDir(e.path);
+    }
     return;
   }
 
@@ -624,39 +671,39 @@ void SftpClientScreen::_chooseUploadDestinationMode() {
 
 void SftpClientScreen::_connect() {
   if (!_host.length()) {
-    ShowStatusAction::show("Host required", 1200); render(); return;
+    ShowStatusAction::show("Host not set", 1200); render(); return;
   }
   if (!_username.length()) {
-    ShowStatusAction::show("Username required", 1200); render(); return;
+    ShowStatusAction::show("Username not set", 1200); render(); return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected", 1500); render(); return;
+    ShowStatusAction::show("Not connected", 1500); render(); return;
   }
   if (_authMode == AUTH_NONE) {
-    ShowStatusAction::show("Auth method required", 1500); render(); return;
+    ShowStatusAction::show("Authentication method not set", 1500); render(); return;
   }
 
   if (_authMode == AUTH_PASSWORD) {
     if (!_password.length()) {
-      ShowStatusAction::show("Password required", 1200); render(); return;
+      ShowStatusAction::show("Password not set", 1200); render(); return;
     }
   } else {
     if (!_keyPath.length()) {
-      ShowStatusAction::show("Key file required", 1200); render(); return;
+      ShowStatusAction::show("Key file not selected", 1200); render(); return;
     }
     if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-      ShowStatusAction::show("Storage not available", 1500); render(); return;
+      ShowStatusAction::show("No storage available", 1500); render(); return;
     }
     _keyData = Uni.Storage->readFile(_keyPath.c_str());
     if (!_keyData.length()) {
-      ShowStatusAction::show("Key read failed", 1500); render(); return;
+      ShowStatusAction::show("Failed to read key", 1500); render(); return;
     }
   }
 
   if (!_mutex) _mutex = xSemaphoreCreateMutex();
   if (!_mutex || !_startWorker()) {
     _keyData = "";
-    ShowStatusAction::show("SFTP task failed", 1500);
+    ShowStatusAction::show("Failed to start", 1500);
     render();
     return;
   }
@@ -704,7 +751,7 @@ void SftpClientScreen::_workerEntry(void* arg) {
 
 void SftpClientScreen::_setWorkerError(const char* message) {
   if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    _commandError = message ? message : "SFTP failed";
+    _commandError = message ? message : "Failed";
     xSemaphoreGive(_mutex);
   }
   _workerState = WORKER_FAILED;
@@ -723,21 +770,21 @@ void SftpClientScreen::_worker() {
 
   session = ssh_new();
   if (!session) {
-    _setWorkerError("SSH session failed");
+    _setWorkerError("Failed to create SSH session");
     goto cleanup;
   }
 
   if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK ||
       ssh_options_set(session, SSH_OPTIONS_USER, user.c_str()) != SSH_OK ||
       ssh_options_set(session, SSH_OPTIONS_PORT, &port) != SSH_OK) {
-    _setWorkerError("SSH options failed");
+    _setWorkerError("Failed to configure SSH session");
     goto cleanup;
   }
 
   if (_stopRequested) goto cleanup;
 
   if (ssh_connect(session) != SSH_OK) {
-    _setWorkerError("SSH connect failed");
+    _setWorkerError("Failed to connect");
     goto cleanup;
   }
 
@@ -749,7 +796,7 @@ void SftpClientScreen::_worker() {
 
     if (ssh_get_server_publickey(session, &serverKey) != SSH_OK || !serverKey) {
       if (serverKey) ssh_key_free(serverKey);
-      _setWorkerError("SSH host key failed");
+      _setWorkerError("Failed to get host key");
       goto cleanup;
     }
 
@@ -759,14 +806,14 @@ void SftpClientScreen::_worker() {
 
     if (rc != SSH_OK || !hash || hashLen == 0) {
       if (hash) ssh_clean_pubkey_hash(&hash);
-      _setWorkerError("SSH fingerprint failed");
+      _setWorkerError("Failed to get fingerprint");
       goto cleanup;
     }
 
     char* hex = ssh_get_hexa(hash, hashLen);
     ssh_clean_pubkey_hash(&hash);
     if (!hex) {
-      _setWorkerError("SSH fingerprint failed");
+      _setWorkerError("Failed to get fingerprint");
       goto cleanup;
     }
 
@@ -791,7 +838,7 @@ void SftpClientScreen::_worker() {
 
   if (authMode == AUTH_PASSWORD) {
     if (ssh_userauth_password(session, nullptr, password.c_str()) != SSH_AUTH_SUCCESS) {
-      _setWorkerError("SSH authentication failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
   } else {
@@ -802,7 +849,7 @@ void SftpClientScreen::_worker() {
       keyData.c_str(), nullptr, nullptr, nullptr, &privateKey);
     if (rc != SSH_OK || !privateKey) {
       if (privateKey) ssh_key_free(privateKey);
-      _setWorkerError("SSH key import failed");
+      _setWorkerError("Failed to import key");
       goto cleanup;
     }
 
@@ -810,7 +857,7 @@ void SftpClientScreen::_worker() {
     if (rc != SSH_OK || !publicKey) {
       if (publicKey) ssh_key_free(publicKey);
       ssh_key_free(privateKey);
-      _setWorkerError("SSH public key failed");
+      _setWorkerError("Failed to get public key");
       goto cleanup;
     }
 
@@ -822,7 +869,7 @@ void SftpClientScreen::_worker() {
     ssh_key_free(privateKey);
 
     if (rc != SSH_AUTH_SUCCESS) {
-      _setWorkerError("SSH key auth failed");
+      _setWorkerError("Authentication failed");
       goto cleanup;
     }
   }
@@ -832,7 +879,7 @@ void SftpClientScreen::_worker() {
 
   sftp = sftp_new(session);
   if (!sftp || sftp_init(sftp) != SSH_OK) {
-    _setWorkerError("SFTP init failed");
+    _setWorkerError("Failed to start SFTP");
     goto cleanup;
   }
 
@@ -950,7 +997,10 @@ void SftpClientScreen::_closeConnection(bool returnToActions) {
 }
 
 void SftpClientScreen::_requestList(const String& path) {
-  if (_workerState != WORKER_READY || !_mutex) return;
+  if (_workerState != WORKER_READY || !_mutex) {
+    _remoteRestoreName = "";
+    return;
+  }
 
   if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
     _commandPath = path;
@@ -971,7 +1021,7 @@ bool SftpClientScreen::_workerList(void* sftpOpaque, const String& path) {
   sftp_dir dir = sftp_opendir(sftp, path.c_str());
   if (!dir) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Cannot open remote dir";
+      _commandError = "Failed to open remote directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1051,7 +1101,7 @@ void SftpClientScreen::_copyRemoteListing() {
     out++;
   }
 
-  if (_remotePath != ".") {
+  if (_remotePath != "." && _remotePath != "/") {
     _remoteNames[out] = "..";
     _remoteSubs[out] = "DIR";
     _remotePaths[out] = _parentRemotePath(_remotePath);
@@ -1086,7 +1136,14 @@ void SftpClientScreen::_copyRemoteListing() {
   }
 
   _remoteCount = out;
-  setItems(_remoteItems, _remoteCount, 0);
+  uint8_t selected = 0;
+  if (_remoteRestoreName.length()) {
+    for (uint8_t i = 0; i < _remoteCount; ++i) {
+      if (_remoteNames[i] == _remoteRestoreName) { selected = i; break; }
+    }
+    _remoteRestoreName = "";
+  }
+  setItems(_remoteItems, _remoteCount, selected);
 }
 
 void SftpClientScreen::_selectRemote(uint8_t index) {
@@ -1098,12 +1155,14 @@ void SftpClientScreen::_selectRemote(uint8_t index) {
     if (_remoteNames[index] == ".") {
       _chooseUploadDestination(_remotePaths[index]);
     } else if (_remoteIsDir[index]) {
+      if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
       _requestList(_remotePaths[index]);
     }
     return;
   }
 
   if (_remoteIsDir[index]) {
+    if (_remoteNames[index] == "..") _remoteRestoreName = _baseName(_remotePath);
     _requestList(_remotePaths[index]);
     return;
   }
@@ -1170,7 +1229,7 @@ bool SftpClientScreen::_confirmTransfer(const char* title, const String& name) {
 void SftpClientScreen::_requestDownload(const String& remotePath, bool directory) {
   _transferIsUpload = false;
   if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available", 1500);
+    ShowStatusAction::show("No storage available", 1500);
     render();
     return;
   }
@@ -1200,13 +1259,13 @@ void SftpClientScreen::_requestDownload(const String& remotePath, bool directory
 
   ProgressView::init();
   ProgressView::progress(
-    directory ? "Preparing directory..." : _progressName.c_str(), 0);
+    directory ? "Preparing..." : (_transferIsUpload ? "Uploading..." : "Downloading..."), 0);
 }
 
 
 void SftpClientScreen::_requestUpload(const String& remoteDir) {
   if (!_uploadLocalPath.length()) {
-    ShowStatusAction::show("Upload source missing", 1200);
+    ShowStatusAction::show("No upload source", 1200);
     render();
     return;
   }
@@ -1232,7 +1291,7 @@ void SftpClientScreen::_requestUpload(const String& remoteDir) {
 
   ProgressView::init();
   ProgressView::progress(
-    _uploadIsDir ? "Preparing directory..." : _uploadName.c_str(), 0);
+    _uploadIsDir ? "Preparing..." : "Uploading...", 0);
 }
 
 void SftpClientScreen::_updateTransferProgress() {
@@ -1252,11 +1311,11 @@ void SftpClientScreen::_updateTransferProgress() {
   }
 
   uint8_t pct = total ? (uint8_t)min<uint64_t>(100, (done * 100) / total) : 0;
-  String msg;
-  if (filesTotal > 1)
-    msg = name + "\n" + String(filesDone) + "/" + String(filesTotal) + " files";
-  else
-    msg = name.length() ? name : "Downloading...";
+  String msg = _transferIsUpload ? "Uploading..." : "Downloading...";
+  if (filesTotal > 1) {
+    msg = String(_transferIsUpload ? "Uploading (" : "Downloading (") +
+          String(filesDone) + "/" + String(filesTotal) + ")...";
+  }
 
   ProgressView::progress(msg.c_str(), pct);
 }
@@ -1269,7 +1328,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
   sftp_file remote = sftp_open(sftp, remotePath.c_str(), O_RDONLY, 0);
   if (!remote) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Remote file open failed";
+      _commandError = "Failed to open remote file";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1279,7 +1338,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
   if (!local) {
     sftp_close(remote);
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Local file open failed";
+      _commandError = "Failed to open local file";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1300,7 +1359,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
     if (n < 0) {
       ok = false;
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        _commandError = "SFTP read failed";
+        _commandError = "Failed to read remote file";
         xSemaphoreGive(_mutex);
       }
       break;
@@ -1311,7 +1370,7 @@ bool SftpClientScreen::_workerDownloadFile(void* sftpOpaque,
     if (written != (size_t)n) {
       ok = false;
       if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        _commandError = "Storage write failed";
+        _commandError = "Failed to write file";
         xSemaphoreGive(_mutex);
       }
       break;
@@ -1443,7 +1502,7 @@ bool SftpClientScreen::_workerDownloadDir(void* sftpOpaque,
         sftpOpaque, remotePath, totalBytes, totalFiles, 0)) {
     if (!_cancelTransfer && _mutex &&
         xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Directory scan failed";
+      _commandError = "Failed to scan directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1491,7 +1550,7 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
   fs::File local = Uni.Storage->open(localPath.c_str(), "r");
   if (!local) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Local file open failed";
+      _commandError = "Failed to open local file";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1502,7 +1561,7 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
   if (!remote) {
     local.close();
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Remote file open failed";
+      _commandError = "Failed to open remote file";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1530,7 +1589,7 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
       if (w < 0) {
         ok = false;
         if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-          _commandError = "SFTP write failed";
+          _commandError = "Failed to write remote file";
           xSemaphoreGive(_mutex);
         }
         break;
@@ -1540,7 +1599,7 @@ bool SftpClientScreen::_workerUploadFile(void* sftpOpaque,
         if (millis() - lastProgress >= WRITE_STALL_TIMEOUT_MS) {
           ok = false;
           if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-            _commandError = "SFTP write timed out";
+            _commandError = "Write timeout";
             xSemaphoreGive(_mutex);
           }
           break;
@@ -1630,7 +1689,7 @@ bool SftpClientScreen::_workerUploadTree(void* sftpOpaque,
   if (depth > 12 || _cancelTransfer || _stopRequested) return false;
   if (!_workerEnsureRemoteDir(sftpOpaque, remotePath)) {
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Remote mkdir failed";
+      _commandError = "Failed to create remote directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1687,7 +1746,7 @@ bool SftpClientScreen::_workerUploadDir(void* sftpOpaque,
   if (!_workerCalcLocalDir(localPath, totalBytes, totalFiles, 0)) {
     if (!_cancelTransfer && _mutex &&
         xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-      _commandError = "Directory scan failed";
+      _commandError = "Failed to scan directory";
       xSemaphoreGive(_mutex);
     }
     return false;
@@ -1746,8 +1805,8 @@ void SftpClientScreen::_renderConnecting() {
   lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
 
   String msg = (_state == STATE_REMOTE_LOADING)
-             ? "Loading remote files..."
-             : "Connecting to " + _host + ":" + String(_port) + "...";
+             ? "Loading..."
+             : "Connecting...";
   lcd.drawString(msg.c_str(), x + w / 2, y + h / 2);
   lcd.setTextDatum(TL_DATUM);
 }

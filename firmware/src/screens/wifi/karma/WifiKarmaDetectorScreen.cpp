@@ -87,7 +87,7 @@ void WifiKarmaDetectorScreen::onRender()
     sp.setTextDatum(MC_DATUM);
 
     sp.setTextColor(TFT_RED, TFT_BLACK);
-    sp.drawString("!! Karma Attack Detected !!", bodyW() / 2, cy - 20);
+    sp.drawString("Karma attack detected", bodyW() / 2, cy - 20);
 
     char bssid[20];
     snprintf(bssid, sizeof(bssid), "%02X:%02X:%02X:%02X:%02X:%02X",

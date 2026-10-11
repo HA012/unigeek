@@ -13,30 +13,6 @@ void FileHexViewerScreen::onInit()
   strncpy(_titleBuf, name.c_str(), sizeof(_titleBuf) - 1);
   _titleBuf[sizeof(_titleBuf) - 1] = '\0';
 
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Storage not available");
-    _goBack();
-    return;
-  }
-
-  fs::File f = Uni.Storage->open(_path.c_str(), "r");
-  if (!f) {
-    ShowStatusAction::show("Cannot open file");
-    _goBack();
-    return;
-  }
-  _fileSize = f.size();
-  f.close();
-
-  if (_fileSize == 0) {
-    ShowStatusAction::show("Empty file");
-    _goBack();
-    return;
-  }
-
-  int na = Achievement.inc("hexview_first");
-  if (na == 1) Achievement.unlock("hexview_first");
-
   // Layout: each row = [XX ×n] [gap≥2chars] [c×n]
   // total chars = 3n + gap + n = 4n + gap, gap ≥ 2
   // solve for max n: n = (charsPerLine - 2) / 4
@@ -46,6 +22,34 @@ void FileHexViewerScreen::onInit()
   if (n > kMaxBytesPerRow) n = kMaxBytesPerRow;
   _bytesPerRow = n;
   _visibleRows = (uint8_t)(bodyH() / kLineH);
+
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) {
+    render();
+    ShowStatusAction::show("Storage not available");
+    _goBack();
+    return;
+  }
+
+  fs::File f = Uni.Storage->open(_path.c_str(), "r");
+  if (!f) {
+    render();
+    ShowStatusAction::show("Failed to open file");
+    _goBack();
+    return;
+  }
+  _fileSize = f.size();
+  f.close();
+
+  if (_fileSize == 0) {
+    render();
+    ShowStatusAction::show("Empty file");
+    _goBack();
+    return;
+  }
+
+  int na = Achievement.inc("hexview_first");
+  if (na == 1) Achievement.unlock("hexview_first");
+
 }
 
 void FileHexViewerScreen::onUpdate()

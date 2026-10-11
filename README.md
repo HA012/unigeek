@@ -41,7 +41,7 @@ firmware menu, so it never drifts:
 - 📺 **IR** — capture, replay, TV-B-Gone, Flipper-IRDB compatible
 - ⌨️ **HID** — USB & BLE keyboard, DuckyScript 3.0, mouse jiggle, WebAuthn/FIDO2 passkey, USB mass storage
 - 🌐 **Network** — grouped into submenus: **Scanners** (IP, port, CCTV), **Attacks** (MITM with ARP poisoning + PCAP capture, DHCP attack, Responder), **Pranks** (cast bomb, mDNS spam, printer prank), **Services** (web file manager, SOCKS4 proxy), **Internet** (world clock, Wikipedia, Wigle, downloader)
-- 🧰 **Utility & Games** — QR/barcode, TOTP, UART terminal, password manager, Lua runner, achievements, and several on-device games
+- 🧰 **Utilities & Games** — QR/barcode, TOTP, UART terminal, password manager, Lua runner, achievements, and several on-device games
 
 > Each item links to step-by-step docs on the [features site](https://unigeek.xid.run/features/).
 

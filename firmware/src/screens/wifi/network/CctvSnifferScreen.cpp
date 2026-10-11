@@ -49,7 +49,7 @@ void CctvSnifferScreen::onBack()
       break;
 
     case STATE_CAMERA_MENU:
-      _showCameraList();
+      _showCameraList(_selectedCamera);
       break;
 
     case STATE_CAMERA_LIST:
@@ -226,7 +226,7 @@ void CctvSnifferScreen::_startScan()
 {
   if (WiFi.localIP()[0] == 0 && WiFi.localIP()[1] == 0 &&
       WiFi.localIP()[2] == 0 && WiFi.localIP()[3] == 0) {
-    ShowStatusAction::show("WiFi not connected");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -275,7 +275,7 @@ void CctvSnifferScreen::_startScan()
       ProgressView::progress(label, 0);
       String resolved;
       if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
-        ShowStatusAction::show("Could not resolve target", 900);
+        ShowStatusAction::show("Failed to resolve target", 900);
         done++;
         continue;
       }
@@ -435,7 +435,7 @@ void CctvSnifferScreen::_scanHost(const char* ip, const char* label)
 
 // ── Results ─────────────────────────────────────────────────────────────────
 
-void CctvSnifferScreen::_showCameraList()
+void CctvSnifferScreen::_showCameraList(uint8_t selectedIndex)
 {
   _state = STATE_CAMERA_LIST;
 
@@ -456,7 +456,8 @@ void CctvSnifferScreen::_showCameraList()
     _cameraItems[i] = {_cameraLabels[i], _cameras[i].brand};
   }
 
-  setItems(_cameraItems, _cameraCount);
+  setItems(_cameraItems, _cameraCount,
+           (selectedIndex < _cameraCount) ? selectedIndex : 0);
 }
 
 void CctvSnifferScreen::_showCameraMenu(uint8_t camIdx)
@@ -465,7 +466,7 @@ void CctvSnifferScreen::_showCameraMenu(uint8_t camIdx)
   _selectedCamera = camIdx;
 
   _usernameSub = _username;
-  _passwordSub = _password.length() ? _password : "(empty)";
+  _passwordSub = _password.length() ? _password : "Empty";
 
   _menuItems[0] = {"Username", _usernameSub.c_str()};
   _menuItems[1] = {"Password", _passwordSub.c_str()};
@@ -501,7 +502,7 @@ void CctvSnifferScreen::_startStream()
 
 
   if (!_stream.begin(streamUrl, user, pass)) {
-    ShowStatusAction::show("Stream failed!", 1500);
+    ShowStatusAction::show("Failed", 1500);
     _showCameraMenu(_selectedCamera);
     return;
   }

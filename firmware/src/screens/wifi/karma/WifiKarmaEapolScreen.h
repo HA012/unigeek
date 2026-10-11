@@ -114,6 +114,8 @@ private:
   void _startEapolCapture();
   void _buildEapolPath(const uint8_t* bssid, const char* ssid);
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _startAttack();
   void _stopAttack();

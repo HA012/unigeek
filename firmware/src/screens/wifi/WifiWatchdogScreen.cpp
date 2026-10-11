@@ -550,13 +550,11 @@ void WifiWatchdogScreen::_renderFlood()
     const BeaconEntry& e   = kv.second;
     const bool flood = e.ratePerSec >= FLOOD_THRESHOLD;
     if (e.ssid[0] != '\0')
-      snprintf(_labels[n], sizeof(_labels[n]), "%s%s  %d/s",
-               flood ? "!! " : "", e.ssid, e.ratePerSec);
+      snprintf(_labels[n], sizeof(_labels[n]), "%s  %d/s", e.ssid, e.ratePerSec);
     else
-      snprintf(_labels[n], sizeof(_labels[n]), "%s%02X:%02X:%02X:%02X:%02X:%02X  %d/s",
-               flood ? "!! " : "",
+      snprintf(_labels[n], sizeof(_labels[n]), "%02X:%02X:%02X:%02X:%02X:%02X  %d/s",
                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], e.ratePerSec);
-    snprintf(_sublabels[n], sizeof(_sublabels[n]), "%s", flood ? "beacon flood!" : "normal");
+    snprintf(_sublabels[n], sizeof(_sublabels[n]), "%s", flood ? "Beacon flood" : "Normal");
     _rows[n].label = _labels[n];
     _rows[n].value = _sublabels[n];
     n++;

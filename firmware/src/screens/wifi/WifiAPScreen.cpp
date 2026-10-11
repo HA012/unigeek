@@ -88,7 +88,7 @@ void WifiAPScreen::onItemSelected(uint8_t index)
       render();
       if (InputTextAction::wasCancelled()) { render(); return; }
       if (ssid.isEmpty()) {
-        ShowStatusAction::show("SSID is required", 1500);
+        ShowStatusAction::show("SSID not set", 1500);
         render();
         return;
       }
@@ -107,7 +107,7 @@ void WifiAPScreen::onItemSelected(uint8_t index)
       render();
       if (InputTextAction::wasCancelled()) { render(); return; }
       if (pwd.length() > 0 && pwd.length() < 8) {
-        ShowStatusAction::show("Min 8 chars or empty for open", 1500);
+        ShowStatusAction::show("Min 8 chars or empty for Open", 1500);
         render();
         return;
       }
@@ -212,7 +212,7 @@ void WifiAPScreen::_stopAP()
   _pressCount  = 0;
   _firstPress  = 0;
   _qrInverted  = false;
-  ShowStatusAction::show("AP Stopped", 1500);
+  ShowStatusAction::show("Stopped", 1500);
   _showMenu();
 }
 
@@ -237,18 +237,18 @@ void WifiAPScreen::_showLog()
 
   String ssid = Config.get(APP_CONFIG_WIFI_AP_SSID, APP_CONFIG_WIFI_AP_SSID_DEFAULT);
   char apLabel[60];
-  snprintf(apLabel, sizeof(apLabel), "[*] AP: %s", ssid.c_str());
+  snprintf(apLabel, sizeof(apLabel), "AP: %s", ssid.c_str());
   _log.addLine(apLabel);
 
   if (_fileManagerEnabled) {
     char fmBuf[60];
-    snprintf(fmBuf, sizeof(fmBuf), "[*] FM: unigeek.local / %s:8000",
+    snprintf(fmBuf, sizeof(fmBuf), "File Manager: unigeek.local / %s:8000",
              WiFi.softAPIP().toString().c_str());
     _log.addLine(fmBuf);
   }
 
   _log.addLine("");
-  _log.addLine("[Down 3x (2s)] WiFi QR");
+  _log.addLine("[Down 3x (2 s)] WiFi QR");
   _log.addLine("Waiting for clients...");
 
   _pressCount = 0;

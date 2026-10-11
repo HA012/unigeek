@@ -146,17 +146,17 @@ void TelnetClientScreen::_configPort() {
 
 void TelnetClientScreen::_connect() {
   if (_host.length() == 0) {
-    ShowStatusAction::show("Host required", 1200);
+    ShowStatusAction::show("Host not set", 1200);
     render();
     return;
   }
   if (_port < 1 || _port > 65535) {
-    ShowStatusAction::show("Port required", 1200);
+    ShowStatusAction::show("Port not set", 1200);
     render();
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("WiFi not connected", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     render();
     return;
   }
@@ -165,7 +165,7 @@ void TelnetClientScreen::_connect() {
   _client.stop();
 
   if (!_client.connect(_host.c_str(), (uint16_t)_port, 5000)) {
-    ShowStatusAction::show("Connection failed", 1500);
+    ShowStatusAction::show("Failed", 1500);
     render();
     return;
   }
@@ -316,7 +316,7 @@ void TelnetClientScreen::_handleSendFailure() {
   _remoteClosed = true;
   _client.stop();
   if (_partialLine.length() > 0) _commitPartial();
-  _pushOutputLine("[Send failed]");
+  _pushOutputLine("Failed");
 }
 
 void TelnetClientScreen::_sendTelnetReply(uint8_t command, uint8_t option) {

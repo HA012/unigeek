@@ -23,6 +23,7 @@ private:
 
   SsdpScanUtil::Device _devices[SsdpScanUtil::MAX_DEVICES];
   uint8_t _deviceCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
 
   ListItem _resultItems[SsdpScanUtil::MAX_DEVICES];

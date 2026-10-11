@@ -104,6 +104,7 @@ private:
   ListItem _remoteItems[MAX_REMOTE_ENTRIES + 2];
   uint8_t _remoteCount = 0;
   String _remotePath = ".";
+  String _remoteRestoreName;
   bool _holdHandled = false;
   bool _transferIsUpload = false;
 
@@ -139,7 +140,7 @@ private:
   void _beginDownload();
   void _beginUpload();
 
-  void _loadLocalUploadDir(const String& path);
+  void _loadLocalUploadDir(const String& path, const String& restoreName = "");
   void _selectLocalUpload(uint8_t index);
   void _holdLocalUpload(uint8_t index);
   void _chooseUploadSource(const String& path, const String& name, bool isDir);

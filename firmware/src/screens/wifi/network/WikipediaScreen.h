@@ -110,6 +110,8 @@ private:
   bool     _readOnly   = false;
 
   // States / actions
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _chooseLanguage();
   void _doSearch();

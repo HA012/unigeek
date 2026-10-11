@@ -77,6 +77,7 @@ void PrinterScannerScreen::onItemSelected(uint8_t index)
   }
 
   if (_state == STATE_RESULTS && index < _printerCount) {
+    _resultSelectedIndex = index;
     _showDetails(index);
   }
 }
@@ -120,13 +121,13 @@ void PrinterScannerScreen::_showConfig(uint8_t selectedIndex)
 void PrinterScannerScreen::_scan()
 {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi", 1500);
+    ShowStatusAction::show("Not connected", 1500);
     return;
   }
 
   if (_scanMode == MODE_TARGETS) {
     if (!_hasTargets()) {
-      ShowStatusAction::show("Enter at least one target");
+      ShowStatusAction::show("No target set");
       return;
     }
 
@@ -140,6 +141,7 @@ void PrinterScannerScreen::_scan()
 
   _state = STATE_SCANNING;
   _printerCount = 0;
+  _resultSelectedIndex = 0;
   memset(_printers, 0, sizeof(_printers));
 
   render();
@@ -151,7 +153,7 @@ void PrinterScannerScreen::_scan()
   );
   if (!ssdp) {
     ProgressView::finish();
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     _showConfig();
     return;
   }
@@ -184,7 +186,7 @@ void PrinterScannerScreen::_scan()
   );
   if (!mdns) {
     ProgressView::finish();
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     _showConfig();
     return;
   }
@@ -329,7 +331,8 @@ void PrinterScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _printerCount);
+  setItems(_resultItems, _printerCount,
+           (_resultSelectedIndex < _printerCount) ? _resultSelectedIndex : 0);
 }
 
 void PrinterScannerScreen::_showDetails(uint8_t index)

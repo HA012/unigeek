@@ -42,6 +42,7 @@ private:
   unsigned long _initTime = 0;
   bool _infoInitialized = false;
   bool _loadingChromeDrawn = false;
+  uint8_t _menuReturnIndex = 0;
 
   // GPS pin config (set in onInit)
   int8_t _txPin = -1;
@@ -54,7 +55,7 @@ private:
     {"Wardrive Mode"},
     {"Wardriver"},
     {"Internet"},
-    {"Wigle Token"},
+    {"WiGLE Token"},
     {"Wardrive Stat"},
     {"Upload Wardrive"},
     {"Map View"},

@@ -74,4 +74,5 @@ private:
   void _pushWrappedRow(const String& label, const String& value);
 
   bool _saveNdef(const uint8_t* ndef, size_t ndefLen, const String& suggestedName);
+  uint8_t _typeIndex = 0;
 };

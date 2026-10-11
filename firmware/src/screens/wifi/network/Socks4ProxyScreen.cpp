@@ -32,7 +32,7 @@ void Socks4ProxyScreen::_statusCb(Sprite& sp, int barY, int width, void* userDat
 void Socks4ProxyScreen::onInit() {
   _log.clear();
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Connect to WiFi first.");
+    ShowStatusAction::show("Not connected");
     Screen.goBack();
     return;
   }
@@ -42,7 +42,7 @@ void Socks4ProxyScreen::onInit() {
   char buf[48];
   snprintf(buf, sizeof(buf), "Proxy %s:1080", WiFi.localIP().toString().c_str());
   _log.addLine(buf, TFT_GREEN);
-  _log.addLine("Set laptop SOCKS4 proxy here.", TFT_DARKGREY);
+  _log.addLine("Set laptop SOCKS4 proxy here", TFT_DARKGREY);
   _log.addLine("Waiting for clients...", TFT_DARKGREY);
   render();
 }

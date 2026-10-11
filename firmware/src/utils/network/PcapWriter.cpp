@@ -79,11 +79,11 @@ bool PcapWriter::begin(IStorage* fs, const char* dir, const String& ssid,
   _frames = 0;
   _bytes  = 0;
 
-  if (!_fs || !_fs->isAvailable()) { _error = "No SD card"; return false; }
+  if (!_fs || !_fs->isAvailable()) { _error = "SD card not available"; return false; }
 
   if (!_buf) {
     _buf = (uint8_t*)malloc(WBUF_SIZE);
-    if (!_buf) { _error = "No RAM for write buffer"; return false; }
+    if (!_buf) { _error = "Out of memory"; return false; }
   }
 
   char date[16];
@@ -101,7 +101,7 @@ bool PcapWriter::begin(IStorage* fs, const char* dir, const String& ssid,
   const bool resuming = _fs->exists(path.c_str());
 
   _file = _fs->open(path.c_str(), resuming ? FILE_APPEND : FILE_WRITE);
-  if (!_file) { _error = "Cannot open capture file"; return false; }
+  if (!_file) { _error = "Failed to open capture file"; return false; }
 
   if (!resuming) {
     PcapGlobalHdr hdr;
@@ -109,7 +109,7 @@ bool PcapWriter::begin(IStorage* fs, const char* dir, const String& ssid,
     hdr.linktype = linktype;
     if (_file.write(reinterpret_cast<uint8_t*>(&hdr), sizeof(hdr)) != sizeof(hdr)) {
       _file.close();
-      _error = "SD write failed";
+      _error = "Failed to write to SD";
       return false;
     }
   }
@@ -160,7 +160,7 @@ bool PcapWriter::writeFrame(const uint8_t* data, uint16_t len, uint16_t origLen,
 
 bool PcapWriter::flush() {
   if (_len == 0 || !_buf) return true;
-  if (!_file) { _ok = false; _error = "SD error"; return false; }
+  if (!_file) { _ok = false; _error = "Failed to write to SD"; return false; }
 
   const size_t want = _len;
   const size_t n    = _file.write(_buf, want);
@@ -170,7 +170,7 @@ bool PcapWriter::flush() {
   // desync every frame after it, so stop rather than corrupt the capture.
   if (n != want) {
     _ok    = false;
-    _error = "SD write failed";
+    _error = "Failed to write to SD";
     return false;
   }
   return true;

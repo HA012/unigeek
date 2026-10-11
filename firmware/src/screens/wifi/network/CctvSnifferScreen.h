@@ -86,7 +86,7 @@ private:
   void _editTarget(uint8_t targetIndex, uint8_t selectedIndex);
   void _scanRange();
   void _scanHost(const char* ip, const char* label);
-  void _showCameraList();
+  void _showCameraList(uint8_t selectedIndex = 0);
   void _showCameraMenu(uint8_t camIdx);
   void _startStream();
   void _stopStream();

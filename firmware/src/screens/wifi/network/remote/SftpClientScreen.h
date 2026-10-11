@@ -122,6 +122,7 @@ private:
   ListItem _remoteItems[MAX_REMOTE_ENTRIES + 2];
   uint8_t _remoteCount = 0;
   String _remotePath = ".";
+  String _remoteRestoreName;
   RemoteMode _remoteMode = REMOTE_DOWNLOAD;
   bool _holdHandled = false;
   bool _transferIsUpload = false;
@@ -160,10 +161,10 @@ private:
   void _selectAuthMenu();
   void _selectAuth(uint8_t index);
   void _openKeyPicker();
-  void _loadKeyDir(const String& path);
+  void _loadKeyDir(const String& path, const String& restoreName = "");
   void _selectKey(uint8_t index);
 
-  void _loadLocalUploadDir(const String& path);
+  void _loadLocalUploadDir(const String& path, const String& restoreName = "");
   void _selectLocalUpload(uint8_t index);
   void _holdLocalUpload(uint8_t index);
   void _chooseUploadSource(const String& path, const String& name, bool isDir);

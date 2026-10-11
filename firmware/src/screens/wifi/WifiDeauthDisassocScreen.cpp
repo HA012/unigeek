@@ -82,10 +82,10 @@ void WifiDeauthDisassocScreen::onUpdate()
 
     if (_mode == MODE_ALL) {
       _deauthAll();
-      _statusMsg = String("[") + _spinner[_spinIdx] + "] Deauthing " + _allCount + " APs...";
+      _statusMsg = String("Deauthing ") + _allCount + " APs...";
     } else if (_attacker) {
       _attacker->deauthenticate(_target.bssid, _target.channel);
-      _statusMsg = String("[") + _spinner[_spinIdx] + "] Deauthing " + _target.ssid + "...";
+      _statusMsg = String("Deauthing ") + _target.ssid + "...";
     }
     render();
 
@@ -152,6 +152,7 @@ void WifiDeauthDisassocScreen::_selectWifi(bool forceScan)
   }
 
   _state = STATE_SELECT_WIFI;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
@@ -183,7 +184,7 @@ void WifiDeauthDisassocScreen::_startDeauth()
   if (_mode == MODE_TARGET) {
     const MacAddr blank = {0, 0, 0, 0, 0, 0};
     if (_target.ssid == "-" && memcmp(_target.bssid, blank, 6) == 0) {
-      ShowStatusAction::show("Select a target first!");
+      ShowStatusAction::show("Target not selected");
       return;
     }
   }
@@ -210,7 +211,7 @@ void WifiDeauthDisassocScreen::_startDeauth()
 
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&WifiDeauthDisassocScreen::_beaconCb);
-    _statusMsg = "[...] Scanning for APs...";
+    _statusMsg = "Scanning for APs...";
   } else {
     _statusMsg = "Deauthing " + _target.ssid + "...";
   }
@@ -231,7 +232,7 @@ void WifiDeauthDisassocScreen::_stopDeauth()
   _spinIdx     = 0;
   _allChanHop  = 0;
   _allCount    = 0;
-  ShowStatusAction::show("Deauth stopped.", 1000);
+  ShowStatusAction::show("Stopped", 1000);
   _showMain();
 }
 

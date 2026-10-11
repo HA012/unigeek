@@ -11,7 +11,7 @@ The authenticator implements RFC 6238 TOTP using HMAC-SHA1, SHA-256, or SHA-512.
 
 ## Adding an Account
 
-1. Open **Utility → TOTP Auth**
+1. Open **Utilities → TOTP Auth**
 2. Select **Add New**
 3. Fill in:
    - **Name** — display label (used as the filename)

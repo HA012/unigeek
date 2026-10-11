@@ -336,7 +336,7 @@ void ClaudeBuddyScreen::onRender() {
     uint32_t waited = st.lastUpdated ? (millis() - st.lastUpdated) / 1000 : 0;
     if (dy <= maxY) {
       sp.setTextColor(waited >= 10 ? 0xF800 : kCol1, kBubBg);
-      sp.setCursor(dx, dy); sp.printf("wait %lus", (unsigned long)waited);
+      sp.setCursor(dx, dy); sp.printf("Waiting %lu s...", (unsigned long)waited);
     }
 
   } else {
@@ -377,7 +377,6 @@ void ClaudeBuddyScreen::onRender() {
   sp.setCursor(bw - 60, fy + 2);
 #else
   sp.setCursor(bw - 72, fy + 2);
-  sp.print("hold B: quit");
 #endif
 
   sp.pushSprite(bodyX(), bodyY());

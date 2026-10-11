@@ -11,7 +11,7 @@ public:
   PinSettingScreen() = default;
   explicit PinSettingScreen(BackFactory backFn) : _backFn(backFn) {}
 
-  const char* title() override { return "Pin Setting"; }
+  const char* title() override { return "Pin Settings"; }
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;

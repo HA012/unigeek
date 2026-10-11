@@ -61,6 +61,7 @@ private:
   ListItem _resultItems[WebScanUtil::MAX_RESULTS];
   String _resultSubs[WebScanUtil::MAX_RESULTS];
   uint8_t _resultCount = 0;
+  uint8_t _resultSelectedIndex = 0;
 
   ListItem _detailItems[DETAIL_ROWS];
   String _detailSubs[DETAIL_ROWS];

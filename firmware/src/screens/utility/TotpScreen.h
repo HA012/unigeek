@@ -64,4 +64,5 @@ private:
   void _enterView(uint8_t index);
   void _refreshCode();
   void _renderView();
+  uint8_t _menuIndex = 0;
 };

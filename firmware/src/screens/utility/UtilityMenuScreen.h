@@ -6,7 +6,7 @@
 class UtilityMenuScreen : public ListScreen
 {
 public:
-  const char* title()    override { return "Utility"; }
+  const char* title()    override { return "Utilities"; }
 
   void onInit() override;
   void onBack() override;
@@ -15,34 +15,34 @@ public:
 private:
 #ifdef DEVICE_HAS_WEBAUTHN
   ListItem _items[13] = {
-    {"I2C Detector"},
-    {"QR Code"},
-    {"Barcode"},
     {"File Manager"},
     {"NFC Tools"},
-    {"Manage WebAuthn"},
-    {"Achievements"},
-    {"TOTP Auth"},
+    {"I2C Detector"},
     {"UART Terminal"},
     {"ESPNOW Chat"},
-    {"Pomodoro"},
+    {"QR Code"},
+    {"Barcode"},
+    {"TOTP Auth"},
+    {"Manage WebAuthn"},
     {"Random Line Picker"},
+    {"Pomodoro"},
     {"Wikipedia"},
+    {"Achievements"},
   };
 #else
   ListItem _items[12] = {
-    {"I2C Detector"},
-    {"QR Code"},
-    {"Barcode"},
     {"File Manager"},
     {"NFC Tools"},
-    {"Achievements"},
-    {"TOTP Auth"},
+    {"I2C Detector"},
     {"UART Terminal"},
     {"ESPNOW Chat"},
-    {"Pomodoro"},
+    {"QR Code"},
+    {"Barcode"},
+    {"TOTP Auth"},
     {"Random Line Picker"},
+    {"Pomodoro"},
     {"Wikipedia"},
+    {"Achievements"},
   };
 #endif
 };

@@ -17,7 +17,7 @@ private:
   ListItem _items[4] = {
     {"World Clock"},  // NTP + timezone browser
     {"Wikipedia"},    // article reader
-    {"Wigle"},        // wardrive upload, stats, map
+    {"WiGLE"},        // wardrive upload, stats, map
     {"Download"},     // fetch assets: portals, IRDB, scripts
   };
 };

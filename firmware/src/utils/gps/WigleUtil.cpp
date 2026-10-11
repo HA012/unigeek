@@ -85,12 +85,12 @@ String WigleUtil::_httpGet(const String& token, const String& path) {
 
 uint8_t WigleUtil::fetchStats(ScrollListView::Row* rows, uint8_t maxRows) {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Connect to internet first");
+    ShowStatusAction::show("Not connected");
     return 0;
   }
   String token = readToken(Uni.Storage);
   if (token.length() == 0) {
-    ShowStatusAction::show("Set Wigle token first");
+    ShowStatusAction::show("Token not set");
     return 0;
   }
 
@@ -188,13 +188,13 @@ bool WigleUtil::uploadFile(IStorage* storage, const String& fileName) {
   }
   size_t fileSize = f.size();
 
-  ProgressView::progress("Connecting to Wigle...", 20);
+  ProgressView::progress("Connecting to WiGLE...", 20);
 
   WiFiClientSecure client;
   client.setInsecure();
   if (!client.connect("api.wigle.net", 443, 10000)) {
     f.close();
-    ShowStatusAction::show("Connection failed!");
+    ShowStatusAction::show("Failed to connect");
     return false;
   }
 
@@ -205,7 +205,7 @@ bool WigleUtil::uploadFile(IStorage* storage, const String& fileName) {
   String tail = "\r\n--" + boundary + "--\r\n";
   size_t totalLen = head.length() + fileSize + tail.length();
 
-  ProgressView::progress("Uploading to Wigle...", 30);
+  ProgressView::progress("Uploading to WiGLE...", 30);
 
   client.print(
     "POST /api/v2/file/upload HTTP/1.1\r\n"
@@ -224,7 +224,7 @@ bool WigleUtil::uploadFile(IStorage* storage, const String& fileName) {
     client.write(buf, bytesRead);
     sent += bytesRead;
     int pct = 30 + (int)(sent * 60 / fileSize);
-    ProgressView::progress("Uploading to Wigle...", pct);
+    ProgressView::progress("Uploading to WiGLE...", pct);
   }
   f.close();
   client.print(tail);
@@ -252,12 +252,12 @@ bool WigleUtil::uploadFile(IStorage* storage, const String& fileName) {
       String newPath = String(WARDRIVE_PATH) + "/" + newName;
       storage->renameFile(oldPath.c_str(), newPath.c_str());
     }
-    ShowStatusAction::show("Upload successful!");
+    ShowStatusAction::show("Uploaded");
     return true;
   } else if (response.indexOf("401") >= 0 || response.indexOf("\"success\":false") >= 0) {
-    ShowStatusAction::show("Upload failed! Check token");
+    ShowStatusAction::show("Failed");
   } else {
-    ShowStatusAction::show("Upload error. Check connection");
+    ShowStatusAction::show("Not connected");
   }
   return false;
 }

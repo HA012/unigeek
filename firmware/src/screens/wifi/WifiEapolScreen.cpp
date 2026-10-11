@@ -142,7 +142,11 @@ void WifiEapolScreen::_showMenu() {
   add("Start",      nullptr,            ACT_START);
   add("Unigotchi",  "auto pwn mode",    ACT_UNIGOTCHI);
 
-  setItems(_menuItems, _menuCount);
+  uint8_t selected = 0;
+  for (uint8_t i = 0; i < _menuCount; ++i) {
+    if (_menuMap[i] == _menuAction) { selected = i; break; }
+  }
+  setItems(_menuItems, _menuCount, selected);
 }
 
 void WifiEapolScreen::onItemSelected(uint8_t index) {
@@ -167,6 +171,7 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
   if (_phase != PHASE_MENU) return;
 
   if (index >= _menuCount) return;
+  _menuAction = _menuMap[index];
   switch (_menuMap[index]) {
     case ACT_MODE:
       _mode = (_mode == MODE_TARGET) ? MODE_ALL : MODE_TARGET;
@@ -195,7 +200,7 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
       // once _selectWifi() lands a scan result, so it's the canonical
       // "no target set" indicator.
       if (_mode == MODE_TARGET && _target.channel == 0) {
-        ShowStatusAction::show("Select a Target WiFi first!");
+        ShowStatusAction::show("Target not selected");
         return;
       }
 
@@ -226,13 +231,13 @@ void WifiEapolScreen::onItemSelected(uint8_t index) {
       _lastFreeCheck = 0;
 
       if (!Uni.Storage || !Uni.Storage->isAvailable()) {
-        ShowStatusAction::show("No storage available.");
+        ShowStatusAction::show("No storage available");
         Screen.goBack();
         return;
       }
 
       if (!StorageUtil::hasSpace()) {
-        ShowStatusAction::show("Storage full! (<20KB free)");
+        ShowStatusAction::show("Storage full (<20 KB free)");
         Screen.goBack();
         return;
       }
@@ -302,6 +307,7 @@ void WifiEapolScreen::_selectWifi(bool forceScan) {
   }
 
   _phase = PHASE_SELECT_WIFI;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   WiFi.mode(WIFI_STA);
@@ -399,7 +405,7 @@ void WifiEapolScreen::onUpdate() {
             memcpy(mac.data(), _target.bssid, 6);
             auto it = _eapolMap.find(mac);
             const bool got = (it != _eapolMap.end() && it->second.validated);
-            _logView.addLine(got ? "Done. Handshake captured." : "Done. No handshake (timeout).",
+            _logView.addLine(got ? "Handshake captured" : "Handshake timeout",
                              got ? TFT_GREEN : TFT_YELLOW);
             render();
             // Stop firing deauths; let user press BACK.
@@ -566,8 +572,8 @@ bool WifiEapolScreen::_checkFreeSpace() {
   _lastFreeCheck = now;
   if (!StorageUtil::hasSpace()) {
     _storageOk = false;
-    _logView.addLine("Storage full! Stopped.", TFT_RED);
-    ShowStatusAction::show("Storage full! Capture stopped.", 2000);
+    _logView.addLine("Storage full, stopping capture", TFT_RED);
+    ShowStatusAction::show("Storage full, stopping capture", 2000);
     return false;
   }
   return true;
@@ -754,7 +760,7 @@ void WifiEapolScreen::_flush() {
           if (nh == 20) Achievement.unlock("wifi_eapol_handshake_20");
           if (nh == 50) Achievement.unlock("wifi_eapol_handshake_50");
           char buf2[44];
-          snprintf(buf2, sizeof(buf2), "Captured! %s", entry.ssid.c_str());
+          snprintf(buf2, sizeof(buf2), "Captured: %s", entry.ssid.c_str());
           _logView.addLine(buf2, TFT_MAGENTA);
           _needRefresh = true;
           _beaconStore.erase(cap.bssid);  // beacon already in PCAP, free memory
@@ -837,7 +843,7 @@ void WifiEapolScreen::_flush() {
         if (nh == 5)  Achievement.unlock("wifi_eapol_handshake_5");
         if (nh == 20) Achievement.unlock("wifi_eapol_handshake_20");
         if (nh == 50) Achievement.unlock("wifi_eapol_handshake_50");
-        snprintf(buf, sizeof(buf), "Captured! %s", apName);
+        snprintf(buf, sizeof(buf), "Captured: %s", apName);
         _logView.addLine(buf, TFT_MAGENTA);
         // Free memory — beacon and pending no longer needed
         _beaconStore.erase(cap.bssid);

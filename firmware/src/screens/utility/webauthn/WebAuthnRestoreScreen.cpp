@@ -90,7 +90,7 @@ void WebAuthnRestoreScreen::onUpdate()
                                                           sizeof(_entropy));
       _wipeBuffers();
       if (ok) { _state = ST_DONE; }
-      else    { _err = "Restore failed"; _state = ST_ERROR; }
+      else    { _err = "Failed to restore"; _state = ST_ERROR; }
       render();
     }
     return;

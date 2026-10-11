@@ -105,6 +105,8 @@ private:
   static Counters _counters;
   static WifiPacketMonitorScreen* _activeInstance;
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _showChannels(bool preserveSelection = false);
   void _selectBssid();

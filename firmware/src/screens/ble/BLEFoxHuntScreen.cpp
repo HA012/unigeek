@@ -91,6 +91,7 @@ void BLEFoxHuntScreen::_doScan()
 {
   _state = STATE_SCAN;
   _selected = -1;
+  render();
   ShowStatusAction::show("Scanning...", 0);
 
   _bleScan->setAdvertisedDeviceCallbacks(nullptr, false);

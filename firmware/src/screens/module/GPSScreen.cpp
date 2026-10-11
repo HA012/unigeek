@@ -49,7 +49,7 @@ void GPSScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
-        ShowStatusAction::show("Stopping GPS...", 0);
+        ShowStatusAction::show("Stopping...", 0);
         _gps.end();
         _disableGnssPower();
         Screen.goBack();
@@ -80,7 +80,7 @@ void GPSScreen::onUpdate() {
       return;
     }
     if (millis() - _initTime > 5000 && _gps.gps.charsProcessed() < 10) {
-      ShowStatusAction::show("GPS not detected! Check connection");
+      ShowStatusAction::show("GPS not detected, check connection");
       _gps.end();
       _disableGnssPower();
       Screen.goBack();
@@ -115,7 +115,7 @@ void GPSScreen::onUpdate() {
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
       if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
-        ShowStatusAction::show("Stopping wardrive...", 0);
+        ShowStatusAction::show("Stopping...", 0);
         _gps.endWardrive();
         _showMenu();
       }
@@ -180,7 +180,7 @@ void GPSScreen::onRender() {
 
     sp.setTextColor(TFT_WHITE, TFT_BLACK);
     if (gpsFound) {
-      sp.drawString("GPS module found!", cx, cy - 20);
+      sp.drawString("GPS detected", cx, cy - 20);
       sp.setTextColor(TFT_DARKGREY, TFT_BLACK);
       sp.drawString("Acquiring satellite fix...", cx, cy - 4);
       sp.drawString("This may take a few minutes", cx, cy + 8);
@@ -211,7 +211,7 @@ void GPSScreen::onRender() {
 
 void GPSScreen::onBack() {
   if (_state == STATE_MENU) {
-    ShowStatusAction::show("Stopping GPS...", 0);
+    ShowStatusAction::show("Stopping...", 0);
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     _gps.end();
@@ -228,6 +228,7 @@ void GPSScreen::onBack() {
 
 void GPSScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _menuReturnIndex = index;
     switch (index) {
       case 0:
         _state = STATE_INFO;
@@ -245,7 +246,7 @@ void GPSScreen::onItemSelected(uint8_t index) {
         _gps.setScanMode(_scanMode);
         _gps.setWardriveMode(_wardMode);
         if (!_gps.initWardrive(Uni.Storage)) {
-          ShowStatusAction::show(("Wardrive error: " + _gps.wardriveError()).c_str());
+          ShowStatusAction::show(_gps.wardriveError().c_str());
           render();
           return;
         }
@@ -317,9 +318,9 @@ void GPSScreen::_showMenu() {
 
   // Wigle Token sublabel
   _wigleTokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[5] = {"Wigle Token", _wigleTokenSub.c_str()};
+  _menuItems[5] = {"WiGLE Token", _wigleTokenSub.c_str()};
 
-  setItems(_menuItems);
+  setItems(_menuItems, 9, _menuReturnIndex);
 }
 
 void GPSScreen::_selectScanMode() {
@@ -442,7 +443,7 @@ void GPSScreen::_connectInternet() {
   uint8_t count = WifiUtility::scan(scanned, WifiUtility::MAX_WIFI);
 
   if (count == 0) {
-    ShowStatusAction::show("No WiFi found");
+    ShowStatusAction::show("No APs found");
     _showMenu();
     return;
   }
@@ -466,10 +467,10 @@ void GPSScreen::_connectInternet() {
       if (WifiUtility::checkInternet()) {
         ShowStatusAction::show(("Connected to " + WiFi.SSID()).c_str(), 1500);
       } else {
-        ShowStatusAction::show("Connected but no internet access");
+        ShowStatusAction::show("No internet access");
       }
     } else if (result == WifiUtility::CONNECT_FAILED) {
-      ShowStatusAction::show("Connection failed");
+      ShowStatusAction::show("Failed");
     }
     break;
   }
@@ -478,13 +479,13 @@ void GPSScreen::_connectInternet() {
 
 void GPSScreen::_editWigleToken() {
   String current = WigleUtil::readToken(Uni.Storage);
-  String token = InputTextAction::popup("Wigle API Token", current);
+  String token = InputTextAction::popup("WiGLE API Token", current);
   if (token.length() == 0) return;
   token.trim();
   WigleUtil::saveToken(Uni.Storage, token);
   _wigleTokenSub = WigleUtil::tokenSublabel(Uni.Storage);
-  _menuItems[5] = {"Wigle Token", _wigleTokenSub.c_str()};
-  ShowStatusAction::show("Token saved");
+  _menuItems[5] = {"WiGLE Token", _wigleTokenSub.c_str()};
+  ShowStatusAction::show("Saved");
 }
 
 void GPSScreen::_showWigleStats() {
@@ -498,12 +499,12 @@ void GPSScreen::_showWigleStats() {
 
 void GPSScreen::_showUploadMenu() {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Connect to internet first");
+    ShowStatusAction::show("Not connected");
     return;
   }
   String token = WigleUtil::readToken(Uni.Storage);
   if (token.length() == 0) {
-    ShowStatusAction::show("Set Wigle token first");
+    ShowStatusAction::show("WiGLE token not set");
     return;
   }
 
@@ -512,7 +513,7 @@ void GPSScreen::_showUploadMenu() {
                                      _fileUploaded, WigleUtil::MAX_FILES);
 
   if (_fileCount == 0) {
-    ShowStatusAction::show("No wardrive files found");
+    ShowStatusAction::show("No wardrive files");
     _showMenu();
     return;
   }
@@ -543,7 +544,7 @@ void GPSScreen::_showMapPickMenu() {
                                      _fileUploaded, WigleUtil::MAX_FILES);
 
   if (_fileCount == 0) {
-    ShowStatusAction::show("No wardrive files found");
+    ShowStatusAction::show("No wardrive files");
     _showMenu();
     return;
   }

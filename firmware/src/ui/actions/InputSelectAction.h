@@ -30,7 +30,6 @@ private:
   static constexpr int PAD     = 4;
   static constexpr int ITEM_H  = 18;
   static constexpr int TITLE_H = 12;
-  static constexpr int HINT_H  = 8;
 
   const char*   _title;
   const Option* _options;
@@ -74,7 +73,7 @@ private:
     auto& lcd     = Uni.Lcd;
     int available = lcd.height()
                   - (PAD + TITLE_H + PAD)
-                  - (HINT_H + PAD);
+                  - PAD * 3;
     int fitCount  = available / (ITEM_H + PAD);
     return min((int)_totalCount, fitCount);
   }
@@ -83,7 +82,7 @@ private:
   int _overlayH() {
     return PAD + TITLE_H + PAD
          + (_visibleCount() * (ITEM_H + PAD))
-         + HINT_H + PAD;
+         + PAD;
   }
   int _overlayX() { return PAD + 4; }
   int _overlayY() { return (Uni.Lcd.height() - _overlayH()) / 2; }
@@ -177,9 +176,6 @@ private:
     lcd.setCursor(x + PAD, y + PAD);
     lcd.print(_title);
 
-    lcd.setTextDatum(TL_DATUM);
-    lcd.setTextColor(TFT_DARKGREY);
-    lcd.drawString("[Up/Dn] Select  [Press] Confirm", x + PAD, y + h - PAD - HINT_H);
   }
 
   void _drawCounter() {
@@ -239,7 +235,7 @@ private:
       sp.drawRoundRect(0, 0, innerW, ITEM_H, 3, TFT_WHITE);
     }
 
-    uint16_t labelColor = isCancel ? TFT_RED
+    uint16_t labelColor = isCancel ? (isSel ? TFT_WHITE : TFT_RED)
                           : (opt && opt->hasRssi ? _rssiColor(opt->rssi)
                                                 : (isSel ? TFT_WHITE : TFT_LIGHTGREY));
     sp.setTextColor(labelColor, isSel ? (isCancel ? TFT_RED : themeColor) : TFT_BLACK);

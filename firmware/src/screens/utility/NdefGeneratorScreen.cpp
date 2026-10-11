@@ -38,7 +38,7 @@ const char* NdefGeneratorScreen::title() {
 
 void NdefGeneratorScreen::onInit() {
   _state = STATE_TYPE_SELECT;
-  setItems(_items);
+  setItems(_items, sizeof(_items) / sizeof(_items[0]), _typeIndex);
 }
 
 void NdefGeneratorScreen::onUpdate() {
@@ -55,14 +55,14 @@ void NdefGeneratorScreen::onUpdate() {
           _previewNdefLen = 0;
           _previewSuggestedName = "";
           _state = STATE_TYPE_SELECT;
-          setItems(_items);
+          setItems(_items, sizeof(_items) / sizeof(_items[0]), _typeIndex);
           return;
         }
         if (_saveNdef(_previewNdef, _previewNdefLen, name)) {
           _previewNdefLen = 0;
           _previewSuggestedName = "";
           _state = STATE_TYPE_SELECT;
-          setItems(_items);
+          setItems(_items, sizeof(_items) / sizeof(_items[0]), _typeIndex);
         }
         render();
       } else {
@@ -85,7 +85,7 @@ void NdefGeneratorScreen::onRender() {
 void NdefGeneratorScreen::onBack() {
   if (_state == STATE_VCARD_FORM) {
     _state = STATE_TYPE_SELECT;
-    setItems(_items);
+    setItems(_items, sizeof(_items) / sizeof(_items[0]), _typeIndex);
     render();
     return;
   }
@@ -97,6 +97,7 @@ void NdefGeneratorScreen::onBack() {
 }
 
 void NdefGeneratorScreen::onItemSelected(uint8_t index) {
+  if (_state == STATE_TYPE_SELECT) _typeIndex = index;
   if (_state == STATE_VCARD_FORM) {
     if (index < 6) _editVcardField(index);
     else if (index == 6) _saveVcardFromForm();
@@ -202,7 +203,7 @@ void NdefGeneratorScreen::_saveVcardFromForm() {
 
   if (_saveNdef(ndef, ndefLen, name)) {
     _state = STATE_TYPE_SELECT;
-    setItems(_items);
+    setItems(_items, sizeof(_items) / sizeof(_items[0]), _typeIndex);
   } else {
     _refreshVcardForm(6);
   }

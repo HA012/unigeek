@@ -109,7 +109,7 @@ void CYDTouchCalScreen::onRender() {
   // Bottom hint
   lcd.setTextDatum(BC_DATUM);
   lcd.setTextColor(0x4208, TFT_BLACK);
-  lcd.drawString("Saved to config · runs once", W / 2, H - 2);
+  lcd.drawString("Saved to config", W / 2, H - 2);
 
   // Done overlay
   if (_done) {
@@ -123,7 +123,7 @@ void CYDTouchCalScreen::onRender() {
     sp.setTextDatum(MC_DATUM);
     sp.setTextSize(1);
     sp.setTextColor(TFT_WHITE, TFT_BLACK);
-    sp.drawString("Calibrated!", BW / 2, BH / 2);
+    sp.drawString("Calibrated", BW / 2, BH / 2);
     sp.pushSprite(bx, by);
     sp.deleteSprite();
   }

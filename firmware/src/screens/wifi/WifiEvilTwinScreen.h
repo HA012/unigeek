@@ -72,6 +72,8 @@ private:
   String   _pendingPwd;
   int8_t   _pwdResult = 0;
 
+  uint8_t _menuIndex = 0;
+
   void _showMenu();
   void _selectWifi(bool forceScan = false);
   void _showScanResults();

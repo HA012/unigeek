@@ -20,6 +20,7 @@ void WorldClockScreen::onInit() {
     return;
   }
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  render();
   ShowStatusAction::show("Syncing NTP...", 0);
 }
 

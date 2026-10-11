@@ -132,6 +132,7 @@ void IoTDeviceScannerScreen::onItemSelected(uint8_t index)
   }
 
   if (_state == STATE_RESULTS && index < _deviceCount) {
+    _resultSelectedIndex = index;
     _showDetails(index);
   }
 }
@@ -190,7 +191,7 @@ void IoTDeviceScannerScreen::_showConfig(uint8_t selectedIndex)
 void IoTDeviceScannerScreen::_scan()
 {
   if (WiFi.status() != WL_CONNECTED) {
-    ShowStatusAction::show("Not connected to WiFi");
+    ShowStatusAction::show("Not connected");
     return;
   }
 
@@ -211,6 +212,7 @@ void IoTDeviceScannerScreen::_scan()
 
   _state = STATE_SCANNING;
   _deviceCount = 0;
+  _resultSelectedIndex = 0;
   memset(_devices, 0, sizeof(_devices));
 
   render();
@@ -257,7 +259,7 @@ bool IoTDeviceScannerScreen::_discoverMulticast()
     calloc(SsdpScanUtil::MAX_DEVICES, sizeof(SsdpScanUtil::Device))
   );
   if (!ssdpBuffer) {
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
 
@@ -292,7 +294,7 @@ bool IoTDeviceScannerScreen::_discoverMulticast()
     calloc(16, sizeof(MdnsScanUtil::Service))
   );
   if (!mdnsBuffer) {
-    ShowStatusAction::show("Not enough memory", 1200);
+    ShowStatusAction::show("Out of memory", 1200);
     return false;
   }
 
@@ -385,7 +387,7 @@ void IoTDeviceScannerScreen::_scanTargets()
     ProgressView::progress(label, 0);
     String resolved;
     if (!TargetResolveUtil::resolve(_targets[i], resolved)) {
-      ShowStatusAction::show("Could not resolve target", 900);
+      ShowStatusAction::show("Failed to resolve target", 900);
       done++;
       continue;
     }
@@ -521,7 +523,8 @@ void IoTDeviceScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _deviceCount);
+  setItems(_resultItems, _deviceCount,
+           (_resultSelectedIndex < _deviceCount) ? _resultSelectedIndex : 0);
 }
 
 void IoTDeviceScannerScreen::_showDetails(uint8_t index)

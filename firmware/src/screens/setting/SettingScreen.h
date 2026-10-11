@@ -128,7 +128,7 @@ private:
     {"Touch Calibration"},
 #endif
     {"Web Password",     ""},
-    {"Pin Setting"},
+    {"Pin Settings"},
     {"Hide Module"},
     {"Device Status"},
     {"About"},

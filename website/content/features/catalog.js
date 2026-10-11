@@ -6,7 +6,7 @@ export const CATEGORIES = [
   { id: "ble",      label: "BLE",      desc: "Bluetooth Low Energy scanning and spam" },
   { id: "keyboard", label: "HID",      desc: "Keyboard, mouse, and DuckyScript over USB and BLE" },
   { id: "module",   label: "Modules",  desc: "NFC, IR, Sub-GHz, NRF24, GPS" },
-  { id: "utility",  label: "Utility",  desc: "QR, barcode, file manager, TOTP, UART terminal, achievements" },
+  { id: "utility",  label: "Utilities", desc: "QR, barcode, file manager, TOTP, UART terminal, achievements" },
   { id: "game",     label: "Games",    desc: "Lightweight on-device games" },
   { id: "setting",  label: "Settings", desc: "Device preferences and pins" },
 ];
