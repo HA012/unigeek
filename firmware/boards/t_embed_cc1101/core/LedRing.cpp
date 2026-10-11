@@ -41,8 +41,6 @@ void LedRing::begin() {
 }
 
 void LedRing::update() {
-  if (!_began) begin();
-
   static unsigned long lastMs = 0;
   unsigned long now = millis();
   if (now - lastMs < 40) return;        // ~25 fps, matches Bruce's LED task cadence
@@ -52,6 +50,10 @@ void LedRing::update() {
   static uint8_t hue      = 0;
 
   String mode        = Config.get(APP_CONFIG_LED_MODE, APP_CONFIG_LED_MODE_DEFAULT);
+  if (!_began) {
+    if (mode == "off") return;
+    begin();
+  }
   bool   modeChanged = (mode != lastMode);
   lastMode = mode;
 

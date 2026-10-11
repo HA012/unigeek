@@ -80,7 +80,6 @@ Device* Device::createInstance() {
   // Init I2C and shared SPI
   Wire.begin(GROVE_SDA, GROVE_SCL);
   sharedSpi.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
-  ledRing.begin();
 
   Device* dev = new Device(display, power, &navigation, nullptr, &sharedSpi, &speaker);
   dev->InI2C = &Wire;   // Wire already begun above on GROVE_SDA/GROVE_SCL (GPIO 8/18) —
