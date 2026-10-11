@@ -16,7 +16,7 @@ private:
 #ifdef DEVICE_HAS_WEBAUTHN
   ListItem _items[13] = {
     {"File Manager"},
-    {"NFC Tools"},
+    {"NFC/RFID Tools"},
     {"I2C Detector"},
     {"UART Terminal"},
     {"ESPNOW Chat"},
@@ -32,7 +32,7 @@ private:
 #else
   ListItem _items[12] = {
     {"File Manager"},
-    {"NFC Tools"},
+    {"NFC/RFID Tools"},
     {"I2C Detector"},
     {"UART Terminal"},
     {"ESPNOW Chat"},

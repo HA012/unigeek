@@ -111,6 +111,7 @@ void WigleScreen::_editToken() {
   WigleUtil::saveToken(Uni.Storage, token);
   _tokenSub = WigleUtil::tokenSublabel(Uni.Storage);
   _menuItems[0] = {"WiGLE Token", _tokenSub.c_str()};
+  render();
   ShowStatusAction::show("Saved");
 }
 
@@ -190,4 +191,3 @@ void WigleScreen::_uploadFile(uint8_t index) {
   if (n == 100) Achievement.unlock("gps_wigle_100");
   _showUploadMenu();
 }
-

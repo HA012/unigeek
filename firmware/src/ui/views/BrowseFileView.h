@@ -67,7 +67,7 @@ struct BrowseFileView {
   //   NAME  — show the raw filename (default; unchanged behavior)
   //   TITLE — show prettifyTitle(name): strip extension, dashes/underscores to
   //           spaces, Title Case. e.g. "hacker-news.lua" -> "Hacker News".
-  enum LabelStyle { NAME, TITLE };
+  enum LabelStyle { NAME, TITLE, STEM, STEM_CAPITALIZED };
 
   // Filename -> friendly title. Static so other screens (e.g. the remote Lua
   // browser) can reuse the exact same mapping. Keep in sync with the website
@@ -95,7 +95,9 @@ struct BrowseFileView {
   uint8_t load(BaseScreen* host, String dir,
                Mode        mode         = {},
                const char* fileSublabel = nullptr,
-               LabelStyle  style        = NAME);
+               LabelStyle  style        = NAME,
+               const char* preferredFile = nullptr,
+               const char* hiddenDirName = nullptr);
 
   uint8_t        count()          const { return _count; }
   const Entry&   entry(uint8_t i) const { return _entries[i]; }

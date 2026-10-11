@@ -1,11 +1,17 @@
+#include <new>
+#include "ChameleonMfuAuthUtils.h"
+#include "ChameleonMfuPagesScreen.h"
 #include "ChameleonMfuScreen.h"
+#include "screens/utility/NfcMemoryViewScreen.h"
 #include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "ui/actions/InputTextAction.h"
 #include "ui/actions/InputSelectAction.h"
+#include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/IdentityFile.h"
 #include "utils/nfc/NdefParser.h"
 
 namespace {
@@ -17,6 +23,25 @@ void _mfuProgress(uint16_t pagesDone, uint16_t totalPages) {
                     ? (int)((uint32_t)pagesDone * 100u / totalPages)
                     : 0;
   ProgressView::progress(msg, pct);
+}
+
+static bool waitForMfuTag(ChameleonClient& c, ChameleonClient::MfuTagInfo& info,
+                          bool& tagPresent, uint32_t timeoutMs = 5000) {
+  tagPresent = false;
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK)
+      return false;
+    uint8_t uid[7]={}, uidLen=0, atqa[2]={}, sak=0;
+    if (c.scan14A(uid,&uidLen,atqa,&sak)) {
+      tagPresent = true;
+      if (sak != 0x00) return false;
+      return c.mfuDetect(&info);
+    }
+    delay(50);
+  }
+  return false;
 }
 } // namespace
 
@@ -30,6 +55,7 @@ void ChameleonMfuScreen::_freeDump() {
 
 void ChameleonMfuScreen::_drawIdle() {
   _needsDraw = false;
+  render();
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
 
@@ -38,7 +64,7 @@ void ChameleonMfuScreen::_drawIdle() {
   sp.fillSprite(TFT_BLACK);
   sp.setTextDatum(MC_DATUM);
   sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2);
+  TagPrompt::show("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH(), title());
   sp.pushSprite(bx, by);
   sp.deleteSprite();
 }
@@ -107,6 +133,27 @@ void ChameleonMfuScreen::_buildResult() {
   addRow("Pages", String(_info.pages));
   addRow("Dump", String(_dumpLen) + " bytes");
 
+  const uint16_t cfg = ChameleonMfuAuthUtils::config0(_info.type);
+  if (cfg != 0xFFFF && (size_t)(cfg + 1) * 4u + 3u < _dumpLen) {
+    const uint8_t auth0 = _dump[(size_t)cfg * 4u + 3u];
+    const uint8_t access = _dump[(size_t)(cfg + 1) * 4u];
+    if (auth0 == 0xFF || auth0 >= _info.pages) {
+      addRow("Protection", "None");
+    } else {
+      addRow("Protection", (access & 0x80) ? "Read & Write" : "Write Only");
+      addRow("From Page", String(auth0));
+    }
+  }
+
+  bool locked = false;
+  if (_dumpLen >= 12) locked = (_dump[10] != 0 || _dump[11] != 0);
+  const uint16_t dyn = ChameleonMfuAuthUtils::dynamicLockPage(_info.type);
+  if (dyn != 0xFFFF && (size_t)dyn * 4u + 2u < _dumpLen) {
+    locked = locked || _dump[(size_t)dyn * 4u] ||
+             _dump[(size_t)dyn * 4u + 1u] || _dump[(size_t)dyn * 4u + 2u];
+  }
+  addRow("Lock Status", locked ? "Locked pages" : "Unlocked");
+
   const uint8_t* ndef = nullptr;
   size_t ndefLen = 0;
   NdefParser::Result parsed;
@@ -167,19 +214,29 @@ void ChameleonMfuScreen::_read() {
   lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
   lcd.setTextDatum(MC_DATUM);
   lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh, title());
 
   auto& c = ChameleonClient::get();
   c.setMode(1);
 
-  if (!c.mfuDetect(&_info)) {
+  bool tagPresent = false;
+  if (!waitForMfuTag(c, _info, tagPresent)) {
     c.setMode(0);
     _busy = false;
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("Unsupported / no tag", 1400);
-    render();
+    ShowStatusAction::show(tagPresent ? "Tag not supported" : "Tag not detected", 1200);
+    Screen.goBack();
+    return;
+  }
+
+  if (_expectedUidLen && (_info.uidLen != _expectedUidLen ||
+      memcmp(_info.uid, _expectedUid, _expectedUidLen) != 0 || _info.sak != 0x00)) {
+    c.setMode(0);
+    _busy = false;
+    ShowStatusAction::show("Different tag detected", 1500);
+    Screen.goBack();
     return;
   }
 
@@ -196,6 +253,16 @@ void ChameleonMfuScreen::_read() {
     return;
   }
 
+  uint8_t pwd[4] = {}; bool usePwd = false;
+  if (!ChameleonMfuAuthUtils::prepare(c, _info, true, pwd, usePwd)) {
+    free(_dump); _dump = nullptr; _dumpLen = 0;
+    c.setMode(0);
+    _busy = false; _state = STATE_IDLE; _needsDraw = true;
+    render();
+    return;
+  }
+
+  render();
   ProgressView::init();
   char progressMsg[32];
   snprintf(progressMsg, sizeof(progressMsg), "Reading pages (0/%u)...",
@@ -203,7 +270,8 @@ void ChameleonMfuScreen::_read() {
   ProgressView::progress(progressMsg, 0);
 
   uint16_t got = 0;
-  bool ok = c.mfuReadDump(_info, _dump, (uint16_t)total, &got, _mfuProgress);
+  bool ok = c.mfuReadDump(_info, _dump, (uint16_t)total, &got, _mfuProgress,
+                          usePwd ? pwd : nullptr);
   ProgressView::finish();
   c.setMode(0);
 
@@ -213,7 +281,7 @@ void ChameleonMfuScreen::_read() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("Read failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
     render();
     return;
   }
@@ -231,15 +299,17 @@ void ChameleonMfuScreen::_save() {
   // Keep the save-name convention consistent with the other NFC dump
   // workflows: suggest the UID as the editable basename. The .bin extension
   // is deliberately not shown in the editor; it is appended only on save.
-  char suggested[32] = {};
-  const char* typeName = ChameleonClient::tagTypeName((uint16_t)_info.type);
-  size_t pos = snprintf(suggested, sizeof(suggested), "%s_", typeName);
-  for (uint8_t i = 0; i < _info.uidLen && pos + 2 < sizeof(suggested); ++i) {
-    pos += snprintf(suggested + pos, sizeof(suggested) - pos,
-                    "%02X", _info.uid[i]);
+  String safeType = String(ChameleonClient::mfuTagTypeName(_info.type));
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _info.uidLen; ++i) {
+    snprintf(h, sizeof(h), "%02X", _info.uid[i]);
+    suggested += h;
   }
 
-  String name = InputTextAction::popup("Save dump", suggested);
+  String name = InputTextAction::popup("Save Dump", suggested);
   if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
 
   // Treat the edited value as a basename. Do not expose the extension in the
@@ -262,23 +332,67 @@ void ChameleonMfuScreen::_save() {
   render();
   if (ok) {
     String msg = String("Saved: ") + filename;
-    ShowStatusAction::show(msg.c_str(), 1500);
-    Screen.goBack();
+    ShowStatusAction::show(msg.c_str(), 1600);
+    render();
     return;
   } else {
-    ShowStatusAction::show("Save failed", 1200);
+    ShowStatusAction::show("Failed", 1200);
   }
+  render();
+}
+
+void ChameleonMfuScreen::_saveUid() {
+  if (!_info.uidLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
+    ShowStatusAction::show("Storage unavailable", 1200); render(); return;
+  }
+  String safeType = String(ChameleonClient::mfuTagTypeName(_info.type));
+  safeType.replace(" / ", "-");
+  safeType.replace(" ", "-");
+  String suggested = safeType + "_";
+  char h[3];
+  for (uint8_t i = 0; i < _info.uidLen; ++i) { snprintf(h, sizeof(h), "%02X", _info.uid[i]); suggested += h; }
+  String name = InputTextAction::popup("Save UID", suggested);
+  if (InputTextAction::wasCancelled() || name.length() == 0) { render(); return; }
+  if (name.endsWith(".uid")) name.remove(name.length() - 4);
+  const String filename = name + ".uid";
+  Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc");
+  Uni.Storage->makeDir("/unigeek/nfc/uids");
+  const bool ok = IdentityFile::saveNfcUid(String("/unigeek/nfc/uids/") + filename,
+                                            _info.uid, _info.uidLen);
+  render();
+  ShowStatusAction::show(ok ? (String("Saved: ") + filename).c_str() : "Failed", 1600);
   render();
 }
 
 void ChameleonMfuScreen::_resultActions() {
   static const InputSelectAction::Option opts[] = {
-    {"Save Dump to File", "save"},
+    {"Read Memory",          "view"},
+    {"Save UID",           "uid"},
+    {"Save Dump",          "save"},
     {"Write to Tag",       "write"},
   };
 
-  const char* r = InputSelectAction::popup("Dump Actions", opts, 2, nullptr);
+  const char* r = InputSelectAction::popup("Dump Actions", opts, 4, nullptr);
   if (!r) { render(); return; }
+
+  if (strcmp(r, "view") == 0) {
+    const uint16_t pages = _dumpLen / 4u;
+    uint8_t* valid = new(std::nothrow) uint8_t[pages];
+    if (!valid) { ShowStatusAction::show("Out of memory", 1200); render(); return; }
+    memset(valid, 1, pages);
+    if (_info.type == ChameleonClient::MFU_ULTRALIGHT_C)
+      for (uint16_t page = 44; page < pages; ++page) valid[page] = 0;
+    Screen.push(new NfcMemoryViewScreen(NfcMemoryViewScreen::TYPE2,
+                                        ChameleonClient::mfuTagTypeName(_info.type),
+                                        _info.uid, _info.uidLen, _dump, _dumpLen, valid));
+    delete[] valid;
+    return;
+  }
+
+  if (strcmp(r, "uid") == 0) {
+    _saveUid();
+    return;
+  }
 
   if (strcmp(r, "save") == 0) {
     _save();
@@ -288,7 +402,7 @@ void ChameleonMfuScreen::_resultActions() {
   if (_info.type != ChameleonClient::MFU_NTAG215 || _info.pages != 135 ||
       !_dump || _dumpLen != 540) {
     render();
-    ShowStatusAction::show("Write supports NTAG215", 1400);
+    ShowStatusAction::show("Write supports NTAG215", 1600);
     render();
     return;
   }

@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <array>
+#include "utils/nfc/MfcKeyStore.h"
 
 class NFCUtility
 {
@@ -41,17 +42,13 @@ public:
     }
   };
 
-  static std::array<MIFARE_Key, 9> getDefaultKeys() {
-    return {
-      MIFARE_Key{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
-      MIFARE_Key{ 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 },
-      MIFARE_Key{ 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5 },
-      MIFARE_Key{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
-      MIFARE_Key{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF },
-      MIFARE_Key{ 0x4D, 0x3A, 0x99, 0xC3, 0x51, 0xDD },
-      MIFARE_Key{ 0x1A, 0x98, 0x2C, 0x7E, 0x45, 0x9A },
-      MIFARE_Key{ 0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7 },
-      MIFARE_Key{ 0x71, 0x4C, 0x5C, 0x88, 0x05, 0x92 }
-    };
+  static std::array<MIFARE_Key, MfcKeyStore::kDefaultKeyCount> getDefaultKeys() {
+    std::array<MIFARE_Key, MfcKeyStore::kDefaultKeyCount> out{};
+    for (size_t i = 0; i < MfcKeyStore::kDefaultKeyCount; ++i) {
+      mfKey key{};
+      memcpy(key.data(), MfcKeyStore::kDefaultKeys[i], key.size());
+      out[i] = MIFARE_Key(key);
+    }
+    return out;
   }
 };

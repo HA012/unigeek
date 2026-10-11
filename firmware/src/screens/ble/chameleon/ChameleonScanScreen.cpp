@@ -1,12 +1,13 @@
-#include "ChameleonScanScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
+#include "ChameleonScanScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
-#include "ui/components/StatusBar.h"
-#include "ui/actions/ShowStatusAction.h"
 #include "screens/ble/BLEMenuScreen.h"
+#include "ui/actions/ShowStatusAction.h"
+#include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
+#include "utils/ble/ChameleonClient.h"
 #include <NimBLEDevice.h>
 #include <string.h>
 
@@ -103,7 +104,7 @@ void ChameleonScanScreen::onInit() {
   _devChanged = false;
   _state      = STATE_EMPTY;
   _startScan();
-  render();
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onUpdate() {
@@ -131,11 +132,7 @@ void ChameleonScanScreen::onRender() {
     return;
   }
 
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString("Looking for Chameleon Ultra...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2);
+  ShowStatusAction::show("Scanning...", 0);
 }
 
 void ChameleonScanScreen::onItemSelected(uint8_t index) {
@@ -144,13 +141,7 @@ void ChameleonScanScreen::onItemSelected(uint8_t index) {
 
   _stopScan();
 
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Connecting...", bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 - 8);
-  lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-  lcd.drawString(_devices[index].name, bodyX() + bodyW() / 2, bodyY() + bodyH() / 2 + 8);
+  ShowStatusAction::show("Connecting...", 0);
 
   bool ok = ChameleonClient::get().connect(_devices[index].bleAddr);
 

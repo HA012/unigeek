@@ -36,7 +36,7 @@ Sub-menu for stored ISO14443A target:
 - **Authenticate** — Try every default key on every sector, key A and key B
 - **Dump Memory** — Read every block using discovered keys; blocks with no key or read errors show `-`. A summary row at the bottom shows how many blocks were successfully read. Press to save the dump to `/unigeek/nfc/dumps/<UID>.bin` (raw binary, compatible with Chameleon Ultra and MFRC522 dumps).
 - **Discovered Keys** — Per-sector list of recovered keys
-- **Dictionary Attack** — Pick a `.txt` file from `/unigeek/nfc/dictionaries/` and try its keys on the still-unknown sectors
+- **Dictionary Attack** — Pick built-in Default/Extended, Discovered, or a user `.txt` dictionary and try its keys on the still-unknown sectors
 
 7-byte UIDs (MIFARE 4K EV1, NTAG mini-classic clones) automatically use the **last 4 bytes** for the auth challenge.
 

@@ -47,6 +47,7 @@ public:
   static constexpr uint16_t CMD_MF1_SUPPORT      = 2001;
   static constexpr uint16_t CMD_MF1_NT_LEVEL     = 2002;
   static constexpr uint16_t CMD_MF1_STATIC_NESTED_ACQ = 2003;
+  static constexpr uint16_t CMD_MF1_DARKSIDE_ACQ = 2004;
   static constexpr uint16_t CMD_MF1_NT_DISTANCE  = 2005;
   static constexpr uint16_t CMD_MF1_NESTED_ACQ   = 2006;
   static constexpr uint16_t CMD_MF1_CHECK_KEY    = 2007;
@@ -61,11 +62,18 @@ public:
   static constexpr uint16_t CMD_WRITE_HID_T5     = 3003;
   static constexpr uint16_t CMD_SCAN_VIKING      = 3004;
   static constexpr uint16_t CMD_WRITE_VIKING_T5  = 3005;
+  static constexpr uint16_t CMD_SCAN_IOPROX      = 3010;
+  static constexpr uint16_t CMD_WRITE_IOPROX_T5  = 3011;
+  static constexpr uint16_t CMD_SCAN_PAC          = 3014;
+  static constexpr uint16_t CMD_WRITE_PAC_T5      = 3015;
+  static constexpr uint16_t CMD_SCAN_JABLOTRON    = 3019;
+  static constexpr uint16_t CMD_WRITE_JABLOTRON_T5= 3020;
   static constexpr uint16_t CMD_MF1_LOAD_BLOCK   = 4000;
   static constexpr uint16_t CMD_MF1_SET_ANTI_COLL   = 4001;
   static constexpr uint16_t CMD_MF1_DET_ENABLE   = 4004;
   static constexpr uint16_t CMD_MF1_DET_COUNT    = 4005;
   static constexpr uint16_t CMD_MF1_DET_RESULT   = 4006;
+  static constexpr uint16_t CMD_MF1_GET_DET_ENABLE = 4007;
   static constexpr uint16_t CMD_MF1_GET_BLOCK    = 4008;
   static constexpr uint16_t CMD_HF14A_GET_ANTI_COLL = 4018;
   static constexpr uint16_t CMD_MF0_NTAG_READ_EMU_PAGE_DATA  = 4021;
@@ -77,6 +85,12 @@ public:
   static constexpr uint16_t CMD_GET_HID_PROX_ID  = 5003;
   static constexpr uint16_t CMD_SET_VIKING_ID    = 5004;
   static constexpr uint16_t CMD_GET_VIKING_ID    = 5005;
+  static constexpr uint16_t CMD_SET_PAC_ID       = 5006;
+  static constexpr uint16_t CMD_GET_PAC_ID       = 5007;
+  static constexpr uint16_t CMD_SET_IOPROX_ID    = 5008;
+  static constexpr uint16_t CMD_GET_IOPROX_ID    = 5009;
+  static constexpr uint16_t CMD_SET_JABLOTRON_ID = 5010;
+  static constexpr uint16_t CMD_GET_JABLOTRON_ID = 5011;
 
   struct SlotTypes { uint16_t hfType; uint16_t lfType; };
 
@@ -133,11 +147,13 @@ public:
   bool saveSlotNicks();
   bool deleteSlot(uint8_t slot, uint8_t freq);
 
+  static constexpr uint32_t kTagWaitMs = 5000;
+
   // ── 14A / MF Classic ──
   bool scan14A(uint8_t uid[7], uint8_t* uidLen, uint8_t atqa[2], uint8_t* sak);
   // Read-only Magic MIFARE Classic classification. Leaves the target in a
   // freshly selected state after probes that temporarily enter a backdoor.
-  MagicCardType detectMagicType();
+  MagicCardType detectMagicType(void (*progress)(uint8_t) = nullptr);
   struct AntiCollData {
     uint8_t uid[7] = {};
     uint8_t uidLen = 0;
@@ -188,7 +204,6 @@ public:
                 uint8_t* respOut, uint16_t* respLen, uint16_t respBufSize,
                 uint16_t* outStatus = nullptr);
 
-
   // ── Ultralight / NTAG reader ──
   enum MfuTagType : uint16_t {
     MFU_UNKNOWN       = 0,
@@ -219,13 +234,21 @@ public:
   using MfuProgressCallback = void (*)(uint16_t pagesDone, uint16_t totalPages);
   bool mfuReadDump(const MfuTagInfo& info, uint8_t* out, uint16_t outSize,
                    uint16_t* bytesRead = nullptr,
-                   MfuProgressCallback progress = nullptr);
+                   MfuProgressCallback progress = nullptr,
+                   const uint8_t* password = nullptr,
+                   bool alreadyAuthenticated = false);
+  bool mfuReadPage(uint8_t page, uint8_t data[4]);
+  bool mfuReadPageSession(uint8_t page, uint8_t data[4]);
+  bool mfuPwdAuth(const uint8_t password[4], uint8_t pack[2] = nullptr);
+  bool mfuWritePage(uint8_t page, const uint8_t data[4]);
+  bool mfuWritePageSession(uint8_t page, const uint8_t data[4]);
   // Write the writable user-memory area of a physical NTAG215 (pages 4..129).
   // Manufacturer/UID, lock and configuration/password pages are deliberately
   // preserved.
   bool mfuWriteNtag215User(const uint8_t* dump, uint16_t dumpLen,
                            MfuProgressCallback progress = nullptr,
-                           const MfuTagInfo* expectedTarget = nullptr);
+                           const MfuTagInfo* expectedTarget = nullptr,
+                           const uint8_t* password = nullptr);
   static const char* mfuTagTypeName(uint16_t type);
 
   // Firmware-side nested-attack helpers (cmds 2003/2005/2006).
@@ -252,8 +275,31 @@ public:
                               uint32_t* uidOut,
                               NestedSample* out, int maxOut, int* count);
 
+  enum DarksideStatus : uint8_t {
+    DARKSIDE_OK            = 0,
+    DARKSIDE_CANT_FIX_NT   = 1,
+    DARKSIDE_LUCKY_AUTH_OK = 2,
+    DARKSIDE_NO_NAK_SENT   = 3,
+    DARKSIDE_TAG_CHANGED   = 4,
+  };
+
+  struct DarksideSample {
+    uint8_t  status = 0xFF;
+    uint32_t uid    = 0;
+    uint32_t nt1    = 0;
+    uint64_t par    = 0;
+    uint64_t ks1    = 0;
+    uint32_t nr     = 0;
+    uint32_t ar     = 0;
+  };
+
+  bool mf1DarksideAcquire(uint8_t keyType, uint8_t block,
+                          bool firstRecover, uint8_t syncMax,
+                          DarksideSample* out);
+
   // ── MFKey32 detection log ──
   bool mf1SetDetectEnable(bool on);
+  bool mf1GetDetectEnable(bool* on);
   bool mf1GetDetectCount(uint32_t* count);
   bool mf1GetDetectRecord(uint32_t index, uint8_t out[18]);
 
@@ -261,6 +307,9 @@ public:
   bool scanEM410X(uint8_t uid[5]);
   bool scanHIDProx(uint8_t payload[13], uint8_t* payloadLen);
   bool scanViking(uint8_t uid[4], uint8_t* uidLen);
+  bool scanIoProx(uint8_t payload[16], uint8_t* payloadLen);
+  bool scanPAC(uint8_t id[8], uint8_t* idLen);
+  bool scanJablotron(uint8_t id[5], uint8_t* idLen);
   bool writeEM410XToT5577(const uint8_t uid[5], const uint8_t newKey[4],
                           const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool writeHIDProxToT5577(const uint8_t* payload, uint8_t payloadLen,
@@ -268,17 +317,26 @@ public:
                            const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool writeVikingToT5577(const uint8_t uid[4], const uint8_t newKey[4],
                           const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writeIoProxToT5577(const uint8_t payload[16], const uint8_t newKey[4],
+                          const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writePACToT5577(const uint8_t id[8], const uint8_t newKey[4],
+                       const uint8_t* oldKeys, uint8_t oldKeyCount);
+  bool writeJablotronToT5577(const uint8_t id[5], const uint8_t newKey[4],
+                             const uint8_t* oldKeys, uint8_t oldKeyCount);
   bool setEM410XSlot(const uint8_t uid[5]);
   bool getEM410XSlot(uint8_t uid[5]);
   bool setHIDProxSlot(const uint8_t* payload, uint8_t payloadLen);
   bool getHIDProxSlot(uint8_t payload[13], uint8_t* payloadLen);
   bool setVikingSlot(const uint8_t uid[4], uint8_t uidLen);
   bool getVikingSlot(uint8_t uid[4], uint8_t* uidLen);
+  bool setIoProxSlot(const uint8_t payload[16]);
+  bool getIoProxSlot(uint8_t payload[16], uint8_t* payloadLen);
+  bool setPACSlot(const uint8_t id[8]);
+  bool getPACSlot(uint8_t id[8], uint8_t* idLen);
+  bool setJablotronSlot(const uint8_t id[5]);
+  bool getJablotronSlot(uint8_t id[5], uint8_t* idLen);
 
   static uint16_t inferHFTagType(uint8_t sak, const uint8_t atqa[2]);
-  bool cloneHF(uint8_t slot, uint16_t tagType,
-               const uint8_t* uid, uint8_t uidLen,
-               const uint8_t atqa[2], uint8_t sak);
 
   static const char* tagTypeName(uint16_t type);
 

@@ -27,6 +27,7 @@ public:
     _selectedIndex    = 0;
     _scrollOffset     = 0;
     _partialTopActive = false;
+    _scrollIfNeeded();
     render();
   }
 
@@ -36,6 +37,8 @@ public:
     _count         = count;
     _selectedIndex = 0;
     _scrollOffset  = 0;
+    _partialTopActive = false;
+    _scrollIfNeeded();
     render();
   }
 

@@ -1,17 +1,14 @@
 #include "ChameleonMfcWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
+#include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 
 namespace {
@@ -101,6 +98,13 @@ bool ChameleonMfcWriteScreen::_loadFile() {
   f.close();
   if (n != kClassic1KBytes) { _freeDump(); return false; }
   _dumpLen = kClassic1KBytes;
+
+  const uint8_t bcc = (uint8_t)(_dump[0] ^ _dump[1] ^ _dump[2] ^ _dump[3]);
+  if (_dump[4] == bcc) {
+    memcpy(_sourceUid, _dump, 4);
+    _sourceUidLen = 4;
+    _sourceUidKnown = true;
+  }
   return true;
 }
 
@@ -132,7 +136,14 @@ bool ChameleonMfcWriteScreen::_loadSlot() {
     _sourceUidLen = anti.uidLen;
     memcpy(_sourceUid, anti.uid, anti.uidLen);
   } else {
-    _sourceUidLen = 0;
+    const uint8_t bcc = (uint8_t)(_dump[0] ^ _dump[1] ^ _dump[2] ^ _dump[3]);
+    if (_dump[4] == bcc) {
+      memcpy(_sourceUid, _dump, 4);
+      _sourceUidLen = 4;
+      _sourceUidKnown = true;
+    } else {
+      _sourceUidLen = 0;
+    }
   }
 
   _restoreContext();
@@ -191,9 +202,9 @@ void ChameleonMfcWriteScreen::_buildSourcePreview() {
   String source = "Read Tag";
   if (_source == SOURCE_FILE) source = "File"; else if (_source == SOURCE_SLOT) source = String("Slot ") + (_slot + 1);
   _addRow("Source", source);
-  _addRow("Type", "MIFARE Classic 1K");
+  _addRow("Type", "MF Classic 1K");
   _addRow("UID", _sourceUidKnown ? _uidString(_sourceUid, _sourceUidLen) : String("Unknown"));
-  _addRow("Target UID", _sourceUidKnown ? "Replace if Magic" : "Preserved");
+  _addRow("UID Action", _sourceUidKnown ? (_replaceUid ? "Replace" : "Preserve") : "Preserved");
   _addRow("Blocks", "64");
   _addRow("Dump", String(_dumpLen) + " bytes");
   uint8_t* ndef = nullptr; size_t ndefLen = 0; NdefParser::Result parsed;
@@ -231,21 +242,39 @@ void ChameleonMfcWriteScreen::_buildSourcePreview() {
     };
 
     switch (parsed.kind) {
-      case NdefParser::RECORD_TEXT: _addRow("NDEF", "Text"); if (parsed.text.length()) addWrappedRow("Text", parsed.text); break;
-      case NdefParser::RECORD_URL: _addRow("NDEF", "URL"); _addRow("URL", parsed.uri); break;
-      case NdefParser::RECORD_PHONE: _addRow("NDEF", "Phone"); _addRow("Phone", parsed.phone); break;
-      case NdefParser::RECORD_EMAIL: _addRow("NDEF", "Email"); _addRow("Email", parsed.email); break;
+      case NdefParser::RECORD_TEXT:
+        _addRow("NDEF", "Text");
+        if (parsed.language.length()) _addRow("Language", parsed.language);
+        if (parsed.text.length()) addWrappedRow("Text", parsed.text);
+        break;
+      case NdefParser::RECORD_URL:
+        _addRow("NDEF", "URL");
+        addWrappedRow("URL", parsed.uri);
+        break;
+      case NdefParser::RECORD_PHONE:
+        _addRow("NDEF", "Phone");
+        addWrappedRow("Phone", parsed.phone);
+        break;
+      case NdefParser::RECORD_EMAIL:
+        _addRow("NDEF", "Email");
+        addWrappedRow("Email", parsed.email);
+        break;
       case NdefParser::RECORD_VCARD:
         _addRow("NDEF", "vCard");
-        if (parsed.contact.length()) _addRow("Contact", parsed.contact);
-        if (parsed.phone.length()) _addRow("Phone", parsed.phone);
-        if (parsed.email.length()) _addRow("Email", parsed.email);
+        if (parsed.contact.length()) addWrappedRow("Contact", parsed.contact);
+        if (parsed.company.length()) addWrappedRow("Company", parsed.company);
+        if (parsed.address.length()) addWrappedRow("Address", parsed.address);
+        if (parsed.phone.length()) addWrappedRow("Phone", parsed.phone);
+        if (parsed.email.length()) addWrappedRow("Email", parsed.email);
+        if (parsed.website.length()) addWrappedRow("Website", parsed.website);
         break;
-      default: _addRow("NDEF", "Unsupported"); break;
+      default:
+        _addRow("NDEF", "Unsupported");
+        break;
     }
   } else _addRow("NDEF", "Not found");
   if (ndef) free(ndef);
-  _addRow("[Press]", "Write to Tag");
+  _addRow("[Press]", "Write Dump to Tag");
   _scrollView.setRows(_rows, _rowCount);
 }
 
@@ -343,16 +372,39 @@ void ChameleonMfcWriteScreen::_write() {
   _busy = true; auto& c = ChameleonClient::get();
   if (!_restoreMode && c.getMode(&_previousMode)) _restoreMode = true;
   c.setMode(1);
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
 
   uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
-  bool targetOk = c.scan14A(uid, &uidLen, atqa, &sak) && sak == 0x08 && c.mf1Support();
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _busy = false;
+      _restoreContext();
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  const bool targetOk = found && sak == 0x08 && c.mf1Support();
+  if (!targetOk) {
+    _busy = false;
+    _restoreContext();
+    render();
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
+    render();
+    return;
+  }
   MagicCardType magic = MagicCardType::NONE;
   bool restoreUid = false;
-  if (targetOk && _sourceUidKnown) {
+  bool uidDiffers = false;
+  const bool replaceUidRequested = targetOk && _sourceUidKnown && _replaceUid;
+  if (replaceUidRequested) {
     magic = c.detectMagicType();
-    const bool uidDiffers = uidLen != _sourceUidLen ||
-                            (uidLen == _sourceUidLen && memcmp(uid, _sourceUid, uidLen) != 0);
+    uidDiffers = uidLen != _sourceUidLen ||
+                 (uidLen == _sourceUidLen && memcmp(uid, _sourceUid, uidLen) != 0);
     restoreUid = uidDiffers &&
                  ((magic == MagicCardType::GEN1A && _sourceUidLen == 4) ||
                   (magic == MagicCardType::GEN3 && (_sourceUidLen == 4 || _sourceUidLen == 7)));
@@ -368,21 +420,26 @@ void ChameleonMfcWriteScreen::_write() {
   }
   _busy = false; _restoreContext();
 
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+
   if (ok && !uidWriteFailed) {
-    ShowStatusAction::show(restoreUid ? "Tag + UID written" : "Tag written", 1600);
+    const char* status = restoreUid ? "Tag + UID written" :
+                         (replaceUidRequested && uidDiffers ? "Written; UID preserved" : "Written");
+    ShowStatusAction::show(status, 1600);
     _freeDump(); Screen.goBack(); return;
   }
   _buildSourcePreview(); render();
-  ShowStatusAction::show(uidWriteFailed ? "UID write failed" : "Tag write failed", 1600); render();
+  ShowStatusAction::show(uidWriteFailed ? "Failed to write UID" : "Failed", 1600); render();
 }
 
 void ChameleonMfcWriteScreen::onInit() {
-  _busy = true; ShowStatusAction::show("Loading...", 0);
+  _busy = true; render();
+  ShowStatusAction::show("Loading...", 0);
   bool ok = _loadSource(); _busy = false;
   if (!ok) {
     render();
     const char* msg = _source == SOURCE_FILE ? "Invalid Classic 1K dump" :
-                      (_source == SOURCE_SLOT ? "Slot is not Classic 1K" : "Read tag is not Classic 1K");
+                      (_source == SOURCE_SLOT ? "Slot is not Classic 1K" : "Tag is not Classic 1K");
     ShowStatusAction::show(msg, 1600); Screen.goBack(); return;
   }
   _buildSourcePreview();
@@ -392,7 +449,22 @@ void ChameleonMfcWriteScreen::onUpdate() {
   if (_busy || !Uni.Nav->wasPressed()) return;
   auto dir = Uni.Nav->readDirection();
   if (dir == INavigation::DIR_BACK) { _restoreContext(); _freeDump(); Screen.goBack(); return; }
-  if (dir == INavigation::DIR_PRESS) { _write(); return; }
+  if (dir == INavigation::DIR_PRESS) {
+    if (_sourceUidKnown) {
+      static constexpr InputSelectAction::Option uidOpts[] = {
+        {"Replace UID", "replace"},
+        {"Preserve UID", "preserve"},
+      };
+      const char* choice = InputSelectAction::popup(
+          "UID", uidOpts, 2, _replaceUid ? "replace" : "preserve");
+      if (!choice) { render(); return; }
+      _replaceUid = strcmp(choice, "replace") == 0;
+      _buildSourcePreview();
+      render();
+    }
+    _write();
+    return;
+  }
   _scrollView.onNav(dir);
 }
 

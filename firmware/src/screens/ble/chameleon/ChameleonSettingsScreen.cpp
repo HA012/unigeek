@@ -1,11 +1,11 @@
-#include "ChameleonSettingsScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
+#include "ChameleonSettingsScreen.h"
+#include "core/AchievementManager.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
-#include "core/AchievementManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 const char* ChameleonSettingsScreen::_animName(uint8_t v) {
   switch (v) {
@@ -67,6 +67,7 @@ void ChameleonSettingsScreen::_rebuildLabels() {
 }
 
 void ChameleonSettingsScreen::onInit() {
+  render();
   ShowStatusAction::show("Loading...", 0);
   _load();
   setItems(_items);
@@ -130,7 +131,7 @@ void ChameleonSettingsScreen::_togglePairing() {
 
 void ChameleonSettingsScreen::_save() {
   bool ok = ChameleonClient::get().saveSettings();
-  ShowStatusAction::show(ok ? "Settings saved" : "Save failed", 1200);
+  ShowStatusAction::show(ok ? "Saved" : "Failed", 1200);
   if (ok) {
     int n = Achievement.inc("chameleon_settings_saved");
     if (n == 1) Achievement.unlock("chameleon_settings_saved");

@@ -1,6 +1,6 @@
 #pragma once
-#include "ui/templates/ListScreen.h"
 #include "core/ScreenManager.h"
+#include "ui/templates/ListScreen.h"
 
 class ChameleonMfcAttacksScreen : public ListScreen {
 public:
@@ -11,5 +11,5 @@ public:
   void onBack()                      override { Screen.goBack(); }
 
 private:
-  ListItem _items[3];
+  ListItem _items[6];
 };

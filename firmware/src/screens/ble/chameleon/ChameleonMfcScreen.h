@@ -1,8 +1,11 @@
 #pragma once
+#include <cstring>
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/LogView.h"
+#include "ui/views/DictionaryDiscoverySummary.h"
 #include "ui/views/ScrollListView.h"
+#include "utils/nfc/MfcRecoverySummary.h"
 
 class ChameleonMfcScreen : public ListScreen {
 public:
@@ -12,9 +15,15 @@ public:
     ACTION_DICTIONARY,
     ACTION_STATIC_NESTED,
     ACTION_NESTED,
+    ACTION_DARKSIDE,
+    ACTION_RECOVER,
   };
 
   explicit ChameleonMfcScreen(StartAction action = ACTION_READ_TAG) : _startAction(action) {}
+  ChameleonMfcScreen(StartAction action, const uint8_t* uid, uint8_t uidLen)
+      : _startAction(action), _expectedUidLen(uidLen <= 7 ? uidLen : 0) {
+    if (_expectedUidLen) memcpy(_expectedUid, uid, _expectedUidLen);
+  }
   const char* title() override;
   bool inhibitPowerOff() override { return _running; }
 
@@ -25,6 +34,26 @@ public:
   void onBack()                      override;
 
 private:
+  enum class DictControl {
+    Continue,
+    Cancel,
+    ObjectiveMet,
+    Error,
+  };
+
+  struct DictAttempt {
+    uint8_t sector;
+    char type;
+    uint32_t index;
+    uint32_t total;
+    uint32_t workIndex;
+    uint32_t workTotal;
+    const uint8_t* key;
+    int slot;
+    int slotTotal;
+    bool authed;
+  };
+
   enum State {
     STATE_AUTH,
     STATE_MF_MENU,
@@ -38,12 +67,29 @@ private:
     STATE_STATIC_NESTED_LOG,
     STATE_NESTED,
     STATE_NESTED_LOG,
+    STATE_RECOVER,
+    STATE_READ_PREVIEW,
   };
 
   State _state   = STATE_AUTH;
   StartAction _startAction = ACTION_READ_TAG;
+  uint8_t _expectedUid[7] = {};
+  uint8_t _expectedUidLen = 0;
   bool _resumeReadAfterAttack = false;
   bool  _running = false;
+  char _chainStage[32] = {};
+  char _dictError[64] = {};
+  int  _recoverStartCount = 0;
+  int  _dictNewFound = 0;
+  MfcRecoverySummary _keySummary;
+  bool _trackRecoveryKeys = false;
+  bool _keyCheckPromptShown = false;
+  bool _keyCheckCompletedShown = false;
+  DictionaryDiscoverySummary _discoveredKeys;
+  bool _keyCheckContinueMissing = false;
+  bool _keyCheckStopRequested = false;
+  bool _dictAttackPending = false;
+  uint8_t _authenticatedSectors() const;
 
   // Card info
   uint8_t _uid[7]  = {};
@@ -56,6 +102,8 @@ private:
   uint8_t* _dump       = nullptr;
   uint16_t _dumpLen    = 0;
   uint16_t _dumpBlocks = 0;
+  uint16_t _dumpReadBlocks = 0;
+  uint8_t  _dumpValidBlocks[256] = {};
 
   // Discovered keys
   uint8_t _keysA[40][6] = {};
@@ -65,24 +113,30 @@ private:
   int     _recovered    = 0;
 
   // MF submenu
-  ListItem _mfItems[5] = {
-    {"Discovered Keys"},
+  ListItem _mfItems[6] = {
+    {"Check Known Keys"},
     {"Dump Memory"},
     {"Dictionary Attack"},
     {"Static Nested"},
     {"Nested Attack"},
+    {"Darkside"},
   };
 
   // Auth log
   LogView _authLog;
   char    _authStatus[48] = {};
   int     _authPct = 0;
+  bool    _waitingForTag = true;
   static void _authStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Action log (dump + dict)
   LogView _actionLog;
   char    _actionStatus[48] = {};
+  uint8_t _dictProgressStage = 0;
+  char    _actionAttempt[48] = {};
   int     _actionPct = 0;
+  size_t  _dictProgressKeyIndex = 0;
+  size_t  _dictProgressKeyTotal = 0;
   static void _actionStatusBarCb(Sprite& sp, int barY, int width, void* userData);
 
   // Keys result view
@@ -96,37 +150,54 @@ private:
   // Dict file picker
   static constexpr const char* _kDictDir = "/unigeek/nfc/dictionaries";
   BrowseFileView _browser;
-  ListItem _dictItems[1 + BrowseFileView::kCap];
+  ListItem _dictItems[2 + BrowseFileView::kCap];
   uint8_t  _dictFileCount = 0;
   String   _dictPickDir;        // current directory in the dict picker
-  static constexpr uint16_t MAX_DICT_KEYS = 256;
-  uint8_t  _dictKeys[MAX_DICT_KEYS][6] = {};
   uint16_t _dictKeyCount = 0;
+  String   _dictSource;
 
   uint8_t  _trailerBlock(uint8_t sector);
   uint16_t _totalBlocks();
-  void _goMfMenu();
   void _dispatchStartAction();
   void _continueRead();
+  void _enterMfMenu();
+  void _showReadPreview();
+  void _showReadActions();
+  void _callRecoverKeys();
+  bool _hasAnyKey() const;
+  bool _hasMissingKeys() const;
+  bool _hasKeyForEverySector() const;
+  bool _hasAllKeys() const;
+  bool _recoverObjectiveMet() const;
+  bool _offerMissingKeyCheck(const uint8_t key[6], char type);
+  void _setChainStage(const char* name);
+  void _finishRecover(bool success, const char* status, bool restoreMode,
+                      uint8_t previousMode, bool havePreviousMode,
+                      bool allowPartialReadOnFailure = false);
+  DictControl _applyDictionaryKeys(const uint8_t keys[][6], uint16_t keyCount,
+                                   DictControl (*hook)(ChameleonMfcScreen*, const DictAttempt&, bool pre));
+  DictControl _runChainDictionaries();
+  static DictControl _standaloneDictHook(ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre);
+  static DictControl _chainDictHook(ChameleonMfcScreen* self, const DictAttempt& attempt, bool pre);
   void _callAuth();
   void _showDiscoveredKeys();
   void _callDump();
   void _buildDumpPreview();
-  void _buildDumpHex();
   void _showDumpActions();
   void _loadDumpToSlot();
   void _saveDump();
+  void _saveUid();
   void _freeDump();
   bool _extractDumpNdef(uint8_t** ndef, size_t* ndefLen) const;
   void _loadDictPicker();
-  bool _loadDictFile(const char* path);
   void _runDictAttack();
   void _buildKeyRows();
   void _loadKeys();
   void _saveKeys();
 
   // Nested attack UI helpers (nonce collection now done firmware-side).
+  enum class AdvancedAttackResult : uint8_t { Completed, Failed, Cancelled };
   void _log(const char* line, uint16_t color);
-  void _callStaticNested();
-  void _callNestedAttack();
+  AdvancedAttackResult _callStaticNested();
+  AdvancedAttackResult _callNestedAttack();
 };

@@ -1,29 +1,26 @@
 #include "ChameleonMfcNdefScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "utils/nfc/NdefBuilder.h"
-#include "utils/nfc/NdefParser.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/components/Header.h"
+#include "ui/components/StatusBar.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/nfc/NdefBuilder.h"
+#include "utils/nfc/NdefParser.h"
 
 #include <cstring>
 #include <ctype.h>
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 
 namespace {
-static void renderOperationTitle(const char* title) { Header header; header.render(title); }
+static void renderOperationTitle(const char* title) { Header header; header.render(title); StatusBar::refresh(); }
 static constexpr uint8_t MAD_KEY_A[6] = {0xA0,0xA1,0xA2,0xA3,0xA4,0xA5};
 static constexpr uint8_t NFC_KEY_A[6] = {0xD3,0xF7,0xD3,0xF7,0xD3,0xF7};
 
@@ -53,7 +50,7 @@ void ChameleonMfcNdefScreen::_goMenu() {
   _state = STATE_MENU;
   _writePreview = false;
   _writePreviewFromFile = false;
-  setItems(_menuItems);
+  setItems(_menuItems, 4, _selMenu);
   render();
 }
 
@@ -61,7 +58,7 @@ void ChameleonMfcNdefScreen::_goWriteMenu() {
   _state = STATE_WRITE_MENU;
   _writePreview = false;
   _writePreviewFromFile = false;
-  setItems(_writeItems);
+  setItems(_writeItems, 6, _selWrite);
   render();
 }
 
@@ -103,10 +100,10 @@ void ChameleonMfcNdefScreen::onRender() {
 
 void ChameleonMfcNdefScreen::onItemSelected(uint8_t index) {
   if (_state == STATE_MENU) {
+    _selMenu = index;
     if (index == 0) _doRead();
     else if (index == 1) _goWriteMenu();
-    else if (index == 2) _doErase();
-    else if (index == 3) {
+    else if (index == 2) {
       _running = true;
       renderOperationTitle("Format NDEF");
       if (_scanClassic()) _formatClassic1kNdef();
@@ -114,9 +111,11 @@ void ChameleonMfcNdefScreen::onItemSelected(uint8_t index) {
       ChameleonClient::get().setMode(0);
       _goMenu();
     }
+    else if (index == 3) _doErase();
     return;
   }
   if (_state == STATE_WRITE_MENU) {
+    _selWrite = index;
     if (index == 0) _writeText();
     else if (index == 1) _writeUrl();
     else if (index == 2) _writePhone();
@@ -168,22 +167,32 @@ uint16_t ChameleonMfcNdefScreen::_firstBlock(uint8_t sector) const {
 bool ChameleonMfcNdefScreen::_scanClassic() {
   auto& c = ChameleonClient::get();
   c.setMode(1);
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
   uint8_t atqa[2] = {}, sak = 0;
-  if (!c.scan14A(_uid, &_uidLen, atqa, &sak)) {
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      c.setMode(0); return false;
+    }
+    if (c.scan14A(_uid, &_uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  if (!found) {
     c.setMode(0);
-    ShowStatusAction::show("No tag detected");
+    ShowStatusAction::show("Tag not detected", 1200);
     return false;
   }
   if (!c.mf1Support()) {
     c.setMode(0);
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported", 1200);
     return false;
   }
   _sak = sak;
   memcpy(_atqa, atqa, 2);
   if (sak == 0x18) _sectors = 40;
-  else if (sak == 0x01) _sectors = 5;
+  else if (sak == 0x09) _sectors = 5;
   else _sectors = 16;
   return true;
 }
@@ -303,14 +312,14 @@ void ChameleonMfcNdefScreen::_doRead() {
   size_t count = 0;
   if (!_readNdefSectors(sectors, sizeof(sectors), count)) {
     ChameleonClient::get().setMode(0); _running = false;
-    ShowStatusAction::show("No NDEF sectors in MAD"); _goMenu(); return;
+    ShowStatusAction::show("No NDEF sectors in MAD", 1600); _goMenu(); return;
   }
   for (size_t i = 0; i < count; ++i) _capacity += sectors[i] < 32 ? 48u : 240u;
 
   uint8_t* area = nullptr; size_t areaLen = 0;
   if (!_readNdefArea(sectors, count, area, areaLen)) {
     ChameleonClient::get().setMode(0); _running = false;
-    ShowStatusAction::show("Failed to read NDEF sectors"); _goMenu(); return;
+    ShowStatusAction::show("Failed to read NDEF sectors", 1600); _goMenu(); return;
   }
 
   const uint8_t* ndef = nullptr; size_t ndefLen = 0; size_t pos = 0;
@@ -335,7 +344,7 @@ void ChameleonMfcNdefScreen::_doRead() {
 
 bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
   if (_sectors != 16) {
-    ShowStatusAction::show("Format supports Classic 1K");
+    ShowStatusAction::show("Format supports Classic 1K", 1600);
     return false;
   }
 
@@ -454,7 +463,7 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
       }
     }
     if (!found) {
-      ShowStatusAction::show("Format: unknown sector key");
+      ShowStatusAction::show("Format: unknown sector key", 1600);
       return false;
     }
   }
@@ -512,14 +521,16 @@ bool ChameleonMfcNdefScreen::_formatClassic1kNdef() {
 
   if (ok) ProgressView::progress("Format complete", 100);
   ProgressView::finish();
-  ShowStatusAction::show(ok ? "NDEF formatted" : "NDEF format failed");
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  renderOperationTitle("Format NDEF");
+  ShowStatusAction::show(ok ? "NDEF formatted" : "Failed", 1600);
   return ok;
 }
 
 bool ChameleonMfcNdefScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLen) {
   renderOperationTitle("Write NDEF");
   if (!ndef || !ndefLen || ndefLen > MAX_NDEF_BYTES) {
-    ShowStatusAction::show("NDEF too large"); return false;
+    ShowStatusAction::show("NDEF too large", 1600); return false;
   }
   _running = true;
   if (!_scanClassic()) { _running = false; return false; }
@@ -547,13 +558,13 @@ bool ChameleonMfcNdefScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLe
   const size_t payloadLen = ndefLen + 3u;
   if (payloadLen > capacity || ndefLen > 254u) {
     ChameleonClient::get().setMode(0); _running = false;
-    ShowStatusAction::show("NDEF does not fit"); return false;
+    ShowStatusAction::show("NDEF does not fit", 1600); return false;
   }
 
   uint8_t* payload = (uint8_t*)malloc(payloadLen);
   if (!payload) {
     ChameleonClient::get().setMode(0); _running = false;
-    ShowStatusAction::show("Out of memory"); return false;
+    ShowStatusAction::show("Out of memory", 1600); return false;
   }
   payload[0] = 0x03; payload[1] = (uint8_t)ndefLen;
   memcpy(payload + 2, ndef, ndefLen); payload[2 + ndefLen] = 0xFE;
@@ -593,7 +604,9 @@ bool ChameleonMfcNdefScreen::_writeNdefRecord(const uint8_t* ndef, size_t ndefLe
   ProgressView::finish();
   free(payload);
   c.setMode(0); _running = false;
-  ShowStatusAction::show(ok ? "NDEF written" : "NDEF write failed");
+  Uni.Lcd.fillRect(bodyX(), bodyY(), bodyW(), bodyH(), TFT_BLACK);
+  renderOperationTitle("Write NDEF");
+  ShowStatusAction::show(ok ? "NDEF written" : "Failed", 1600);
   return ok;
 }
 
@@ -604,7 +617,7 @@ void ChameleonMfcNdefScreen::_doErase() {
   uint8_t sectors[39] = {}; size_t count = 0;
   if (!_readNdefSectors(sectors, sizeof(sectors), count)) {
     ChameleonClient::get().setMode(0); _running = false;
-    ShowStatusAction::show("Not NDEF formatted"); _goMenu(); return;
+    ShowStatusAction::show("Not NDEF formatted", 1600); _goMenu(); return;
   }
   const uint8_t blockNo = (uint8_t)_firstBlock(sectors[0]);
   uint8_t block[16] = {};
@@ -616,7 +629,7 @@ void ChameleonMfcNdefScreen::_doErase() {
   }
   c.setMode(0); _running = false;
   _hasNdef = false; _ndefLen = 0;
-  ShowStatusAction::show(ok ? "NDEF erased" : "NDEF erase failed");
+  ShowStatusAction::show(ok ? "NDEF erased" : "Failed", 1600);
   _goMenu();
 }
 
@@ -661,7 +674,7 @@ void ChameleonMfcNdefScreen::_showResult(const uint8_t* ndef, size_t ndefLen) {
   _state = STATE_RESULT; _resetRows(); _hasNdef = false; _ndefLen = 0;
   if (_uidLen) _addRow("UID", _uidString());
   if (!ndef) {
-    _addRow("NDEF", "Not found");
+    _addRow("NDEF", "NDEF not found");
     _scrollView.setRows(_rows, _rowCount); render(); return;
   }
   if (ndefLen <= MAX_NDEF_BYTES) {
@@ -684,18 +697,18 @@ void ChameleonMfcNdefScreen::_showResult(const uint8_t* ndef, size_t ndefLen) {
     case NdefParser::RECORD_TEXT:
       _addRow("Record", "Text"); if (parsed.language.length()) _addRow("Language", parsed.language); _addWrapped("Text", parsed.text); break;
     case NdefParser::RECORD_URL:
-      _addRow("Record", "URI"); _addWrapped("URI", parsed.uri); break;
+      _addRow("Record", "URL"); _addWrapped("URL", parsed.uri); break;
     case NdefParser::RECORD_PHONE:
       _addRow("Record", "Phone"); _addWrapped("Phone", parsed.phone); break;
     case NdefParser::RECORD_EMAIL:
-      _addRow("Record", "Email"); _addWrapped("Mail", parsed.email); break;
+      _addRow("Record", "Email"); _addWrapped("Email", parsed.email); break;
     case NdefParser::RECORD_VCARD:
       _addRow("Record", "vCard");
       if (parsed.contact.length()) _addWrapped("Contact", parsed.contact);
       if (parsed.company.length()) _addWrapped("Company", parsed.company);
       if (parsed.address.length()) _addWrapped("Address", parsed.address);
       if (parsed.phone.length()) _addWrapped("Phone", parsed.phone);
-      if (parsed.email.length()) _addWrapped("Mail", parsed.email);
+      if (parsed.email.length()) _addWrapped("Email", parsed.email);
       if (parsed.website.length()) _addWrapped("Website", parsed.website);
       break;
     default: _addRow("Record", "Unsupported"); break;
@@ -718,7 +731,7 @@ void ChameleonMfcNdefScreen::_showActions() {
 
 void ChameleonMfcNdefScreen::_saveCurrent() {
   if (!_hasNdef || !_ndefLen || !Uni.Storage || !Uni.Storage->isAvailable()) {
-    ShowStatusAction::show("Save failed"); render(); return;
+    ShowStatusAction::show("Failed", 1600); render(); return;
   }
   Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc"); Uni.Storage->makeDir(NDEF_DIR);
   String base = _uidString(); base.replace(":", ""); if (!base.length()) base = "unknown"; base += "_mifare";
@@ -735,7 +748,7 @@ void ChameleonMfcNdefScreen::_saveCurrent() {
   fs::File f = Uni.Storage->open(path.c_str(), "w"); bool ok = false;
   if (f) { ok = f.write(_ndef, _ndefLen) == _ndefLen; f.close(); }
   render();
-  ShowStatusAction::show(ok ? "NDEF saved" : "Save failed");
+  ShowStatusAction::show(ok ? "NDEF saved" : "Failed", 1600);
   if (ok) { _goMenu(); return; }
   render();
 }
@@ -748,25 +761,25 @@ void ChameleonMfcNdefScreen::_showWritePreview(const uint8_t* ndef, size_t ndefL
 void ChameleonMfcNdefScreen::_writeText() {
   String v = InputTextAction::popup("Text", ""); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildText(v, b, n, sizeof(b))) { ShowStatusAction::show("Text too large"); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildText(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Text too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeUrl() {
   String v = InputTextAction::popup("URL", "https://"); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildUrl(v, b, n, sizeof(b))) { ShowStatusAction::show("URL too large"); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildUrl(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("URL too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writePhone() {
   String v = InputTextAction::popup("Phone", "", InputTextAction::INPUT_PHONE); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildPhone(v, b, n, sizeof(b))) { ShowStatusAction::show("Phone too large"); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildPhone(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Phone too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeEmail() {
   String v = InputTextAction::popup("Email", ""); if (InputTextAction::wasCancelled() || !v.length()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
-  if (!NdefBuilder::buildEmail(v, b, n, sizeof(b))) { ShowStatusAction::show("Email too large"); _goWriteMenu(); return; }
+  if (!NdefBuilder::buildEmail(v, b, n, sizeof(b))) { _goWriteMenu(); ShowStatusAction::show("Email too large", 1600); return; }
   _showWritePreview(b, n, false);
 }
 void ChameleonMfcNdefScreen::_writeVcard() {
@@ -778,13 +791,13 @@ void ChameleonMfcNdefScreen::_writeVcard() {
   String website = InputTextAction::popup("Website", "https://"); if (InputTextAction::wasCancelled()) { _goWriteMenu(); return; }
   uint8_t b[MAX_NDEF_BYTES] = {}; size_t n = 0;
   if (!NdefBuilder::buildVcard(contact, company, address, phone, email, website, b, n, sizeof(b))) {
-    ShowStatusAction::show("vCard too large"); _goWriteMenu(); return;
+    _goWriteMenu(); ShowStatusAction::show("vCard too large", 1600); return;
   }
   _showWritePreview(b, n, false);
 }
 
 void ChameleonMfcNdefScreen::_loadFilePicker() {
-  if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable"); _goWriteMenu(); return; }
+  if (!Uni.Storage || !Uni.Storage->isAvailable()) { ShowStatusAction::show("Storage unavailable", 1600); _goWriteMenu(); return; }
   Uni.Storage->makeDir("/unigeek"); Uni.Storage->makeDir("/unigeek/nfc"); Uni.Storage->makeDir(NDEF_DIR);
   if (_pickDir.length() == 0 || !_pickDir.startsWith(NDEF_DIR)) _pickDir = NDEF_DIR;
   _browser.root = NDEF_DIR;
@@ -799,10 +812,10 @@ void ChameleonMfcNdefScreen::_selectFile(uint8_t index) {
   if (!Uni.Storage) return;
   fs::File f = Uni.Storage->open(e.path.c_str(), "r");
   if (!f || f.size() == 0 || f.size() > MAX_NDEF_BYTES) {
-    if (f) f.close(); ShowStatusAction::show("Invalid NDEF file"); _loadFilePicker(); return;
+    if (f) f.close(); ShowStatusAction::show("Invalid NDEF file", 1600); _loadFilePicker(); return;
   }
   const size_t len = f.size(); uint8_t b[MAX_NDEF_BYTES] = {};
   const bool ok = f.read(b, len) == (int)len; f.close();
-  if (!ok) { ShowStatusAction::show("Read failed"); _loadFilePicker(); return; }
+  if (!ok) { ShowStatusAction::show("Failed to read NDEF", 1600); _loadFilePicker(); return; }
   _showWritePreview(b, len, true);
 }

@@ -189,6 +189,7 @@ bool PN532UartScreen::_initModule() {
     return false;
   }
 
+  render();
   ProgressView::init();
   ProgressView::progress("Opening UART...", 10);
 
@@ -328,7 +329,7 @@ const char* PN532UartScreen::_inferType(uint8_t sak, uint16_t atqa) const {
   if (sak == 0x18) return "MF Classic 4K";
   if (sak == 0x28) return "MF Plus / SmartMX";
   if (sak == 0x20) return atqaHi == 0x03 ? "MIFARE DESFire" : "ISO14443-4";
-  if (sak == 0x00) return (atqa & 0x00FF) == 0x44 ? "MIFARE UL / NTAG" : "ISO14443A T2";
+  if (sak == 0x00) return (atqa & 0x00FF) == 0x44 ? "Ultralight / NTAG" : "ISO14443A T2";
   return "ISO14443A";
 }
 
@@ -465,7 +466,7 @@ void PN532UartScreen::_doAuthenticate() {
 
   auto dims = _mfDims(_card.sak);
   if (dims.first == 0) {
-    ShowStatusAction::show("Not MIFARE Classic");
+    ShowStatusAction::show("Tag not supported");
     _goMifare();
     return;
   }
@@ -519,7 +520,7 @@ void PN532UartScreen::_doAuthenticate() {
 void PN532UartScreen::_doDumpMemory() {
   if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_DUMP;
   _resetRows();
@@ -597,7 +598,7 @@ void PN532UartScreen::_doDumpMemory() {
 void PN532UartScreen::_doShowKeys() {
   if (!_hasCard) { ShowStatusAction::show("Authentication required"); _goMifare(); return; }
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   _state = STATE_MIFARE_KEYS;
   _resetRows();
@@ -666,7 +667,7 @@ void PN532UartScreen::_doDictionaryAttackWithFile(uint8_t fileIndex) {
   if (keyCount == 0) { ShowStatusAction::show("No valid keys"); return; }
 
   auto dims = _mfDims(_card.sak);
-  if (dims.first == 0) { ShowStatusAction::show("Not MIFARE Classic"); _goMifare(); return; }
+  if (dims.first == 0) { ShowStatusAction::show("Tag not supported"); _goMifare(); return; }
 
   size_t totalSectors = dims.first;
   int recovered = 0;

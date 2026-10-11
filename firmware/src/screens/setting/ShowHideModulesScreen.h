@@ -1,0 +1,22 @@
+#pragma once
+
+#include "ui/templates/ListScreen.h"
+#include "screens/module/ModuleRegistry.h"
+
+class ShowHideModulesScreen : public ListScreen
+{
+public:
+  const char* title() override { return "Show/Hide Modules"; }
+
+  void onInit() override;
+  void onItemSelected(uint8_t index) override;
+  void onBack() override;
+
+private:
+  void _refresh();
+
+  String   _subs[ModuleRegistry::MOD_COUNT];
+  ListItem _items[ModuleRegistry::MOD_COUNT];
+  uint8_t  _ids[ModuleRegistry::MOD_COUNT];
+  uint8_t  _count = 0;
+};

@@ -1,5 +1,4 @@
 #pragma once
-
 #include "ui/templates/ListScreen.h"
 #include "ui/views/BrowseFileView.h"
 #include "ui/views/ScrollListView.h"
@@ -30,6 +29,8 @@ private:
   bool _running = false;
   bool _writePreview = false;
   bool _writePreviewFromFile = false;
+  uint8_t _selMenu = 0;
+  uint8_t _selWrite = 0;
 
   uint8_t _uid[7] = {};
   uint8_t _uidLen = 0;
@@ -45,8 +46,8 @@ private:
   ListItem _menuItems[4] = {
     {"Read NDEF"},
     {"Write NDEF"},
-    {"Erase NDEF"},
     {"Format NDEF"},
+    {"Erase NDEF"},
   };
   ListItem _writeItems[6] = {
     {"Text"}, {"URL"}, {"Phone"}, {"Email"}, {"vCard"}, {"Load from File"},

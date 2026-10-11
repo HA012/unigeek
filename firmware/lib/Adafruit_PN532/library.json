@@ -1,0 +1,12 @@
+{
+  "name": "Adafruit PN532",
+  "version": "1.3.4",
+  "build": {
+    "srcDir": "."
+  },
+  "dependencies": [
+    {
+      "name": "Adafruit BusIO"
+    }
+  ]
+}

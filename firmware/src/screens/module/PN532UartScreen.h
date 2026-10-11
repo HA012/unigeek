@@ -83,12 +83,12 @@ private:
     {"Authenticate"},
     {"Dump Memory"},
     {"Discovered Keys"},
-    {"Dictionary Attack"},
+    {"Dictionary"},
   };
 
   ListItem _ulItems[2] = {
     {"Read All Pages"},
-    {"Write Page"},
+    {"Edit Memory"},
   };
 
   ListItem _magicItems[3] = {

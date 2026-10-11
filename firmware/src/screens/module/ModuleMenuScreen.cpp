@@ -9,12 +9,14 @@
 #include "screens/module/SubGHzScreen.h"
 #include "screens/module/M5RF433Screen.h"
 #include "screens/module/NRF24Screen.h"
-#include "screens/setting/PinSettingScreen.h"
+#include "screens/module/ST25R3916Screen.h"
+#include "screens/setting/PinSettingsScreen.h"
 
 void ModuleMenuScreen::onInit() {
   _visibleCount = 0;
-  for (uint8_t id = 0; id < ModuleRegistry::MOD_COUNT; id++) {
-    if (ModuleRegistry::isHidden(id)) continue;
+  for (uint8_t i = 0; i < ModuleRegistry::MOD_COUNT; i++) {
+    const uint8_t id = ModuleRegistry::DISPLAY_ORDER[i];
+    if (!ModuleRegistry::isAvailable(id) || ModuleRegistry::isHidden(id)) continue;
     _items[_visibleCount].label    = ModuleRegistry::LABELS[id];
     _items[_visibleCount].sublabel = nullptr;
     _ids[_visibleCount]            = id;
@@ -38,6 +40,8 @@ void ModuleMenuScreen::onItemSelected(uint8_t index) {
     case ModuleRegistry::MOD_SUBGHZ:      Screen.push(new SubGHzScreen());     break;
     case ModuleRegistry::MOD_M5_RF433:    Screen.push(new M5RF433Screen());    break;
     case ModuleRegistry::MOD_NRF24:       Screen.push(new NRF24Screen());      break;
-    case ModuleRegistry::MOD_PIN_SETTING: Screen.push(new PinSettingScreen()); break;
+    case ModuleRegistry::MOD_PIN_SETTING: Screen.push(new PinSettingsScreen()); break;
+    case ModuleRegistry::MOD_ST25R3916:     Screen.push(new ST25R3916Screen(ST25R3916Screen::Interface::I2C)); break;
+    case ModuleRegistry::MOD_ST25R3916_SPI: Screen.push(new ST25R3916Screen(ST25R3916Screen::Interface::SPI)); break;
   }
 }

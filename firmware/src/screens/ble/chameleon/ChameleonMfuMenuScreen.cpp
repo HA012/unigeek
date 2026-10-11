@@ -1,6 +1,6 @@
 #include "ChameleonMfuMenuScreen.h"
-#include "ChameleonMfuToolsScreen.h"
 #include "ChameleonMfuNdefScreen.h"
+#include "ChameleonMfuToolsScreen.h"
 #include "core/ScreenManager.h"
 
 void ChameleonMfuMenuScreen::onInit() {

@@ -1,15 +1,15 @@
 #include "ChameleonDeviceScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonMenuScreen.h"
-#include "core/Device.h"
-#include "core/ScreenManager.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "utils/ble/ChameleonClient.h"
 
 void ChameleonDeviceScreen::_load() {
   static constexpr const char* kLabels[kFields] = {
-    "Version", "Type", "Battery", "Mode", "Active Slot", "Chip ID"
+    "Device", "Firmware", "Chip ID", "Battery", "Mode", "Active Slot"
   };
 
   for (int i = 0; i < kFields; i++) {
@@ -26,23 +26,24 @@ void ChameleonDeviceScreen::_load() {
     return;
   }
 
-  char buf[32] = {};
-  if (c.getVersion(buf, sizeof(buf)))   _rowValues[0] = buf;
-
   uint8_t type = 0;
-  if (c.getDeviceType(&type))           _rowValues[1] = (type == 0 ? "Ultra" : "Lite");
+  if (c.getDeviceType(&type))
+    _rowValues[0] = (type == 0 ? "Chameleon Ultra" : "Chameleon Lite");
 
-  uint8_t pct = 0; uint16_t mv = 0;
-  if (c.getBattery(&pct, &mv))          _rowValues[2] = String(pct) + "% (" + mv + "mV)";
-
-  uint8_t mode = 0;
-  if (c.getMode(&mode))                 _rowValues[3] = (mode == 1 ? "Reader" : "Emulator");
-
-  uint8_t slot = 0;
-  if (c.getActiveSlot(&slot))           _rowValues[4] = String(slot + 1);
+  char buf[32] = {};
+  if (c.getVersion(buf, sizeof(buf)))   _rowValues[1] = buf;
 
   memset(buf, 0, sizeof(buf));
-  if (c.getChipId(buf, sizeof(buf)))    _rowValues[5] = buf;
+  if (c.getChipId(buf, sizeof(buf)))    _rowValues[2] = buf;
+
+  uint8_t pct = 0; uint16_t mv = 0;
+  if (c.getBattery(&pct, &mv))          _rowValues[3] = String(pct) + "% (" + mv + "mV)";
+
+  uint8_t mode = 0;
+  if (c.getMode(&mode))                 _rowValues[4] = (mode == 1 ? "Reader" : "Emulator");
+
+  uint8_t slot = 0;
+  if (c.getActiveSlot(&slot))           _rowValues[5] = String(slot + 1);
 
   for (int i = 0; i < kFields; i++)
     _rows[i] = {_rowLabels[i].c_str(), _rowValues[i]};
@@ -54,6 +55,7 @@ void ChameleonDeviceScreen::_load() {
 }
 
 void ChameleonDeviceScreen::onInit() {
+  render();
   ShowStatusAction::show("Loading...", 0);
   _load();
 }

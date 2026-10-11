@@ -9,32 +9,60 @@
 #include "SubGhzDecoders.h"
 #include <ELECHOUSE_CC1101_SRC_DRV.h>
 #include "utils/ScratchBuffer.h"
+#include "core/PinConfigManager.h"
 
 // ── CC1101 antenna-path selection ───────────────────────────────────────────
-// Select the appropriate RF switch path for the requested frequency band.
-// Only boards equipped with the CC1101 antenna switch define this block;
-// on other boards, cc1101SetFrequency() simply changes the CC1101 frequency.
-#ifdef DEVICE_HAS_CC1101_ANTENNA_SWITCH
+static constexpr int kCc1101SwGdo2 = -2;
+static constexpr uint8_t kCc1101Gdo2Low  = 0x2F;
+static constexpr uint8_t kCc1101Gdo2High = 0x6F;
+
+static int cc1101Sw0Pin() {
+  return PinConfig.getInt(PIN_CONFIG_CC1101_SW0, PIN_CONFIG_CC1101_SW0_DEFAULT);
+}
+
+static int cc1101Sw1Pin() {
+  return PinConfig.getInt(PIN_CONFIG_CC1101_SW1, PIN_CONFIG_CC1101_SW1_DEFAULT);
+}
+
+static void cc1101SetGdo2Level(bool high) {
+  ELECHOUSE_cc1101.SpiWriteReg(CC1101_IOCFG2, high ? kCc1101Gdo2High : kCc1101Gdo2Low);
+}
 
 static void cc1101SetAntennaPath(float mhz) {
-  if (mhz >= 300.0f && mhz <= 348.0f) {          // 315 MHz path
-    digitalWrite(CC1101_SW1_PIN, HIGH);
-    digitalWrite(CC1101_SW0_PIN, LOW);
-  } else if (mhz >= 387.0f && mhz <= 464.0f) {   // 434 MHz path
-    digitalWrite(CC1101_SW1_PIN, HIGH);
-    digitalWrite(CC1101_SW0_PIN, HIGH);
-  } else if (mhz >= 779.0f && mhz <= 928.0f) {   // 868 / 915 MHz path
-    digitalWrite(CC1101_SW1_PIN, LOW);
-    digitalWrite(CC1101_SW0_PIN, HIGH);
+  const int sw0 = cc1101Sw0Pin();
+  const int sw1 = cc1101Sw1Pin();
+  if (sw0 < 0) return;
+
+  if (sw1 == kCc1101SwGdo2) {
+    if (mhz >= 300.0f && mhz <= 348.0f) {
+      digitalWrite(sw0, LOW);
+      cc1101SetGdo2Level(false);
+    } else if (mhz >= 387.0f && mhz <= 464.0f) {
+      digitalWrite(sw0, LOW);
+      cc1101SetGdo2Level(true);
+    } else if (mhz >= 779.0f && mhz <= 928.0f) {
+      digitalWrite(sw0, HIGH);
+      cc1101SetGdo2Level(true);
+    }
+    return;
+  }
+
+  if (sw1 >= 0) {
+    if (mhz >= 300.0f && mhz <= 348.0f) {
+      digitalWrite(sw1, HIGH);
+      digitalWrite(sw0, LOW);
+    } else if (mhz >= 387.0f && mhz <= 464.0f) {
+      digitalWrite(sw1, HIGH);
+      digitalWrite(sw0, HIGH);
+    } else if (mhz >= 779.0f && mhz <= 928.0f) {
+      digitalWrite(sw1, LOW);
+      digitalWrite(sw0, HIGH);
+    }
   }
 }
 
-#endif
-
 static void cc1101SetFrequency(float mhz) {
-#ifdef DEVICE_HAS_CC1101_ANTENNA_SWITCH
   cc1101SetAntennaPath(mhz);
-#endif
 
   // Program the CC1101 frequency registers. The actual VCO calibration is
   // deliberately triggered by SetRx() at call sites that require a fresh
@@ -71,6 +99,11 @@ bool CC1101Util::begin(ExtSpiClass* spi, int8_t csPin, int8_t gdo0Pin) {
 
   pinMode(csPin, OUTPUT);
   digitalWrite(csPin, HIGH);
+
+  const int sw0 = cc1101Sw0Pin();
+  const int sw1 = cc1101Sw1Pin();
+  if (sw0 >= 0) pinMode(sw0, OUTPUT);
+  if (sw1 >= 0) pinMode(sw1, OUTPUT);
 
   // Explicitly begin the SPI bus — on boards where extSpi.begin() was deferred
   // at boot (M5StickC, shared GPIO 32/33 with GPS UART), this reclaims the pins.

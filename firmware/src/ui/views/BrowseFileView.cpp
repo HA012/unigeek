@@ -32,7 +32,8 @@ String BrowseFileView::prettifyTitle(const String& filename)
 
 uint8_t BrowseFileView::load(BaseScreen* host, String dir,
                               Mode mode, const char* fileSublabel,
-                              LabelStyle style)
+                              LabelStyle style, const char* preferredFile,
+                              const char* hiddenDirName)
 {
   _count = 0;
 
@@ -65,8 +66,22 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
     while (j >= 0) {
       bool swap = false;
       if (tmp.isDir && !raw[j].isDir) swap = true;
-      else if (tmp.isDir == raw[j].isDir &&
-               strcasecmp(tmp.name.c_str(), raw[j].name.c_str()) < 0) swap = true;
+      else if (tmp.isDir == raw[j].isDir) {
+        auto dictionaryRank = [](const String& name) -> int {
+          if (strcasecmp(name.c_str(), "discovered.txt") == 0) return 0;
+          if (strcasecmp(name.c_str(), "default.txt") == 0) return 1;
+          if (strcasecmp(name.c_str(), "extended.txt") == 0) return 2;
+          return 100;
+        };
+        int tmpRank = dictionaryRank(tmp.name);
+        int curRank = dictionaryRank(raw[j].name);
+        bool isDictionaryOrder = tmpRank != 100 || curRank != 100;
+        if (isDictionaryOrder && tmpRank != curRank) {
+          swap = tmpRank < curRank;
+        } else if (strcasecmp(tmp.name.c_str(), raw[j].name.c_str()) < 0) {
+          swap = true;
+        }
+      }
       if (!swap) break;
       raw[j + 1] = raw[j];
       j--;
@@ -76,6 +91,7 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
 
   String base = (dir == "/") ? "" : dir;
   for (uint8_t i = 0; i < n && _count < kCap; i++) {
+    if (hiddenDirName && raw[i].isDir && strcasecmp(raw[i].name.c_str(), hiddenDirName) == 0) continue;
     if (mode.kind == Mode::DIRECTORY && !raw[i].isDir) continue;
     if (mode.kind == Mode::FILE_ONLY && raw[i].isDir) continue;
     if (mode.ext && !raw[i].isDir && !raw[i].name.endsWith(mode.ext)) continue;
@@ -91,9 +107,17 @@ uint8_t BrowseFileView::load(BaseScreen* host, String dir,
       if (!accepted) continue;
     }
     _entries[_count].name  = raw[i].name;
-    _entries[_count].label = (style == TITLE && !raw[i].isDir)
-                               ? prettifyTitle(raw[i].name)
-                               : raw[i].name;
+    if (style == TITLE && !raw[i].isDir) {
+      _entries[_count].label = prettifyTitle(raw[i].name);
+    } else if ((style == STEM || style == STEM_CAPITALIZED) && !raw[i].isDir) {
+      int dot = raw[i].name.lastIndexOf('.');
+      _entries[_count].label = (dot > 0) ? raw[i].name.substring(0, dot) : raw[i].name;
+      if (style == STEM_CAPITALIZED && _entries[_count].label.length() > 0) {
+        _entries[_count].label.setCharAt(0, toupper((unsigned char)_entries[_count].label[0]));
+      }
+    } else {
+      _entries[_count].label = raw[i].name;
+    }
     _entries[_count].path  = base + "/" + raw[i].name;
     _entries[_count].isDir = raw[i].isDir;
     _listItems[_count]     = { _entries[_count].label.c_str(),

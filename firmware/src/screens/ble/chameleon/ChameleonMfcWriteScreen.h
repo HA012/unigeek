@@ -11,7 +11,7 @@ public:
   ChameleonMfcWriteScreen(const uint8_t* dump, uint16_t dumpLen,
                            const uint8_t* sourceUid = nullptr, uint8_t sourceUidLen = 0);
 
-  const char* title() override { return "Write to Tag"; }
+  const char* title() override { return "Write Dump to Tag"; }
   bool inhibitPowerOff() override { return _busy; }
   void onInit() override;
   void onUpdate() override;
@@ -29,6 +29,7 @@ private:
   uint8_t _sourceUid[7] = {};
   uint8_t _sourceUidLen = 0;
   bool _sourceUidKnown = false;
+  bool _replaceUid = true;
 
   uint8_t _previousSlot = 0;
   bool _restoreSlot = false;

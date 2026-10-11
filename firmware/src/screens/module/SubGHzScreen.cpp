@@ -62,8 +62,9 @@ void SubGHzScreen::onInit() {
     return;
   }
 
+  render();
   ProgressView::init();
-  ProgressView::progress("Detecting CC1101...", 30);
+  ProgressView::progress("Starting CC1101...", 30);
   if (!_rf.begin(Uni.Spi, _csPin, _gdo0Pin)) {
     ShowStatusAction::show("CC1101 not detected");
     Screen.goBack();
@@ -1074,4 +1075,3 @@ bool SubGHzScreen::_onRenderWaterfall() {
   if (_wfLine >= wfH) _wfLine = 0;
   return true;
 }
-

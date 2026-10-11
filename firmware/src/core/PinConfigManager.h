@@ -56,6 +56,8 @@
 // ─── CC1101 pin config ──────────────────────────────────────────────────────
 #define PIN_CONFIG_CC1101_CS        "cc1101_cs"
 #define PIN_CONFIG_CC1101_GDO0      "cc1101_gdo0"
+#define PIN_CONFIG_CC1101_SW0       "cc1101_sw0"
+#define PIN_CONFIG_CC1101_SW1       "cc1101_sw1"
 
 #ifdef CC1101_CS_PIN
   #define PIN_CONFIG_CC1101_CS_DEFAULT   String(CC1101_CS_PIN)
@@ -67,6 +69,18 @@
   #define PIN_CONFIG_CC1101_GDO0_DEFAULT String(CC1101_GDO0_PIN)
 #else
   #define PIN_CONFIG_CC1101_GDO0_DEFAULT "-1"
+#endif
+
+#ifdef CC1101_SW0_PIN
+  #define PIN_CONFIG_CC1101_SW0_DEFAULT String(CC1101_SW0_PIN)
+#else
+  #define PIN_CONFIG_CC1101_SW0_DEFAULT "-1"
+#endif
+
+#ifdef CC1101_SW1_PIN
+  #define PIN_CONFIG_CC1101_SW1_DEFAULT String(CC1101_SW1_PIN)
+#else
+  #define PIN_CONFIG_CC1101_SW1_DEFAULT "-1"
 #endif
 
 // ─── NRF24L01 pin config ────────────────────────────────────────────────────

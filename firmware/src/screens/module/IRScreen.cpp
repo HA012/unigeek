@@ -33,10 +33,16 @@ IRScreen* IRScreen::_activeInstance = nullptr;
 void IRScreen::onInit() {
   _txPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_TX, PIN_CONFIG_IR_TX_DEFAULT);
   _rxPin = (int8_t)PinConfig.getInt(PIN_CONFIG_IR_RX, PIN_CONFIG_IR_RX_DEFAULT);
+
+  render();
+  ProgressView::init();
+  ProgressView::progress("Starting IR...", 30);
+
   if (_pendingSendFile.length() > 0) {
     _openPendingSendFile();
     return;
   }
+  ProgressView::finish();
   _showMenu();
 }
 

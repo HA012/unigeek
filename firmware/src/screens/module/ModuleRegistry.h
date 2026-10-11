@@ -21,6 +21,8 @@ namespace ModuleRegistry
     MOD_M5_RF433,
     MOD_NRF24,
     MOD_PIN_SETTING,
+    MOD_ST25R3916,
+    MOD_ST25R3916_SPI,
     MOD_COUNT
   };
 
@@ -34,12 +36,36 @@ namespace ModuleRegistry
     "M5 RF433",
     "NRF24L01",
     "Pin Settings",
+    "ST25R3916 I2C",
+    "ST25R3916 SPI",
+  };
+
+  static const uint8_t DISPLAY_ORDER[MOD_COUNT] = {
+    MOD_MFRC522_I2C,
+    MOD_PN532_UART,
+    MOD_PN532_I2C,
+    MOD_ST25R3916,
+    MOD_ST25R3916_SPI,
+    MOD_GPS,
+    MOD_IR,
+    MOD_SUBGHZ,
+    MOD_M5_RF433,
+    MOD_NRF24,
+    MOD_PIN_SETTING,
   };
 
   inline uint32_t hiddenMask()
   {
     return (uint32_t)Config.get(APP_CONFIG_HIDDEN_MODULES,
                                 APP_CONFIG_HIDDEN_MODULES_DEFAULT).toInt();
+  }
+
+  inline bool isAvailable(uint8_t id)
+  {
+#ifndef DEVICE_HAS_ST25R3916
+    if (id == MOD_ST25R3916 || id == MOD_ST25R3916_SPI) return false;
+#endif
+    return id < MOD_COUNT;
   }
 
   inline bool isHidden(uint8_t id)

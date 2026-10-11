@@ -1,14 +1,19 @@
-#include "ChameleonHFScreen.h"
-#include "utils/ble/ChameleonClient.h"
 #include "ChameleonHFMenuScreen.h"
-#include "core/Device.h"
-#include "core/ScreenManager.h"
+#include "ChameleonMfcMenuScreen.h"
+#include "ChameleonMfcScreen.h"
+#include "ChameleonMfuScreen.h"
+#include "ChameleonMfuMenuScreen.h"
+#include "ChameleonHFScreen.h"
 #include "core/AchievementManager.h"
 #include "core/ConfigManager.h"
+#include "core/Device.h"
+#include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/TagPrompt.h"
+#include "utils/ble/ChameleonClient.h"
 
 const char* ChameleonHFScreen::_inferType(uint8_t sak, const uint8_t atqa[2]) {
-  if (sak == 0x01) return "MF Classic Mini";
+  if (sak == 0x09) return "MF Classic Mini";
   if (sak == 0x08) return "MF Classic 1K";
   if (sak == 0x18) return "MF Classic 4K";
   if (sak == 0x28) return "MF Plus / SmartMX";
@@ -16,10 +21,7 @@ const char* ChameleonHFScreen::_inferType(uint8_t sak, const uint8_t atqa[2]) {
     if (atqa[0] == 0x03) return "MIFARE DESFire";
     return "ISO14443-4";
   }
-  if (sak == 0x00) {
-    if (atqa[1] == 0x44) return "MIFARE UL / NTAG";
-    return "ISO14443A T2";
-  }
+  if (sak == 0x00) return "Ultralight / NTAG";
   return "ISO14443A";
 }
 
@@ -28,29 +30,15 @@ void ChameleonHFScreen::_draw() {
   auto& lcd = Uni.Lcd;
   int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
 
-  Sprite sp(&lcd);
-  sp.createSprite(bw, bh);
-  sp.fillSprite(TFT_BLACK);
-  sp.setTextDatum(MC_DATUM);
-
-  sp.setTextColor(TFT_YELLOW, TFT_BLACK);
-  sp.drawString("Place tag on reader...", bw / 2, bh / 2);
-
-  sp.pushSprite(bx, by);
-  sp.deleteSprite();
+  TagPrompt::show("Waiting for tag...", bx, by, bw, bh);
 }
 
 void ChameleonHFScreen::_doScan() {
   _scanning = true;
+  _dispatchRead = false;
+  _familyMenu = 0;
 
-  // Draw scanning state directly before blocking BLE call (MFRC pattern)
-  auto& lcd = Uni.Lcd;
-  int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Place tag on reader...", bx + bw / 2, by + bh / 2);
+  render();
 
   auto& c = ChameleonClient::get();
 
@@ -60,6 +48,7 @@ void ChameleonHFScreen::_doScan() {
 
   bool found = c.scan14A(_uid, &_uidLen, _atqa, &_sak);
   _tagType = 0;
+  _familyMenu = 0;
   if (found) {
     _tagType = ChameleonClient::inferHFTagType(_sak, _atqa);
     if (_sak == 0x00) {
@@ -71,8 +60,7 @@ void ChameleonHFScreen::_doScan() {
         memcpy(_atqa, info.atqa, sizeof(_atqa));
         _sak = info.sak;
       } else {
-        // SAK 00 alone cannot distinguish concrete Type-2 variants.
-        _tagType = 0;
+        _tagType = ChameleonClient::MFU_UNKNOWN;
       }
     }
   }
@@ -84,6 +72,18 @@ void ChameleonHFScreen::_doScan() {
   _scanning  = false;
 
   if (found) {
+    if (_readMode) {
+      if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18 || _sak == 0x00) {
+        _dispatchRead = true;
+        _needsDraw = true;
+        return;
+      }
+      ShowStatusAction::show("Read Tag not supported", 1200);
+      Screen.goBack();
+      return;
+    }
+    if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) _familyMenu = 1;
+    else if (_sak == 0x00) _familyMenu = 2;
     _state    = STATE_RESULT;
     _rowCount = 0;
 
@@ -107,7 +107,7 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    if (_sak == 0x01 || _sak == 0x08 || _sak == 0x18) {
+    if (_sak == 0x09 || _sak == 0x08 || _sak == 0x18) {
       const MagicCardType magic = c.detectMagicType();
       _rowLabels[_rowCount] = "Magic";
       _rowValues[_rowCount] = magicCardTypeName(magic);
@@ -138,9 +138,16 @@ void ChameleonHFScreen::_doScan() {
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
 
-    _rowLabels[_rowCount] = "[Press]"; _rowValues[_rowCount] = "Scan again";
+    _rowLabels[_rowCount] = "[Press]";
+    _rowValues[_rowCount] = "Scan again";
     _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
     _rowCount++;
+    if (_familyMenu) {
+      _rowLabels[_rowCount] = "[Hold]";
+      _rowValues[_rowCount] = _familyMenu == 1 ? "MIFARE Classic Menu" : "Ultralight / NTAG Menu";
+      _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+      _rowCount++;
+    }
 
     _scrollView.setRows(_rows, _rowCount);
 
@@ -152,44 +159,12 @@ void ChameleonHFScreen::_doScan() {
     _state = STATE_IDLE;
     _needsDraw = true;
     render();
-    ShowStatusAction::show("No tag detected", 1200);
-    render();
+    ShowStatusAction::show("Tag not detected", 1200);
+    Screen.goBack();
     return;
   }
 
   _needsDraw = true;
-  render();
-}
-
-void ChameleonHFScreen::_doClone() {
-  auto& lcd = Uni.Lcd;
-  int bx = bodyX(), by = bodyY(), bw = bodyW(), bh = bodyH();
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString("Cloning to slot...", bx + bw / 2, by + bh / 2 - 8);
-  lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  lcd.drawString("Please wait", bx + bw / 2, by + bh / 2 + 8);
-
-  auto& c = ChameleonClient::get();
-  c.getActiveSlot(&_activeSlot);
-  uint16_t tagType = _tagType ? _tagType : ChameleonClient::inferHFTagType(_sak, _atqa);
-  bool ok = c.cloneHF(_activeSlot, tagType, _uid, _uidLen, _atqa, _sak);
-
-  _state = STATE_RESULT;
-  _needsDraw = true;
-  render();
-
-  if (ok) {
-    int n = Achievement.inc("chameleon_clone");
-    if (n == 1)  Achievement.unlock("chameleon_clone");
-    if (n == 3)  Achievement.unlock("chameleon_clone_3");
-    if (n == 10) Achievement.unlock("chameleon_clone_10");
-    ShowStatusAction::show("Clone OK", 1200);
-  } else {
-    ShowStatusAction::show("Clone failed", 1200);
-  }
   render();
 }
 
@@ -201,15 +176,29 @@ void ChameleonHFScreen::onInit() {
 
 void ChameleonHFScreen::onUpdate() {
   if (_scanning) return;
+  if (_dispatchRead) {
+    _dispatchRead = false;
+    if (_sak == 0x00) Screen.replace(new ChameleonMfuScreen(_uid, _uidLen));
+    else Screen.replace(new ChameleonMfcScreen(ChameleonMfcScreen::ACTION_READ_TAG, _uid, _uidLen));
+    return;
+  }
 
+  if (_state == STATE_RESULT && _familyMenu &&
+      Uni.Nav->isPressed() && Uni.Nav->currentDirection() == INavigation::DIR_PRESS &&
+      Uni.Nav->heldDuration() >= 700) {
+    Uni.Nav->suppressCurrentPress();
+    if (_familyMenu == 1) Screen.replace(new ChameleonMfcMenuScreen());
+    else Screen.replace(new ChameleonMfuMenuScreen());
+    return;
+  }
   if (Uni.Nav->wasPressed()) {
     auto dir = Uni.Nav->readDirection();
     if (dir == INavigation::DIR_BACK) {
       Screen.goBack();
       return;
     }
-    if (dir == INavigation::DIR_PRESS) {
-      _doScan();
+    if (dir == INavigation::DIR_PRESS && _state == STATE_RESULT) {
+      if (Uni.Nav->pressDuration() < 700) _doScan();
       return;
     }
     if (_state == STATE_RESULT) _scrollView.onNav(dir);

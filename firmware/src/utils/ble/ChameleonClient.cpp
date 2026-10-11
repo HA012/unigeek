@@ -1,6 +1,10 @@
 #include "utils/ble/ChameleonClient.h"
+#include "utils/rfid/LFCodec.h"
 #include <Arduino.h>
 #include <string.h>
+extern "C" {
+#include "utils/crypto/crapto1.h"
+}
 
 volatile bool ChameleonClient::_notifyReady = false;
 uint8_t       ChameleonClient::_notifyBuf[1100] = {};
@@ -412,7 +416,9 @@ bool ChameleonClient::scan14A(uint8_t uid[7], uint8_t* uidLen,
   return true;
 }
 
-MagicCardType ChameleonClient::detectMagicType() {
+MagicCardType ChameleonClient::detectMagicType(void (*progress)(uint8_t)) {
+  auto report = [&](uint8_t percent) { if (progress) progress(percent); };
+  report(10);
   uint8_t previousMode = 0;
   const bool restoreMode = getMode(&previousMode);
   setMode(1);
@@ -427,35 +433,46 @@ MagicCardType ChameleonClient::detectMagicType() {
     return scan14A(uid, &uidLen, atqa, &sak);
   };
 
-  if (!reselect()) return finish(MagicCardType::NONE);
+  report(20);
+  if (!reselect()) { report(100); return finish(MagicCardType::NONE); }
 
   // Gen3 / APDU cards accept a direct MIFARE READ of block 0 without prior
   // authentication. Probe this first: a Gen1A unlock would also make block 0
   // directly readable and could otherwise create a false Gen3 positive.
   {
+    report(35);
     uint8_t cmd[2] = {0x30, 0x00};
     uint8_t resp[32] = {};
     uint16_t respLen = 0;
     const bool ok = hf14ARaw(128 | 64 | 32 | 16 | 4, 500, 16,
                              cmd, sizeof(cmd), resp, &respLen, sizeof(resp));
     if (ok && respLen >= 18) {
+      report(90);
       reselect();
+      report(100);
       return finish(MagicCardType::GEN3);
     }
   }
 
-  // Start the Gen1A backdoor with 0x40 sent as 7 bits, then require the
-  // second 0x43 ACK as well. This changes only transient RF/card state; no
-  // memory is written. Always reselect afterwards to leave the card normal.
-  if (!reselect()) return finish(MagicCardType::NONE);
+  report(50);
+  if (!reselect()) { report(100); return finish(MagicCardType::NONE); }
   bool gen1a = false;
   {
     uint8_t resp[16] = {};
     uint16_t respLen = 0;
+
+    uint8_t halt[2] = {0x50, 0x00};
+    uint16_t haltLen = 0;
+    uint16_t haltSt = 0;
+    (void)hf14ARaw(64 | 32 | 8, 200, 16, halt, sizeof(halt),
+                   resp, &haltLen, sizeof(resp), &haltSt);
+
+    report(65);
     uint8_t wake = 0x40;
     const bool ack1 = hf14ARaw(128 | 64 | 8, 200, 7, &wake, 1,
                                resp, &respLen, sizeof(resp)) &&
                       respLen >= 1 && resp[0] == 0x0A;
+    report(80);
     if (ack1) {
       uint8_t unlock = 0x43;
       respLen = 0;
@@ -465,10 +482,11 @@ MagicCardType ChameleonClient::detectMagicType() {
     }
   }
 
+  report(90);
   reselect();
+  report(100);
   return finish(gen1a ? MagicCardType::GEN1A : MagicCardType::NONE);
 }
-
 
 bool ChameleonClient::getAntiCollData(AntiCollData* out) {
   if (!out) return false;
@@ -530,7 +548,6 @@ bool ChameleonClient::writeMagicUid(MagicCardType type, const uint8_t* sourceUid
     uint16_t st = 0;
 
     // Enter HALT before opening the Gen1A backdoor. This mirrors the PN532
-    // path that is known to work with the same physical Gen1A-compatible tag.
     // HALT itself uses CRC-A; no response is expected.
     uint8_t halt[2] = {0x50, 0x00};
     uint16_t haltLen = 0;
@@ -586,21 +603,21 @@ bool ChameleonClient::scanEM410X(uint8_t uid[5]) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_EM410X, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len < 5) return false;
-  memcpy(uid, buf, 5);
+  if ((st != 0 && st != 0x40) || len < 5) return false;
+
+  memcpy(uid, buf + len - 5, 5);
   return true;
 }
 
 bool ChameleonClient::setEM410XSlot(const uint8_t uid[5]) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_EM410X_ID, uid, 5, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
 
 const char* ChameleonClient::tagTypeName(uint16_t type) {
+  if (const LFCodec::FormatInfo* lf = LFCodec::fromChameleonType(type)) return lf->name;
   switch (type) {
-    case 100:  return "EM4100";
     case 101:  return "EM410Xx2";
-    case 200:  return "HIDProx";
     case 1000: return "MF-Mini";
     case 1001: return "MF-1K";
     case 1002: return "MF-2K";
@@ -620,46 +637,11 @@ const char* ChameleonClient::tagTypeName(uint16_t type) {
 }
 
 uint16_t ChameleonClient::inferHFTagType(uint8_t sak, const uint8_t atqa[2]) {
-  if (sak == 0x01) return 1000; // MF Classic Mini
+  if (sak == 0x09) return 1000;
   if (sak == 0x08) return 1001; // MF Classic 1K
   if (sak == 0x18) return 1003; // MF Classic 4K
   if (sak == 0x00) return 1100; // default NTAG/UltraLight → ntag213
   return 1001;
-}
-
-bool ChameleonClient::cloneHF(uint8_t slot, uint16_t tagType,
-                               const uint8_t* uid, uint8_t uidLen,
-                               const uint8_t atqa[2], uint8_t sak) {
-  // Match the slot-loader sequence that is known to work:
-  // configure type -> initialise slot memory -> select slot ->
-  // configure anti-collision -> enable HF -> emulator mode.
-  if (!setSlotTagType(slot, tagType)) return false;
-  if (!setSlotDataDefault(slot, tagType)) return false;
-  if (!setActiveSlot(slot)) return false;
-
-  // Anti-collision payload:
-  //   uidLen | UID | ATQA[0] | ATQA[1] | SAK | ATS length
-  //
-  // scan14A() already returns ATQA in the order expected by the firmware.
-  // The old clone path reversed these bytes and omitted the ATS-length byte.
-  uint8_t acoPayload[12] = {};
-  acoPayload[0] = uidLen;
-  memcpy(acoPayload + 1, uid, uidLen);
-  acoPayload[1 + uidLen] = atqa[0];
-  acoPayload[2 + uidLen] = atqa[1];
-  acoPayload[3 + uidLen] = sak;
-  acoPayload[4 + uidLen] = 0; // no ATS for MIFARE Classic
-
-  uint16_t st = 0;
-  if (!sendCommand(CMD_MF1_SET_ANTI_COLL,
-                   acoPayload, 5 + uidLen,
-                   nullptr, nullptr, &st) ||
-      (st != 0 && st != 0x68)) {
-    return false;
-  }
-
-  if (!setSlotEnable(slot, 2, true)) return false; // HF
-  return setMode(0); // emulator mode
 }
 
 // ── Git version ──────────────────────────────────────────────────────────────
@@ -951,7 +933,6 @@ bool ChameleonClient::mfuLoadPageData(uint8_t slot, uint8_t firstPage,
   return ok && (st == 0 || st == 0x68);
 }
 
-
 bool ChameleonClient::mfuGetPageCount(uint8_t* pageCount) {
   if (!pageCount) return false;
   uint8_t buf[4] = {};
@@ -1000,7 +981,6 @@ bool ChameleonClient::hf14ARaw(uint8_t options, uint16_t timeoutMs, uint16_t bit
   return ok;
 }
 
-
 // ── Ultralight / NTAG reader ─────────────────────────────────────────────────
 
 namespace {
@@ -1009,6 +989,7 @@ namespace {
 // activate_rf_field | wait_response | append_crc | auto_select | keep_rf_field.
 // auto_select performs the ISO14443A selection before each command.
 static constexpr uint8_t kMfuRawOptions = 0xF8;
+static constexpr uint8_t kMfuSessionOptions = 0xE8;
 
 static bool _mfuRaw(ChameleonClient& c, const uint8_t* cmd, uint8_t cmdLen,
                     uint8_t* out, uint16_t* outLen, uint16_t outSize,
@@ -1020,6 +1001,15 @@ static bool _mfuRaw(ChameleonClient& c, const uint8_t* cmd, uint8_t cmdLen,
   }
   // HF commands normally report 0x68 (HF_TAG_OK); some firmware revisions
   // use generic success (0). Keep both, as elsewhere in ChameleonClient.
+  return st == 0 || st == 0x68;
+}
+
+static bool _mfuRawSession(ChameleonClient& c, const uint8_t* cmd, uint8_t cmdLen,
+                           uint8_t* out, uint16_t* outLen, uint16_t outSize,
+                           uint16_t timeoutMs = 500) {
+  uint16_t st = 0;
+  if (!c.hf14ARaw(kMfuSessionOptions, timeoutMs, (uint16_t)cmdLen * 8,
+                  cmd, cmdLen, out, outLen, outSize, &st)) return false;
   return st == 0 || st == 0x68;
 }
 
@@ -1041,6 +1031,7 @@ static bool _mfuGetVersion(ChameleonClient& c, uint8_t out8[8]) {
   uint16_t len = 0;
   if (!_mfuRaw(c, &cmd, 1, rsp, &len, sizeof(rsp))) return false;
   if (len < 8) return false;
+  if (rsp[0] != 0x00 || rsp[1] != 0x04) return false;
   memcpy(out8, rsp, 8);
   return true;
 }
@@ -1098,6 +1089,7 @@ const char* ChameleonClient::mfuTagTypeName(uint16_t type) {
     case MFU_ULTRALIGHT_C:     return "Ultralight C";
     case MFU_ULTRALIGHT_EV1_11:return "Ultralight EV1 11";
     case MFU_ULTRALIGHT_EV1_21:return "Ultralight EV1 21";
+    case MFU_UNKNOWN:          return "Ultralight / NTAG";
     default:                   return "Unknown";
   }
 }
@@ -1111,13 +1103,23 @@ bool ChameleonClient::mfuDetect(MfuTagInfo* out) {
   if (!scan14A(out->uid, &out->uidLen, out->atqa, &out->sak)) return false;
   if (out->sak != 0x00) return false;
 
+  auto detectGenericType2 = [&]() -> bool {
+    uint8_t data[16] = {};
+    if (!_mfuRead4(*this, 3, data)) return false;
+    if (data[0] != 0xE1 || (data[1] & 0xF0) != 0x10 || data[2] == 0) return false;
+    const uint16_t advertisedPages = (uint16_t)(4u + (uint16_t)data[2] * 2u);
+    if (advertisedPages <= 4 || advertisedPages > 256) return false;
+
+    out->type = MFU_UNKNOWN;
+    out->pages = advertisedPages;
+    return true;
+  };
+
   uint8_t version[8] = {};
   for (uint8_t attempt = 0; attempt < 3; ++attempt) {
     if (_mfuGetVersion(*this, version)) {
       if (_mfuVersionToInfo(version, &out->type, &out->pages)) return true;
-      // We received a real GET_VERSION response, but not one we know.
-      // Do not misclassify it with legacy memory-size probes.
-      return false;
+      return detectGenericType2();
     }
     delay(30);
   }
@@ -1133,21 +1135,29 @@ bool ChameleonClient::mfuDetect(MfuTagInfo* out) {
   }
 
   uint8_t tmp[16] = {};
-  if (_mfuRead4(*this, 0, tmp) && !_mfuRead4(*this, 16, tmp)) {
-    out->type  = MFU_ULTRALIGHT;
-    out->pages = 16;
-    return true;
+  if (_mfuRead4(*this, 0, tmp)) {
+    memset(tmp, 0, sizeof(tmp));
+    if (!_mfuRead4(*this, 0x29, tmp)) {
+      out->type  = MFU_ULTRALIGHT;
+      out->pages = 16;
+      return true;
+    }
   }
 
-  return false;
+  return detectGenericType2();
 }
 
 bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
                                   uint16_t outSize, uint16_t* bytesRead,
-                                  MfuProgressCallback progress) {
+                                  MfuProgressCallback progress,
+                                  const uint8_t* password,
+                                  bool alreadyAuthenticated) {
   if (bytesRead) *bytesRead = 0;
   const uint32_t total = (uint32_t)info.pages * 4u;
   if (!out || outSize < total || info.pages < 4) return false;
+  bool authenticated = alreadyAuthenticated;
+  if (!authenticated && password) authenticated = mfuPwdAuth(password, nullptr);
+  if (password && !authenticated) return false;
 
   uint16_t page = 0;
   uint16_t done = 0;
@@ -1171,7 +1181,12 @@ bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
     }
 
     uint8_t chunk[16] = {};
-    if (!_mfuRead4(*this, readPage, chunk)) {
+    if (!(authenticated ? ([&]() {
+          const uint8_t cmd[2] = {0x30, readPage};
+          uint8_t rsp[24] = {}; uint16_t rl = 0;
+          if (!_mfuRawSession(*this, cmd, sizeof(cmd), rsp, &rl, sizeof(rsp)) || rl < 16) return false;
+          memcpy(chunk, rsp, 16); return true;
+        })() : _mfuRead4(*this, readPage, chunk))) {
       // Ultralight C pages 44..47 contain the 3DES key and are intentionally
       // not readable. Preserve a complete 48-page image with zeroes there.
       if (info.type == MFU_ULTRALIGHT_C && readPage >= 44) {
@@ -1193,9 +1208,65 @@ bool ChameleonClient::mfuReadDump(const MfuTagInfo& info, uint8_t* out,
   return done == total;
 }
 
+bool ChameleonClient::mfuReadPage(uint8_t page, uint8_t data[4]) {
+  if (!data) return false;
+  uint8_t chunk[16] = {};
+  if (!_mfuRead4(*this, page, chunk)) return false;
+  memcpy(data, chunk, 4);
+  return true;
+}
+
+bool ChameleonClient::mfuReadPageSession(uint8_t page, uint8_t data[4]) {
+  if (!data) return false;
+  const uint8_t cmd[2] = {0x30, page};
+  uint8_t rsp[24] = {}; uint16_t len = 0;
+  if (!_mfuRawSession(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) || len < 16) return false;
+  memcpy(data, rsp, 4);
+  return true;
+}
+
+bool ChameleonClient::mfuPwdAuth(const uint8_t password[4], uint8_t pack[2]) {
+  if (!password) return false;
+  const uint8_t cmd[5] = {0x1B, password[0], password[1], password[2], password[3]};
+
+  uint8_t rsp[8] = {};
+  uint16_t len = 0;
+  if (_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) && len >= 2) {
+    if (pack) { pack[0] = rsp[0]; pack[1] = rsp[1]; }
+    return true;
+  }
+
+  uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
+  if (!scan14A(uid, &uidLen, atqa, &sak)) return false;
+  memset(rsp, 0, sizeof(rsp));
+  len = 0;
+  if (!_mfuRawSession(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp)) || len < 2)
+    return false;
+  if (pack) { pack[0] = rsp[0]; pack[1] = rsp[1]; }
+  return true;
+}
+
+bool ChameleonClient::mfuWritePage(uint8_t page, const uint8_t data[4]) {
+  if (!data) return false;
+  uint8_t cmd[6] = {0xA2, page, data[0], data[1], data[2], data[3]};
+  uint8_t rsp[8] = {};
+  uint16_t len = 0;
+  if (!_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp))) return false;
+  return len == 0 || (len >= 1 && (rsp[0] & 0x0F) == 0x0A);
+}
+
+bool ChameleonClient::mfuWritePageSession(uint8_t page, const uint8_t data[4]) {
+  if (!data) return false;
+  uint8_t cmd[6] = {0xA2, page, data[0], data[1], data[2], data[3]};
+  uint8_t rsp[8] = {}; uint16_t len = 0;
+  if (!_mfuRawSession(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp))) return false;
+  return len == 0 || (len >= 1 && (rsp[0] & 0x0F) == 0x0A);
+}
+
 bool ChameleonClient::mfuWriteNtag215User(const uint8_t* dump, uint16_t dumpLen,
                                            MfuProgressCallback progress,
-                                           const MfuTagInfo* expectedTarget) {
+                                           const MfuTagInfo* expectedTarget,
+                                           const uint8_t* password) {
   static constexpr uint16_t kNtag215Bytes = 135u * 4u;
   static constexpr uint8_t kFirstUserPage = 4;
   static constexpr uint8_t kLastUserPage  = 129;
@@ -1212,6 +1283,8 @@ bool ChameleonClient::mfuWriteNtag215User(const uint8_t* dump, uint16_t dumpLen,
         memcmp(target.uid, expectedTarget->uid, target.uidLen) != 0)
       return false;
   }
+  const bool authenticated = password && mfuPwdAuth(password, nullptr);
+  if (password && !authenticated) return false;
 
   // Standard Type-2 WRITE (A2) writes exactly one 4-byte page. Do not touch
   // pages 0..3 (UID/manufacturer + CC), page 130 (dynamic locks), or pages
@@ -1224,17 +1297,16 @@ bool ChameleonClient::mfuWriteNtag215User(const uint8_t* dump, uint16_t dumpLen,
 
     uint8_t rsp[4] = {};
     uint16_t len = 0;
-    if (!_mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp), 700))
+    if (!(authenticated ? _mfuRawSession(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp), 700) : _mfuRaw(*this, cmd, sizeof(cmd), rsp, &len, sizeof(rsp), 700)))
       return false;
     // Type-2 ACK is 0xA (4 bits). HF14A_RAW exposes it in the low nibble.
-    if (len < 1 || (rsp[0] & 0x0F) != 0x0A) return false;
+    if (!(len == 0 || (len >= 1 && (rsp[0] & 0x0F) == 0x0A))) return false;
 
     ++done;
     if (progress) progress(done, kUserPages);
   }
   return done == kUserPages;
 }
-
 
 // ── Firmware nested-attack helpers ───────────────────────────────────────────
 
@@ -1311,6 +1383,45 @@ bool ChameleonClient::mf1StaticNestedAcquire(uint8_t keyType, uint8_t block,
   return n > 0;
 }
 
+bool ChameleonClient::mf1DarksideAcquire(uint8_t keyType, uint8_t block,
+                                          bool firstRecover, uint8_t syncMax,
+                                          DarksideSample* out) {
+  if (!out) return false;
+  *out = DarksideSample{};
+
+  if (!syncMax) syncMax = 30;
+  uint8_t p[4] = { keyType, block, (uint8_t)(firstRecover ? 1 : 0), syncMax };
+
+  uint8_t buf[40] = {};
+  uint16_t len = 0, st = 0;
+  const uint32_t timeoutMs = (uint32_t)p[3] * 10000u;
+  if (!sendCommand(CMD_MF1_DARKSIDE_ACQ, p, 4, buf, &len, &st,
+                   timeoutMs < 15000 ? 15000 : timeoutMs, sizeof(buf)))
+    return false;
+
+  if (st != 0 && st != 0x0200) return false;
+  if (len < 1) return false;
+
+  out->status = buf[0];
+  if (out->status != DARKSIDE_OK || len < 33) return true;
+
+  out->uid = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16)
+           | ((uint32_t)buf[3] <<  8) |  (uint32_t)buf[4];
+  out->nt1 = ((uint32_t)buf[5] << 24) | ((uint32_t)buf[6] << 16)
+           | ((uint32_t)buf[7] <<  8) |  (uint32_t)buf[8];
+  out->par = 0;
+  out->ks1 = 0;
+  for (int i = 0; i < 8; ++i) {
+    out->par = (out->par << 8) | buf[9 + i];
+    out->ks1 = (out->ks1 << 8) | buf[17 + i];
+  }
+  out->nr = ((uint32_t)buf[25] << 24) | ((uint32_t)buf[26] << 16)
+          | ((uint32_t)buf[27] <<  8) |  (uint32_t)buf[28];
+  out->ar = ((uint32_t)buf[29] << 24) | ((uint32_t)buf[30] << 16)
+          | ((uint32_t)buf[31] <<  8) |  (uint32_t)buf[32];
+  return true;
+}
+
 // ── MFKey32 log ──────────────────────────────────────────────────────────────
 bool ChameleonClient::mf1SetDetectEnable(bool on) {
   uint8_t v = on ? 1 : 0;
@@ -1318,14 +1429,32 @@ bool ChameleonClient::mf1SetDetectEnable(bool on) {
   return sendCommand(CMD_MF1_DET_ENABLE, &v, 1, nullptr, nullptr, &st);
 }
 
+bool ChameleonClient::mf1GetDetectEnable(bool* on) {
+  if (!on) return false;
+  uint8_t buf[4] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_MF1_GET_DET_ENABLE, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
+  if (st != 0 || len < 1) return false;
+  *on = buf[0] != 0;
+  return true;
+}
+
 bool ChameleonClient::mf1GetDetectCount(uint32_t* count) {
+  if (!count) return false;
   uint8_t buf[8] = {};
   uint16_t len = 0, st = 0;
-  if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
-  if (len < 4) return false;
-  *count = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
-         | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
-  return true;
+  if (!sendCommand(CMD_MF1_DET_COUNT, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if (st != 0 && st != 0x40) return false;
+  if (len >= 4) {
+    *count = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16)
+           | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
+    return true;
+  }
+  if (len >= 2) {
+    *count = ((uint32_t)buf[0] << 8) | buf[1];
+    return true;
+  }
+  return false;
 }
 
 bool ChameleonClient::mf1GetDetectRecord(uint32_t index, uint8_t out[18]) {
@@ -1346,7 +1475,7 @@ bool ChameleonClient::scanHIDProx(uint8_t payload[13], uint8_t* payloadLen) {
   uint8_t buf[32] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_HID_PROX, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len == 0) return false;
+  if ((st != 0 && st != 0x40) || len == 0) return false;
   uint16_t cp = len > 13 ? 13 : len;
   memcpy(payload, buf, cp);
   *payloadLen = (uint8_t)cp;
@@ -1357,7 +1486,7 @@ bool ChameleonClient::scanViking(uint8_t uid[4], uint8_t* uidLen) {
   uint8_t buf[16] = {};
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_SCAN_VIKING, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
-  if (st != 0 || len == 0) return false;
+  if ((st != 0 && st != 0x40) || len == 0) return false;
   uint16_t cp = len > 4 ? 4 : len;
   memcpy(uid, buf, cp);
   *uidLen = (uint8_t)cp;
@@ -1365,6 +1494,36 @@ bool ChameleonClient::scanViking(uint8_t uid[4], uint8_t* uidLen) {
 }
 
 static uint8_t _t5577Default[4] = { 0x51, 0x24, 0x36, 0x48 };
+
+bool ChameleonClient::scanIoProx(uint8_t payload[16], uint8_t* payloadLen) {
+  uint8_t buf[24] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_IOPROX, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 16) return false;
+  memcpy(payload, buf, 16);
+  *payloadLen = 16;
+  return true;
+}
+
+bool ChameleonClient::scanPAC(uint8_t id[8], uint8_t* idLen) {
+  uint8_t buf[16] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_PAC, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 8) return false;
+  memcpy(id, buf, 8);
+  *idLen = 8;
+  return true;
+}
+
+bool ChameleonClient::scanJablotron(uint8_t id[5], uint8_t* idLen) {
+  uint8_t buf[16] = {};
+  uint16_t len = 0, st = 0;
+  if (!sendCommand(CMD_SCAN_JABLOTRON, nullptr, 0, buf, &len, &st, 3000, sizeof(buf))) return false;
+  if ((st != 0 && st != 0x40) || len < 5) return false;
+  memcpy(id, buf, 5);
+  *idLen = 5;
+  return true;
+}
 
 bool ChameleonClient::writeEM410XToT5577(const uint8_t uid[5], const uint8_t newKey[4],
                                           const uint8_t* oldKeys, uint8_t oldKeyCount) {
@@ -1378,7 +1537,7 @@ bool ChameleonClient::writeEM410XToT5577(const uint8_t uid[5], const uint8_t new
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_EM410X_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::writeHIDProxToT5577(const uint8_t* payload, uint8_t payloadLen,
@@ -1395,7 +1554,7 @@ bool ChameleonClient::writeHIDProxToT5577(const uint8_t* payload, uint8_t payloa
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_HID_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::writeVikingToT5577(const uint8_t uid[4], const uint8_t newKey[4],
@@ -1410,18 +1569,53 @@ bool ChameleonClient::writeVikingToT5577(const uint8_t uid[4], const uint8_t new
   }
   uint16_t st = 0;
   if (!sendCommand(CMD_WRITE_VIKING_T5, p, off, nullptr, nullptr, &st, 8000)) return false;
-  return st == 0;
+  return st == 0 || st == 0x40;
 }
 
 bool ChameleonClient::setHIDProxSlot(const uint8_t* payload, uint8_t payloadLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_HID_PROX_ID, payload, payloadLen, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
 
 bool ChameleonClient::setVikingSlot(const uint8_t uid[4], uint8_t uidLen) {
   uint16_t st = 0;
-  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st);
+  return sendCommand(CMD_SET_VIKING_ID, uid, uidLen, nullptr, nullptr, &st) && (st == 0 || st == 0x68);
 }
+
+bool ChameleonClient::writeIoProxToT5577(const uint8_t payload[16], const uint8_t newKey[4],
+                                           const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[16 + 4 + 32];
+  memcpy(p, payload, 16);
+  memcpy(p + 16, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 20;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_IOPROX_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::writePACToT5577(const uint8_t id[8], const uint8_t newKey[4],
+                                       const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[8 + 4 + 32];
+  memcpy(p, id, 8); memcpy(p + 8, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 12;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_PAC_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::writeJablotronToT5577(const uint8_t id[5], const uint8_t newKey[4],
+                                             const uint8_t* oldKeys, uint8_t oldKeyCount) {
+  uint8_t p[5 + 4 + 32];
+  memcpy(p, id, 5); memcpy(p + 5, newKey ? newKey : _t5577Default, 4);
+  uint16_t off = 9;
+  for (uint8_t i = 0; i < oldKeyCount && off + 4 <= sizeof(p); i++) { memcpy(p + off, oldKeys + i * 4, 4); off += 4; }
+  uint16_t st = 0;
+  return sendCommand(CMD_WRITE_JABLOTRON_T5, p, off, nullptr, nullptr, &st, 8000) && (st == 0 || st == 0x40);
+}
+
+bool ChameleonClient::setIoProxSlot(const uint8_t payload[16]) { uint16_t st=0; return sendCommand(CMD_SET_IOPROX_ID,payload,16,nullptr,nullptr,&st) && (st==0 || st==0x68); }
+bool ChameleonClient::setPACSlot(const uint8_t id[8]) { uint16_t st=0; return sendCommand(CMD_SET_PAC_ID,id,8,nullptr,nullptr,&st) && (st==0 || st==0x68); }
+bool ChameleonClient::setJablotronSlot(const uint8_t id[5]) { uint16_t st=0; return sendCommand(CMD_SET_JABLOTRON_ID,id,5,nullptr,nullptr,&st) && (st==0 || st==0x68); }
 
 // Upstream GUI ignores the status byte on LF getters and just reads data length.
 // Mirror that — some firmware revisions return status != 0 but still deliver the
@@ -1431,7 +1625,7 @@ bool ChameleonClient::getEM410XSlot(uint8_t uid[5]) {
   uint16_t len = 0, st = 0;
   if (!sendCommand(CMD_GET_EM410X_ID, nullptr, 0, buf, &len, &st, 2000, sizeof(buf))) return false;
   if (len < 5) return false;
-  memcpy(uid, buf, 5);
+  memcpy(uid, buf + len - 5, 5);
   return true;
 }
 
@@ -1455,4 +1649,20 @@ bool ChameleonClient::getVikingSlot(uint8_t uid[4], uint8_t* uidLen) {
   memcpy(uid, buf, cp);
   *uidLen = (uint8_t)cp;
   return true;
+}
+
+bool ChameleonClient::getIoProxSlot(uint8_t payload[16], uint8_t* payloadLen) {
+  uint8_t buf[24] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_IOPROX_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 16) return false;
+  memcpy(payload,buf,16); *payloadLen=16; return true;
+}
+bool ChameleonClient::getPACSlot(uint8_t id[8], uint8_t* idLen) {
+  uint8_t buf[16] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_PAC_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 8) return false;
+  memcpy(id,buf,8); *idLen=8; return true;
+}
+bool ChameleonClient::getJablotronSlot(uint8_t id[5], uint8_t* idLen) {
+  uint8_t buf[16] = {}; uint16_t len=0, st=0;
+  if (!sendCommand(CMD_GET_JABLOTRON_ID,nullptr,0,buf,&len,&st,2000,sizeof(buf)) || len < 5) return false;
+  memcpy(id,buf,5); *idLen=5; return true;
 }

@@ -6,6 +6,7 @@
 #include "core/Device.h"
 #include "core/INavigation.h"
 #include "core/ConfigManager.h"
+#include <cstring>
 
 class ScrollListView
 {
@@ -15,7 +16,7 @@ public:
     String      value;
   };
 
-  void setRows(Row* rows, uint8_t count) {
+  void setRows(Row* rows, uint16_t count) {
     _rows  = rows;
     _count = count;
     // clamp offset so the list stays scrolled as far as possible
@@ -69,7 +70,7 @@ private:
   static constexpr int SCROLL_W = 3;
 
   Row*    _rows   = nullptr;
-  uint8_t _count  = 0;
+  uint16_t _count = 0;
   int     _offset = 0;
   int     _x = 0, _y = 0, _w = 0, _h = 0;
 
@@ -99,11 +100,14 @@ private:
       sp.fillSprite(TFT_BLACK);
       sp.setTextSize(1);
 
-      sp.setTextColor(TFT_DARKGREY);
+      const char* label = _rows[idx].label;
+      const bool actionHint = label &&
+          (strncmp(label, "[Press]", 7) == 0 || strncmp(label, "[Hold]", 6) == 0);
+      sp.setTextColor(actionHint ? TFT_YELLOW : TFT_DARKGREY);
       sp.setTextDatum(TL_DATUM);
-      sp.drawString(_rows[idx].label, 2, 3);
+      sp.drawString(label ? label : "", 2, 3);
 
-      sp.setTextColor(TFT_WHITE);
+      sp.setTextColor(actionHint ? TFT_YELLOW : TFT_WHITE);
       sp.setTextDatum(TR_DATUM);
       sp.drawString(_rows[idx].value.c_str(), textW, 3);
 

@@ -1,10 +1,12 @@
 #include "ChameleonSlotContentScreen.h"
-#include "utils/ble/ChameleonClient.h"
-#include "utils/nfc/NdefParser.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/StatusBar.h"
 #include "ui/views/ProgressView.h"
+#include "utils/ble/ChameleonClient.h"
+#include "utils/nfc/NdefParser.h"
+#include "utils/rfid/LFCodec.h"
 
 void ChameleonSlotContentScreen::_addRow(const char* label, const String& value) {
   if (_rowCount >= MAX_ROWS) return;
@@ -270,7 +272,6 @@ void ChameleonSlotContentScreen::_buildPreview() {
   _scrollView.setRows(_rows, _rowCount);
 }
 
-
 void ChameleonSlotContentScreen::_buildMfuPreview() {
   _rowCount = 0;
   _addRow("Type", ChameleonClient::tagTypeName(_hfType));
@@ -354,46 +355,42 @@ void ChameleonSlotContentScreen::_run() {
     }
     delay(50);
 
-    if (lfType == 100) {
-      uint8_t uid[5] = {};
-      if (c.getEM410XSlot(uid)) {
-        char hex[20];
-        snprintf(hex, sizeof(hex), "%02X:%02X:%02X:%02X:%02X",
-                 uid[0], uid[1], uid[2], uid[3], uid[4]);
-        _addRow("UID", hex);
-      } else {
-        _addRow("UID", "(unavailable)");
-      }
-    } else if (lfType == 200) {
-      uint8_t payload[13] = {};
-      uint8_t payloadLen = 0;
-      if (c.getHIDProxSlot(payload, &payloadLen) && payloadLen) {
-        String value;
-        for (uint8_t i = 0; i < payloadLen; ++i) {
-          char b[3]; snprintf(b, sizeof(b), "%02X", payload[i]);
-          value += b;
-        }
-        _addRow("Payload", value);
-      } else {
-        _addRow("Payload", "(unavailable)");
-      }
-    } else if (lfType == 0) {
-      _addRow("UID", "(empty)");
-    } else {
-      uint8_t uid[4] = {};
-      uint8_t uidLen = 0;
-      if (c.getVikingSlot(uid, &uidLen) && uidLen) {
-        String value;
-        for (uint8_t i = 0; i < uidLen; ++i) {
-          char b[4]; snprintf(b, sizeof(b), "%02X%s",
-                              uid[i], i + 1 < uidLen ? ":" : "");
-          value += b;
-        }
-        _addRow("UID", value);
-      } else {
-        _addRow("UID", "(unavailable)");
-      }
+    if (lfType == 0) {
+      _addRow("Data", "(empty)");
+      _scrollView.setRows(_rows, _rowCount);
+      return;
     }
+
+    const LFCodec::FormatInfo* info = LFCodec::fromChameleonType(lfType);
+    if (!info) {
+      _addRow("Data", "Not supported yet");
+      _scrollView.setRows(_rows, _rowCount);
+      return;
+    }
+
+    uint8_t data[LFCodec::kMaxDataSize] = {}, len = 0;
+    bool ok = false;
+    switch (info->protocol) {
+      case LFCodec::Protocol::EM410X:     len = 5; ok = c.getEM410XSlot(data); break;
+      case LFCodec::Protocol::HIDProx:    ok = c.getHIDProxSlot(data, &len); break;
+      case LFCodec::Protocol::IoProx:     ok = c.getIoProxSlot(data, &len); break;
+      case LFCodec::Protocol::Viking:     ok = c.getVikingSlot(data, &len); break;
+      case LFCodec::Protocol::PACStanley: ok = c.getPACSlot(data, &len); break;
+      case LFCodec::Protocol::Jablotron:  ok = c.getJablotronSlot(data, &len); break;
+      default: break;
+    }
+
+    LFCodec::DecodedData decoded;
+    if (!ok || !LFCodec::decode(info->protocol, data, len, decoded)) {
+      _addRow("Data", "(unavailable)");
+    } else {
+      LFCodec::Field fields[3];
+      const size_t fieldCount = LFCodec::fields(decoded, fields, 3);
+      for (size_t i = 0; i < fieldCount; ++i) _addRow(fields[i].label, fields[i].value);
+    }
+
+    _addRow("Format", info->name);
+    _addRow("Frequency", "125 kHz");
     _scrollView.setRows(_rows, _rowCount);
     return;
   }
@@ -451,7 +448,7 @@ void ChameleonSlotContentScreen::_run() {
                             _dump + (size_t)done * 4u, &st, &rlen)) {
         ProgressView::finish();
         char diag[36];
-        snprintf(diag, sizeof(diag), "Page %u failed", (unsigned)done);
+        snprintf(diag, sizeof(diag), "Failed to read page %u", (unsigned)done);
         _addRow("Error", diag);
         _freeDump();
         return;
@@ -488,7 +485,7 @@ void ChameleonSlotContentScreen::_run() {
     if (!c.mf1GetBlockData((uint8_t)b, 1, block, &st, &rlen)) {
       ProgressView::finish();
       char diag[36];
-      snprintf(diag, sizeof(diag), "Block %u failed", (unsigned)b);
+      snprintf(diag, sizeof(diag), "Failed to read block %u", (unsigned)b);
       _addRow("Error", diag);
       _freeDump();
       return;
@@ -508,6 +505,7 @@ void ChameleonSlotContentScreen::onInit() {
 
   _rowCount = 0;
   _loading = true;
+  render();
   ShowStatusAction::show("Loading...", 0);
   _run();
 
@@ -533,4 +531,5 @@ void ChameleonSlotContentScreen::onUpdate() {
 
 void ChameleonSlotContentScreen::onRender() {
   _scrollView.render(bodyX(), bodyY(), bodyW(), bodyH());
+  StatusBar::refresh();
 }

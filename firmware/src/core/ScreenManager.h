@@ -38,6 +38,13 @@ public:
     _pushMode = true;
   }
 
+  void replace(IScreen* screen) {
+    _cancelPending();
+    _pendingGoBack = false;
+    _pending = screen;
+    _pushMode = false;
+  }
+
   // Back navigation — deletes current, restores previous from stack.
   void goBack() {
     _cancelPending();

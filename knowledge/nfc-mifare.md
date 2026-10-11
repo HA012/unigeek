@@ -30,9 +30,9 @@ Read all card data blocks using discovered keys. Sectors without a known key sho
 
 ### Dictionary Attack
 
-Try additional keys from a dictionary file:
+Try additional keys from the built-in **Default** (20 keys), built-in **Extended** (50 keys), the learned `discovered.txt`, or a user dictionary:
 
-1. Select a `.txt` file from `/unigeek/nfc/dictionaries/`
+1. Select **Default**, **Extended**, `discovered.txt` (when present), or a `.txt` file from `/unigeek/nfc/dictionaries/`
 2. Only sectors without discovered keys are attacked
 3. Shows how many new keys were recovered
 
@@ -44,7 +44,7 @@ FF:FF:FF:FF:FF:FF
 # comments are skipped
 ```
 
-Two sample files are included: `default.txt` (12 keys) and `extended.txt` (36 keys).
+**Default** and **Extended** are built into the firmware and are read-only; user dictionaries and `discovered.txt` remain on storage.
 
 ### Static Nested Attack
 

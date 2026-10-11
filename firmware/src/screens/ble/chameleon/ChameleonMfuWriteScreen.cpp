@@ -1,17 +1,15 @@
+#include "ChameleonMfuAuthUtils.h"
 #include "ChameleonMfuWriteScreen.h"
 #include "core/Device.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/ShowStatusAction.h"
+#include "ui/components/Header.h"
+#include "ui/components/TagPrompt.h"
 #include "ui/views/ProgressView.h"
 #include "utils/nfc/NdefParser.h"
 
 static void renderTagPrompt(const char* message, int bx, int by, int bw, int bh) {
-  auto& lcd = Uni.Lcd;
-  lcd.fillRect(bx, by, bw, bh, TFT_BLACK);
-  lcd.setTextDatum(MC_DATUM);
-  lcd.setTextSize(1);
-  lcd.setTextColor(TFT_YELLOW, TFT_BLACK);
-  lcd.drawString(message, bx + bw / 2, by + bh / 2);
+  TagPrompt::show(message, bx, by, bw, bh);
 }
 
 namespace {
@@ -240,16 +238,32 @@ void ChameleonMfuWriteScreen::_detectTarget() {
   if (!_restoreMode && c.getMode(&_previousMode)) _restoreMode = true;
   c.setMode(1);
 
-  renderTagPrompt("Place tag on reader...", bodyX(), bodyY(), bodyW(), bodyH());
-  bool ok = c.mfuDetect(&_targetInfo) &&
-            _targetInfo.type == ChameleonClient::MFU_NTAG215 &&
-            _targetInfo.pages == 135;
+  Header header;
+  header.render(title());
+  renderTagPrompt("Waiting for tag...", bodyX(), bodyY(), bodyW(), bodyH());
+  uint8_t uid[7] = {}, uidLen = 0, atqa[2] = {}, sak = 0;
+  bool found = false;
+  const uint32_t start = millis();
+  while (millis() - start < 5000) {
+    Uni.update();
+    if (Uni.Nav->wasPressed() && Uni.Nav->readDirection() == INavigation::DIR_BACK) {
+      _busy = false;
+      _restoreContext();
+      render();
+      return;
+    }
+    if (c.scan14A(uid, &uidLen, atqa, &sak)) { found = true; break; }
+    delay(50);
+  }
+  const bool ok = found && sak == 0x00 && c.mfuDetect(&_targetInfo) &&
+                  _targetInfo.type == ChameleonClient::MFU_NTAG215 &&
+                  _targetInfo.pages == 135;
   _busy = false;
 
   if (!ok) {
     _restoreContext();
     render();
-    ShowStatusAction::show("Tag must be NTAG215", 1500);
+    ShowStatusAction::show(found ? "Tag not supported" : "Tag not detected", found ? 1600 : 1200);
     render();
     return;
   }
@@ -259,16 +273,28 @@ void ChameleonMfuWriteScreen::_detectTarget() {
 
 void ChameleonMfuWriteScreen::_write() {
   _busy = true;
+  auto& c = ChameleonClient::get();
+  uint8_t pwd[4] = {}; bool usePwd = false;
+  if (!ChameleonMfuAuthUtils::prepare(c, _targetInfo, false, pwd, usePwd)) {
+    _busy = false;
+    _restoreContext();
+    render();
+    return;
+  }
+  render();
   ProgressView::init();
   ProgressView::progress("Writing pages (0/126)...", 0);
-  bool ok = ChameleonClient::get().mfuWriteNtag215User(
-      _dump, _dumpLen, _mfuWriteProgress, &_targetInfo);
+  bool ok = c.mfuWriteNtag215User(
+      _dump, _dumpLen, _mfuWriteProgress, &_targetInfo,
+      usePwd ? pwd : nullptr);
   ProgressView::finish();
   _busy = false;
   _restoreContext();
 
+  render();
+
   if (ok) {
-    ShowStatusAction::show("Tag written", 1600);
+    ShowStatusAction::show("Written", 1600);
     _freeDump();
     Screen.goBack();
     return;
@@ -276,12 +302,13 @@ void ChameleonMfuWriteScreen::_write() {
 
   _buildSourcePreview();
   render();
-  ShowStatusAction::show("Tag write failed", 1600);
+  ShowStatusAction::show("Failed", 1600);
   render();
 }
 
 void ChameleonMfuWriteScreen::onInit() {
   _busy = true;
+  render();
   ShowStatusAction::show("Loading...", 0);
   bool ok = _loadSource();
   _busy = false;
@@ -289,7 +316,7 @@ void ChameleonMfuWriteScreen::onInit() {
     render();
     const char* msg = _source == SOURCE_FILE ? "Invalid NTAG215 dump" :
                       (_source == SOURCE_SLOT ? "Slot is not NTAG215" :
-                                                "Read tag is not NTAG215");
+                                                "Tag is not NTAG215");
     ShowStatusAction::show(msg, 1600);
     Screen.goBack();
     return;

@@ -92,7 +92,7 @@ Controls the emulator-side sniffing of reader authentication attempts:
 
 ## MIFARE Classic Attacks
 
-The Chameleon Ultra has dedicated firmware commands for nested-attack nonce collection — the BLE client only orchestrates flow and runs the local crypto1 recovery. Sequence to fully recover a card with no known keys: **MIFARE Classic** (default key probe) → **Dictionary Attack** (extra keys from `.txt` files) → **Static Nested** or **Nested Attack** (uses the first known key to expand to all sectors) → **Dump Memory**.
+The Chameleon Ultra has dedicated firmware commands for nested-attack nonce collection — the BLE client only orchestrates flow and runs the local crypto1 recovery. Sequence to fully recover a card with no known keys: **MIFARE Classic** (default key probe) → **Dictionary Attack** (Default → Discovered → Extended, plus user `.txt` dictionaries in standalone mode) → **Static Nested** or **Nested Attack** (uses the first known key to expand to all sectors) → **Dump Memory**.
 
 ### MIFARE Classic (Default Key Probe)
 

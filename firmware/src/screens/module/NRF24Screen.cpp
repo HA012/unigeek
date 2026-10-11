@@ -126,7 +126,9 @@ void NRF24Screen::onInit() {
     return;
   }
 
-  ProgressView::progress("Detecting NRF24...", 30);
+  render();
+  ProgressView::init();
+  ProgressView::progress("Starting NRF24...", 30);
   if (!_radioBegin()) {
     ShowStatusAction::show("NRF24 not detected");
     Screen.goBack();
