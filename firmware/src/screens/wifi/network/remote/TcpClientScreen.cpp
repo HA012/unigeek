@@ -4,6 +4,7 @@
 #include "core/INavigation.h"
 #include "core/ScreenManager.h"
 #include "ui/actions/InputTextAction.h"
+#include "utils/keyboard/TerminalKeyboardUtil.h"
 #include "ui/actions/InputNumberAction.h"
 #include "ui/actions/ShowStatusAction.h"
 
@@ -197,13 +198,11 @@ void TcpClientScreen::_openCommandInput() {
 #ifdef DEVICE_HAS_KEYBOARD
   return;
 #else
-  String command = InputTextAction::popup(
-    "Command", _inputLine.text(), InputTextAction::INPUT_TEXT);
-
-  if (!InputTextAction::wasCancelled()) {
-    _inputLine.clear();
-    _sendCommand(command);
-  }
+  TerminalKeyboardUtil terminal(&_terminalWriteThunk, this);
+  InputTextAction::popup(
+    "Terminal", "", InputTextAction::INPUT_TEXT,
+    InputTextAction::PROFILE_TERMINAL, &terminal);
+  _inputLine.clear();
 
   // Data may have arrived while the modal keyboard was open.
   _drainSocket();
@@ -248,6 +247,35 @@ void TcpClientScreen::_handleTerminalInput() {
       return;
   }
 #endif
+}
+
+bool TcpClientScreen::_terminalWriteThunk(void* context, const uint8_t* data, size_t len) {
+  return context && static_cast<TcpClientScreen*>(context)->_sendTerminalBytes(data, len);
+}
+
+bool TcpClientScreen::_sendTerminalBytes(const uint8_t* data, size_t len) {
+  if (_remoteClosed || !_client.connected()) return false;
+  if (!data || len == 0) return true;
+  if (!_writeAll(data, len)) {
+    _pushOutputLine("[Send failed]");
+    _remoteClosed = true;
+    _client.stop();
+    return false;
+  }
+  if (data[0] == 0x1b) return true;
+  for (size_t i = 0; i < len; ++i) {
+    char c = (char)data[i];
+    if (c == 0x7f) {
+      if (_echoLine.length() > 0) _echoLine.remove(_echoLine.length() - 1);
+    } else if (c == '\n') {
+      _pushOutputLine(String("> ") + _echoLine);
+      _echoLine = "";
+      _followOutput = true;
+    } else if (c >= 0x20 && c <= 0x7e) {
+      _echoLine += c;
+    }
+  }
+  return true;
 }
 
 void TcpClientScreen::_sendCommand(const String& command) {

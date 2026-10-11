@@ -14,7 +14,7 @@ class InputTextAction
 public:
   enum Mode : uint8_t { INPUT_TEXT = 0, INPUT_IP_ADDRESS = 1, INPUT_HEX = 2, INPUT_PHONE =3 };
 
-  enum Profile : uint8_t { PROFILE_STANDARD = 0, PROFILE_HID = 1 };
+  enum Profile : uint8_t { PROFILE_STANDARD = 0, PROFILE_HID = 1, PROFILE_TERMINAL = 2 };
 
   static String popup(const char* title, const String& defaultValue = "", Mode mode = INPUT_TEXT,
                       Profile profile = PROFILE_STANDARD, HIDKeyboardUtil* hidKeyboard = nullptr) {
@@ -253,9 +253,9 @@ private:
         {'<', '<'}, {'>', '>'}, {'`','~'},
       };
 
-      if (_page == PAGE_HID && _profile == PROFILE_HID) {
+      if (_page == PAGE_HID && _profile != PROFILE_STANDARD) {
         static constexpr const char* hidLabels[30] = {
-          "CTRL", "SHIFT", "ALT", "GUI", "ESC", "TAB",
+          "CTRL", "SHIFT", "ALT", "META", "ESC", "TAB",
           "",     "LEFT",  "UP",  "DOWN", "RIGHT", "",
           "HOME", "END",   "PGUP", "PGDN", "DEL", "INS",
           "F1",   "F2",    "F3",  "F4",   "F5",  "F6",
@@ -273,7 +273,7 @@ private:
           if (hidLabels[i][0] == '\0')
             _sets[_setCount++] = { nullptr, "", false, SP_SAVE };
           else
-            _sets[_setCount++] = { nullptr, hidLabels[i], true, hidMap[i] };
+            _sets[_setCount++] = { nullptr, (i == 3 && _profile == PROFILE_HID) ? "GUI" : hidLabels[i], true, hidMap[i] };
         }
 
         static constexpr const char* hidFooterLabels[6] = {
@@ -304,13 +304,13 @@ private:
 
         const char* pageLabel = "123";
         Special pageAction = SP_SYMBOL;
-        if (_profile == PROFILE_HID && _page == PAGE_SYM) {
+        if (_profile != PROFILE_STANDARD && _page == PAGE_SYM) {
           pageLabel = "HTK";
           pageAction = SP_PAGE_HID;
         }
 
-        const char* saveLabel = (_profile == PROFILE_HID) ? "SEND" : "SAVE";
-        Special saveAction = (_profile == PROFILE_HID) ? SP_HID_SEND : SP_SAVE;
+        const char* saveLabel = (_profile != PROFILE_STANDARD) ? "SEND" : "SAVE";
+        Special saveAction = (_profile != PROFILE_STANDARD) ? SP_HID_SEND : SP_SAVE;
         const char* specialLabels[6] = {
           pageLabel, "CAPS", "SPACE", "BKSP", saveLabel, "EXIT"
         };
@@ -575,7 +575,7 @@ private:
           // Other keyboard modes intentionally ignore Back.
           _commitTap();
 
-          if (_profile == PROFILE_HID) {
+          if (_profile != PROFILE_STANDARD) {
             if (_page == PAGE_ABC) _page = PAGE_SYM;
             else if (_page == PAGE_SYM) _page = PAGE_HID;
             else _page = PAGE_ABC;
@@ -649,6 +649,7 @@ private:
 
   void _hidSendKey(uint8_t key) {
     if (!_hidKeyboard || key == 0) return;
+    _hidKeyboard->resetWriteStatus();
     bool hadModifiers = _hidModifiers != 0;
     _hidKeyboard->write(key);
     if (hadModifiers) {
@@ -659,16 +660,20 @@ private:
 
   void _hidSendBuffer() {
     if (!_hidKeyboard) return;
+    _hidKeyboard->resetWriteStatus();
 
     _hidReleaseModifiers();
     if (_input.length() > 0) {
       _hidKeyboard->write(reinterpret_cast<const uint8_t*>(_input.c_str()), _input.length());
     }
     _hidKeyboard->write(KEY_RETURN);
-    _input = "";
-    _pendingChar = "";
-    _tapCount = 0;
-    _lastTapTime = 0;
+
+    if (_profile != PROFILE_TERMINAL || _hidKeyboard->lastWriteOk()) {
+      _input = "";
+      _pendingChar = "";
+      _tapCount = 0;
+      _lastTapTime = 0;
+    }
   }
 
   uint8_t _hidKeyForSpecial(Special special) const {
@@ -713,7 +718,7 @@ private:
           break;
 
         case SP_DELETE:
-          if (_profile == PROFILE_HID && _hidModifiers != 0) {
+          if (_profile != PROFILE_STANDARD && _hidModifiers != 0) {
             _hidSendKey(KEY_BACKSPACE);
             break;
           }
@@ -743,7 +748,7 @@ private:
           break;
 
         case SP_PAGE_ABC:
-          if (_mode == INPUT_TEXT && _profile == PROFILE_HID) {
+          if (_mode == INPUT_TEXT && _profile != PROFILE_STANDARD) {
             _page = PAGE_ABC;
             _symbolMode = false;
             _buildSets();
@@ -752,7 +757,7 @@ private:
           break;
 
         case SP_PAGE_SYM:
-          if (_mode == INPUT_TEXT && _profile == PROFILE_HID) {
+          if (_mode == INPUT_TEXT && _profile != PROFILE_STANDARD) {
             _page = PAGE_SYM;
             _symbolMode = true;
             _buildSets();
@@ -761,7 +766,7 @@ private:
           break;
 
         case SP_PAGE_HID:
-          if (_mode == INPUT_TEXT && _profile == PROFILE_HID) {
+          if (_mode == INPUT_TEXT && _profile != PROFILE_STANDARD) {
             _page = PAGE_HID;
             _symbolMode = false;
             _buildSets();
@@ -771,6 +776,7 @@ private:
 
         case SP_HID_SEND:
           _hidSendBuffer();
+          if (_profile == PROFILE_TERMINAL && _hidKeyboard && _hidKeyboard->lastWriteOk()) _done = true;
           break;
 
         case SP_HID_CTRL:
@@ -805,13 +811,16 @@ private:
         case SP_HID_F11:
         case SP_HID_F12:
           _hidSendKey(_hidKeyForSpecial(s.special));
+          if (_profile == PROFILE_TERMINAL && _hidKeyboard && _hidKeyboard->lastWriteOk()) _done = true;
           break;
 
         case SP_SPACE:
-          if (_profile == PROFILE_HID && _hidModifiers != 0)
+          if (_profile != PROFILE_STANDARD && _hidModifiers != 0) {
             _hidSendKey(' ');
-          else
+            if (_profile == PROFILE_TERMINAL && _hidKeyboard && _hidKeyboard->lastWriteOk()) _done = true;
+          } else {
             _input += ' ';
+          }
           break;
 
         case SP_TEXT:
@@ -858,8 +867,9 @@ private:
           c = chars[1];
         }
 
-        if (_profile == PROFILE_HID && _hidModifiers != 0) {
+        if (_profile != PROFILE_STANDARD && _hidModifiers != 0) {
           _hidSendKey((uint8_t)c);
+          if (_profile == PROFILE_TERMINAL && _hidKeyboard && _hidKeyboard->lastWriteOk()) _done = true;
         } else {
           _input += c;
         }
@@ -912,7 +922,7 @@ private:
     if (_hidModifiers & 0x01) modeLabel += "CTRL+";
     if (_hidModifiers & 0x02) modeLabel += "SHFT+";
     if (_hidModifiers & 0x04) modeLabel += "ALT+";
-    if (_hidModifiers & 0x08) modeLabel += "GUI+";
+    if (_hidModifiers & 0x08) modeLabel += (_profile == PROFILE_TERMINAL) ? "META+" : "GUI+";
     if (modeLabel.length() > 0) modeLabel.remove(modeLabel.length() - 1);
     if (_capsLock) {
       if (modeLabel.length() > 0) modeLabel += " ";
@@ -1010,7 +1020,10 @@ private:
       sp.setTextColor(TFT_WHITE, theme);
     } else {
       sp.drawRoundRect(2, 2, cW - 4, cH - 4, 3, hidModifierActive ? theme : TFT_DARKGREY);
-      sp.setTextColor(hidModifierActive ? theme : (s.isSpecial ? TFT_WHITE : TFT_LIGHTGREY), TFT_BLACK);
+      const bool hotkeyCell = (_page == PAGE_HID && idx < 30);
+      sp.setTextColor(hidModifierActive ? theme
+                                        : (s.isSpecial && !hotkeyCell ? TFT_WHITE : TFT_LIGHTGREY),
+                      TFT_BLACK);
     }
 
     String lbl;
@@ -1031,7 +1044,7 @@ private:
 
       lbl = String(shown);
     } else if (_mode == INPUT_TEXT && idx == 30 && _page != PAGE_HID) {
-      lbl = (_page == PAGE_ABC) ? "123" : ((_profile == PROFILE_HID) ? "HTK" : "ABC");
+      lbl = (_page == PAGE_ABC) ? "123" : ((_profile != PROFILE_STANDARD) ? "HTK" : "ABC");
     } else {
       lbl = String(s.label);
     }

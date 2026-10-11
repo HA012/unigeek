@@ -45,6 +45,7 @@ private:
   TerminalCommandLine _inputLine;
   String _transcript;
   String _partialLine;
+  String _echoLine;
   bool   _remoteClosed = false;
   bool   _followOutput = true;
 
@@ -57,6 +58,8 @@ private:
 
   void _openCommandInput();
   void _handleTerminalInput();
+  bool _sendTerminalBytes(const uint8_t* data, size_t len);
+  static bool _terminalWriteThunk(void* context, const uint8_t* data, size_t len);
   void _sendCommand(const String& command);
   bool _writeAll(const uint8_t* data, size_t len);
 

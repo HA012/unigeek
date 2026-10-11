@@ -178,6 +178,8 @@ public:
   virtual void sendMouseReport(MouseReport* m)  {}
   virtual void sendConsumerReport(uint16_t code){}
   virtual bool isConnected()                    { return true; }
+  virtual void resetWriteStatus()                {}
+  virtual bool lastWriteOk() const               { return true; }
   virtual void setBatteryLevel(uint8_t)         {}
   virtual void resetPair()                      {}
 
