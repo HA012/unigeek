@@ -6,8 +6,6 @@
 
 BLEDetectorScreen* BLEDetectorScreen::_instance = nullptr;
 
-static void scanDoneCB(NimBLEScanResults) {}
-
 // ── Spam patterns (manufacturer data hex matching) ──────────────────────────
 
 const BLEDetectorScreen::SpamPattern BLEDetectorScreen::_patterns[] = {
@@ -96,10 +94,8 @@ void BLEDetectorScreen::onUpdate()
     }
   }
 
-  // Re-trigger scan if previous one finished
   if (_scanning && _bleScan && !_bleScan->isScanning()) {
-    _bleScan->clearResults();
-    _bleScan->start(1, scanDoneCB);
+    _bleScan->start(0, nullptr, false);
   }
 
   uint32_t now = millis();
@@ -124,11 +120,13 @@ void BLEDetectorScreen::_startScan()
 
   NimBLEDevice::init("");
   _bleScan = NimBLEDevice::getScan();
-  _bleScan->setAdvertisedDeviceCallbacks(new ScanCallbacks(), true);
+  static ScanCallbacks callbacks;
+  _bleScan->setAdvertisedDeviceCallbacks(&callbacks, true);
   _bleScan->setActiveScan(true);
   _bleScan->setInterval(100);
   _bleScan->setWindow(99);
-  _bleScan->start(1, scanDoneCB);  // non-blocking 1s scan
+  _bleScan->setMaxResults(0);
+  _bleScan->start(0, nullptr, false);
   _scanning = true;
 }
 
@@ -136,6 +134,8 @@ void BLEDetectorScreen::_stopScan()
 {
   if (_bleScan) {
     _bleScan->stop();
+    _bleScan->setAdvertisedDeviceCallbacks(nullptr, false);
+    _bleScan->setMaxResults(0xFF);
     _bleScan = nullptr;
   }
   NimBLEDevice::deinit(true);
