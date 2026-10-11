@@ -172,7 +172,7 @@ private:
   uint16_t _rowCount = 0;
 
   ListItem _mainItems[6] = {
-    {"Scan Tag"}, {"Read Tag"}, {"Read EMV"}, {"Scan NFC Reader"}, {"Families & Protocols"}, {"Device Info"},
+    {"Scan Tag"}, {"Read Tag"}, {"Read EMV (experimental)"}, {"Scan NFC Reader"}, {"Families & Protocols"}, {"Device Info"},
   };
   ListItem _familyItems[7] = {
     {"MIFARE Classic"}, {"Ultralight / NTAG"},
@@ -309,7 +309,7 @@ private:
 
   ListItem _type4ATagItems[3] = {
     {"Read Tag"},
-    {"Read EMV"},
+    {"Read EMV (experimental)"},
     {"Advanced"},
   };
 

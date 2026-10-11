@@ -329,6 +329,7 @@ uint32_t Adafruit_PN532::getFirmwareVersion(void) {
 */
 /**************************************************************************/
 // default timeout of one second
+
 bool Adafruit_PN532::sendCommandCheckAck(uint8_t *cmd, uint8_t cmdlen,
                                          uint16_t timeout) {
 
@@ -673,24 +674,9 @@ bool Adafruit_PN532::readDetectedPassiveTargetID(uint8_t *uid,
     @return  true on success, false otherwise.
 */
 /**************************************************************************/
-// EMV frame diagnostics: metadata only, never card data.
-// Codes: 0=not run, 1=OK, 2=ACK, 3=ready timeout, 4=I2C read,
-// 5=preamble, 6=LCS, 7=response header, 8=PN532 status,
-// 9=length, 10=DCS, 11=postamble, 12=output capacity.
-uint8_t pn532EmvDiagCode = 0;
-uint8_t pn532EmvDiagLen = 0;
-uint8_t pn532EmvDiagDcsRecv = 0;
-uint8_t pn532EmvDiagDcsExpect = 0;
-uint8_t pn532EmvDiagPost = 0;
-
 bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
                                     uint8_t *response,
                                     uint8_t *responseLength) {
-  pn532EmvDiagCode = 0;
-  pn532EmvDiagLen = 0;
-  pn532EmvDiagDcsRecv = 0;
-  pn532EmvDiagDcsExpect = 0;
-  pn532EmvDiagPost = 0;
   if (sendLength > PN532_PACKBUFFSIZ - 2) {
 #ifdef PN532DEBUG
     PN532DEBUGPRINT.println(F("APDU length too long for packet buffer"));
@@ -709,7 +695,6 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
 #ifdef PN532DEBUG
     PN532DEBUGPRINT.println(F("Could not send APDU"));
 #endif
-    pn532EmvDiagCode = 2;
     return false;
   }
 
@@ -717,7 +702,6 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
 #ifdef PN532DEBUG
     PN532DEBUGPRINT.println(F("Response never received for APDU..."));
 #endif
-    pn532EmvDiagCode = 3;
     return false;
   }
 
@@ -725,7 +709,6 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
   memset(pn532_packetbuffer, 0, sizeof(pn532_packetbuffer));
   const bool rxOk = readdata(pn532_packetbuffer, sizeof(pn532_packetbuffer));
   if (!rxOk) {
-    pn532EmvDiagCode = 4;
     PN532DEBUGPRINT.println(F("PN532 EMV: frame read failed"));
     return false;
   }
@@ -733,9 +716,7 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
   if (pn532_packetbuffer[0] == 0 && pn532_packetbuffer[1] == 0 &&
       pn532_packetbuffer[2] == 0xff) {
     uint8_t length = pn532_packetbuffer[3];
-    pn532EmvDiagLen = length;
     if (pn532_packetbuffer[4] != (uint8_t)(~length + 1)) {
-      pn532EmvDiagCode = 6;
 #ifdef PN532DEBUG
       PN532DEBUGPRINT.println(F("Length check invalid"));
       PN532DEBUGPRINT.println(length, HEX);
@@ -746,7 +727,6 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
     if (pn532_packetbuffer[5] == PN532_PN532TOHOST &&
         pn532_packetbuffer[6] == PN532_RESPONSE_INDATAEXCHANGE) {
       if ((pn532_packetbuffer[7] & 0x3f) != 0) {
-        pn532EmvDiagCode = 8;
 #ifdef PN532DEBUG
         PN532DEBUGPRINT.println(F("Status code indicates an error"));
 #endif
@@ -758,7 +738,6 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
       const size_t dcsIndex = 5u + (size_t)length;
       const size_t postambleIndex = dcsIndex + 1u;
       if (length < 3 || postambleIndex >= sizeof(pn532_packetbuffer)) {
-        pn532EmvDiagCode = 9;
         PN532DEBUGPRINT.println(F("PN532 EMV: invalid/oversized response"));
         return false;
       }
@@ -766,18 +745,13 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
       for (size_t j = 5; j < dcsIndex; ++j) {
         checksum = (uint8_t)(checksum + pn532_packetbuffer[j]);
       }
-      pn532EmvDiagDcsRecv = pn532_packetbuffer[dcsIndex];
-      pn532EmvDiagDcsExpect = (uint8_t)(0u - checksum);
-      pn532EmvDiagPost = pn532_packetbuffer[postambleIndex];
       if ((uint8_t)(checksum + pn532_packetbuffer[dcsIndex]) != 0 ||
           pn532_packetbuffer[postambleIndex] != 0x00) {
-        pn532EmvDiagCode = ((uint8_t)(checksum + pn532_packetbuffer[dcsIndex]) != 0) ? 10 : 11;
         PN532DEBUGPRINT.println(F("PN532 EMV: invalid frame checksum/postamble"));
         return false;
       }
       length -= 3;
       if (length > *responseLength) {
-        pn532EmvDiagCode = 12;
         PN532DEBUGPRINT.println(F("PN532 EMV: caller buffer too small"));
         return false;
       }
@@ -786,17 +760,14 @@ bool Adafruit_PN532::inDataExchange(uint8_t *send, uint8_t sendLength,
         response[i] = pn532_packetbuffer[8 + i];
       }
       *responseLength = length;
-      pn532EmvDiagCode = 1;
 
       return true;
     } else {
-      pn532EmvDiagCode = 7;
       PN532DEBUGPRINT.print(F("Don't know how to handle this command: "));
       PN532DEBUGPRINT.println(pn532_packetbuffer[6], HEX);
       return false;
     }
   } else {
-    pn532EmvDiagCode = 5;
     PN532DEBUGPRINT.println(F("Preamble missing"));
     return false;
   }
@@ -887,12 +858,17 @@ bool Adafruit_PN532::inListPassiveTarget(uint32_t timeoutMs, bool (*cancelReques
   PN532DEBUGPRINT.print(F("About to inList passive target"));
 #endif
 
-  if (!sendCommandCheckAck(pn532_packetbuffer, 3, 1000)) {
-#ifdef PN532DEBUG
-    PN532DEBUGPRINT.println(F("Could not send inlist message"));
-#endif
+  // EMV activation only: wait for ACK here; the cancellable loop below
+  // controls response readiness and the overall activation deadline.
+  writecommand(pn532_packetbuffer, 3);
+  if (i2c_dev || spi_dev) delay(1);
+  if (!waitready(1000)) {
     return false;
   }
+  if (!readack()) {
+    return false;
+  }
+  if (i2c_dev || spi_dev) delay(1);
 
   // Keep this command's response pending until ready; never issue another
   // InListPassiveTarget while it is outstanding.
@@ -901,7 +877,9 @@ bool Adafruit_PN532::inListPassiveTarget(uint32_t timeoutMs, bool (*cancelReques
       if (cancelled) *cancelled = true;
       return false;
     }
-    if ((uint32_t)(millis() - started) >= timeoutMs) return false;
+    if ((uint32_t)(millis() - started) >= timeoutMs) {
+      return false;
+    }
     delay(10);
   }
 

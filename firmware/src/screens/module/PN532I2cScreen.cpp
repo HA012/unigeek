@@ -32,6 +32,7 @@
 // global) and read the response directly over Wire after the ACK is received.
 
 extern byte pn532_packetbuffer[];
+// Diagnostic values maintained by Adafruit_PN532::inDataExchange().
 
 
 static bool _parseHexKeyI2c(const String& line, uint8_t out[6]);
@@ -582,7 +583,7 @@ const char* PN532I2cScreen::title() {
     case STATE_TYPE4A_TAG_MENU:   return "Tag Operations";
     case STATE_TYPE4A_ADVANCED_MENU:return "Advanced";
     case STATE_TYPE4A_NDEF_MENU:  return "NDEF Operations";
-    case STATE_TYPE4A_RESULT:     return _emvResultActive ? (_emvDetailsVisible ? "Details" : "Read EMV") : "Tag Details";
+    case STATE_TYPE4A_RESULT:     return _emvResultActive ? (_emvDetailsVisible ? "Details" : "Read EMV (experimental)") : "Tag Details";
     case STATE_DESFIRE_MENU:       return "DESFire (experimental)";
     case STATE_DESFIRE_APPS_MENU:  return "Applications";
     case STATE_DESFIRE_FILES_MENU: return "Files";
@@ -2379,7 +2380,7 @@ void PN532I2cScreen::_doType4AReadEmv() {
   _emvResultActive = true;
   _emvDetailsVisible = false;
   _emvDetailsAvailable = false;
-  renderOperationTitle("Read EMV");
+  renderOperationTitle("Read EMV (experimental)");
   renderTagPrompt("Waiting for card...", bodyX(), bodyY(), bodyW(), bodyH());
 
   auto showEmvStatus = [this](const String& status) {
@@ -2390,6 +2391,12 @@ void PN532I2cScreen::_doType4AReadEmv() {
     render();
   };
 
+  auto emvExchangeLogged = [this](const char*, uint8_t* tx,
+                                  uint8_t txLen, uint8_t* rx,
+                                  uint8_t* rxLen) -> bool {
+    return _nfc->inDataExchange(tx, txLen, rx, rxLen);
+  };
+
   // Configure the EMV receive buffer on the already-selected I2C bus.
   // Avoid dereferencing _wire before _initModule() has assigned it.
   if (!_wire || _wire->setBufferSize(256) < 256) {
@@ -2398,7 +2405,8 @@ void PN532I2cScreen::_doType4AReadEmv() {
   }
 
   // Put the PN532 SAM in normal mode before passive-target activation.
-  if (!_nfc->SAMConfig()) {
+  const bool emvSamOk = _nfc->SAMConfig();
+  if (!emvSamOk) {
     showEmvStatus("SAM init failed");
     return;
   }
@@ -2443,7 +2451,7 @@ void PN532I2cScreen::_doType4AReadEmv() {
 
   uint8_t response[220] = {};
   uint8_t responseLen = sizeof(response);
-  if (!_nfc->inDataExchange(apdu, apduLen, response, &responseLen)) {
+  if (!emvExchangeLogged("PPSE", apdu, apduLen, response, &responseLen)) {
     showEmvStatus("PPSE transport failed");
     return;
   }
@@ -2495,7 +2503,7 @@ void PN532I2cScreen::_doType4AReadEmv() {
 
   uint8_t appResponse[220] = {};
   uint8_t appResponseLen = sizeof(appResponse);
-  if (!_nfc->inDataExchange(selectAid, selectAidLen, appResponse, &appResponseLen)) {
+  if (!emvExchangeLogged("SELECT_AID", selectAid, selectAidLen, appResponse, &appResponseLen)) {
     showEmvStatus("AID transport failed");
     return;
   }
@@ -2520,9 +2528,10 @@ void PN532I2cScreen::_doType4AReadEmv() {
   const size_t gpoApduLen = EmvReader::buildGpo(selectedApp, gpoApdu, sizeof(gpoApdu));
   if (!gpoApduLen || gpoApduLen > 255) { showEmvStatus("Invalid PDOL"); return; }
 
+
   uint8_t gpoResponse[220] = {};
   uint8_t gpoResponseLen = sizeof(gpoResponse);
-  if (!_nfc->inDataExchange(gpoApdu, (uint8_t)gpoApduLen, gpoResponse, &gpoResponseLen)) { showEmvStatus("GPO transport failed"); return; }
+  if (!emvExchangeLogged("GPO", gpoApdu, (uint8_t)gpoApduLen, gpoResponse, &gpoResponseLen)) { showEmvStatus("GPO transport failed"); return; }
   if (gpoResponseLen < 2) { showEmvStatus("Invalid GPO response"); return; }
   if (gpoResponse[gpoResponseLen-2]!=0x90 || gpoResponse[gpoResponseLen-1]!=0x00) {
     char msg[20]; snprintf(msg,sizeof(msg),"GPO SW %02X%02X",gpoResponse[gpoResponseLen-2],gpoResponse[gpoResponseLen-1]); showEmvStatus(msg); return;
@@ -2553,7 +2562,7 @@ void PN532I2cScreen::_doType4AReadEmv() {
 
       uint8_t rrResponse[220] = {};
       uint8_t rrResponseLen = sizeof(rrResponse);
-      if (!_nfc->inDataExchange(rrApdu, sizeof(rrApdu), rrResponse, &rrResponseLen)
+      if (!emvExchangeLogged("READ_RECORD", rrApdu, sizeof(rrApdu), rrResponse, &rrResponseLen)
           || rrResponseLen < 2) {
         recordTransportFailed = true;
         break;
