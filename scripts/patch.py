@@ -21,6 +21,15 @@ if installed_version != EXPECTED_PLATFORM_VERSION:
 # as FIRMWARE_BOARD so the UART/BLE INFO response can report which board is running.
 env.Append(CPPDEFINES=[("FIRMWARE_BOARD", env.StringifyMacro(env["PIOENV"]))])
 
+# Expose the board's flash class (from its partition table) as BOARD_4MB /
+# BOARD_8MB / BOARD_16MB so size-sensitive features can gate per flash budget.
+_partitions = str(env.GetProjectOption("board_build.partitions", "")).lower()
+for _mb in ("4mb", "8mb", "16mb"):
+    if _mb in _partitions:
+        env.Append(CPPDEFINES=["BOARD_%s" % _mb.upper()])
+        print("[pre-build] Flash class: BOARD_%s" % _mb.upper())
+        break
+
 FRAMEWORK_DIR = env.PioPlatform().get_package_dir("framework-arduinoespressif32")
 board_mcu = env.BoardConfig()
 mcu = board_mcu.get("build.mcu", "esp32s3")

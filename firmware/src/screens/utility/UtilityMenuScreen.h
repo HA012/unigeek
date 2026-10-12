@@ -13,36 +13,32 @@ public:
   void onItemSelected(uint8_t index) override;
 
 private:
-#ifdef DEVICE_HAS_WEBAUTHN
-  ListItem _items[13] = {
-    {"File Manager"},
-    {"NFC/RFID Tools"},
-    {"I2C Detector"},
-    {"UART Terminal"},
-    {"ESPNOW Chat"},
-    {"QR Code"},
-    {"Barcode"},
-    {"TOTP Auth"},
-    {"Manage WebAuthn"},
-    {"Random Line Picker"},
-    {"Pomodoro"},
-    {"Wikipedia"},
-    {"Achievements"},
-  };
-#else
-  ListItem _items[12] = {
-    {"File Manager"},
-    {"NFC/RFID Tools"},
-    {"I2C Detector"},
-    {"UART Terminal"},
-    {"ESPNOW Chat"},
-    {"QR Code"},
-    {"Barcode"},
-    {"TOTP Auth"},
-    {"Random Line Picker"},
-    {"Pomodoro"},
-    {"Wikipedia"},
-    {"Achievements"},
-  };
+  static constexpr uint8_t kItemCount =
+      13
+#ifndef DEVICE_HAS_WEBAUTHN
+      - 1
 #endif
+#ifdef BOARD_4MB
+      - 1
+#endif
+      ;
+  ListItem _items[kItemCount] = {
+    {"File Manager"},
+#ifndef BOARD_4MB
+    {"NFC/RFID Tools"},
+#endif
+    {"I2C Detector"},
+    {"UART Terminal"},
+    {"ESPNOW Chat"},
+    {"QR Code"},
+    {"Barcode"},
+    {"TOTP Auth"},
+#ifdef DEVICE_HAS_WEBAUTHN
+    {"Manage WebAuthn"},
+#endif
+    {"Random Line Picker"},
+    {"Pomodoro"},
+    {"Wikipedia"},
+    {"Achievements"},
+  };
 };

@@ -62,6 +62,10 @@ namespace ModuleRegistry
 
   inline bool isAvailable(uint8_t id)
   {
+#ifdef BOARD_4MB
+    if (id == MOD_MFRC522_I2C || id == MOD_PN532_UART || id == MOD_PN532_I2C ||
+        id == MOD_ST25R3916 || id == MOD_ST25R3916_SPI) return false;
+#endif
 #ifndef DEVICE_HAS_ST25R3916
     if (id == MOD_ST25R3916 || id == MOD_ST25R3916_SPI) return false;
 #endif

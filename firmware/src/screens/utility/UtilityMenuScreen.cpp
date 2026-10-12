@@ -5,7 +5,9 @@
 #include "screens/utility/QRCodeScreen.h"
 #include "screens/utility/BarcodeScreen.h"
 #include "screens/utility/FileManagerScreen.h"
+#ifndef BOARD_4MB
 #include "screens/utility/NfcScreen.h"
+#endif
 #include "screens/utility/AchievementScreen.h"
 #include "screens/utility/TotpScreen.h"
 #include "screens/utility/UartTerminalScreen.h"
@@ -26,36 +28,22 @@ void UtilityMenuScreen::onBack() {
 }
 
 void UtilityMenuScreen::onItemSelected(uint8_t index) {
-#ifdef DEVICE_HAS_WEBAUTHN
-  switch (index) {
-    case 0: Screen.push(new FileManagerScreen());       break;
-    case 1: Screen.push(new NfcScreen());               break;
-    case 2: Screen.push(new I2CDetectorScreen());       break;
-    case 3: Screen.push(new UartTerminalScreen());      break;
-    case 4: Screen.push(new WifiESPNowChatScreen());    break;
-    case 5: Screen.push(new QRCodeScreen());            break;
-    case 6: Screen.push(new BarcodeScreen());           break;
-    case 7: Screen.push(new TotpScreen());              break;
-    case 8: Screen.push(new WebAuthnManageScreen());    break;
-    case 9: Screen.push(new RandomLinePickerScreen());  break;
-    case 10: Screen.push(new PomodoroScreen());         break;
-    case 11: Screen.push(new WikipediaScreen(true));    break;
-    case 12: Screen.push(new AchievementScreen());      break;
-  }
-#else
-  switch (index) {
-    case 0: Screen.push(new FileManagerScreen());       break;
-    case 1: Screen.push(new NfcScreen());               break;
-    case 2: Screen.push(new I2CDetectorScreen());       break;
-    case 3: Screen.push(new UartTerminalScreen());      break;
-    case 4: Screen.push(new WifiESPNowChatScreen());    break;
-    case 5: Screen.push(new QRCodeScreen());            break;
-    case 6: Screen.push(new BarcodeScreen());           break;
-    case 7: Screen.push(new TotpScreen());              break;
-    case 8: Screen.push(new RandomLinePickerScreen());  break;
-    case 9: Screen.push(new PomodoroScreen());          break;
-    case 10: Screen.push(new WikipediaScreen(true));    break;
-    case 11: Screen.push(new AchievementScreen());      break;
-  }
+  uint8_t i = 0;
+  if (index == i++) { Screen.push(new FileManagerScreen());       return; }
+#ifndef BOARD_4MB
+  if (index == i++) { Screen.push(new NfcScreen());               return; }
 #endif
+  if (index == i++) { Screen.push(new I2CDetectorScreen());       return; }
+  if (index == i++) { Screen.push(new UartTerminalScreen());      return; }
+  if (index == i++) { Screen.push(new WifiESPNowChatScreen());    return; }
+  if (index == i++) { Screen.push(new QRCodeScreen());            return; }
+  if (index == i++) { Screen.push(new BarcodeScreen());           return; }
+  if (index == i++) { Screen.push(new TotpScreen());              return; }
+#ifdef DEVICE_HAS_WEBAUTHN
+  if (index == i++) { Screen.push(new WebAuthnManageScreen());    return; }
+#endif
+  if (index == i++) { Screen.push(new RandomLinePickerScreen());  return; }
+  if (index == i++) { Screen.push(new PomodoroScreen());          return; }
+  if (index == i++) { Screen.push(new WikipediaScreen(true));     return; }
+  if (index == i++) { Screen.push(new AchievementScreen());       return; }
 }
