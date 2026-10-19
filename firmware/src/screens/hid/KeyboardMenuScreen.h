@@ -16,14 +16,14 @@ private:
   void _toggleUsbRemote();
 
 #if defined(DEVICE_HAS_USB_HID) && defined(DEVICE_HAS_WEBAUTHN) && defined(DEVICE_SUPPORTS_BOOT_ISO)
-  ListItem _items[6] = {
+  ListItem _items[7] = {
     {"USB HID"}, {"BLE HID"}, {"USB WebAuthn"},
-    {"USB Mass Storage"}, {"Boot from ISO"}, {"USB Remote"},
+    {"USB Mass Storage"}, {"Boot from ISO"}, {"Boot from IMG"}, {"USB Remote"},
   };
 #elif defined(DEVICE_HAS_USB_HID) && defined(DEVICE_SUPPORTS_BOOT_ISO)
-  ListItem _items[5] = {
+  ListItem _items[6] = {
     {"USB HID"}, {"BLE HID"}, {"USB Mass Storage"},
-    {"Boot from ISO"}, {"USB Remote"},
+    {"Boot from ISO"}, {"Boot from IMG"}, {"USB Remote"},
   };
 #elif defined(DEVICE_HAS_USB_HID)
   #ifdef DEVICE_HAS_WEBAUTHN
