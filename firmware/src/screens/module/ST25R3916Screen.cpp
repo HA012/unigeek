@@ -3,6 +3,7 @@
 
 #include "core/Device.h"
 #include "core/ScreenManager.h"
+#include "utils/nfc/EmvReader.h"
 #include "ui/actions/ShowStatusAction.h"
 #include "ui/actions/InputSelectAction.h"
 #include "ui/actions/InputTextAction.h"
@@ -687,7 +688,8 @@ void ST25R3916Screen::onBack() {
   }
   if (_state == STATE_EMULATING) { _stopEmulation(); return; }
   if (_state == STATE_SCANNING ||
-      _state == STATE_SCAN_READER_RESULT || _state == STATE_DETAILS) {
+      _state == STATE_SCAN_READER_RESULT || _state == STATE_DETAILS ||
+      _state == STATE_EMV_DETAILS) {
     _showMenu();
     return;
   }
@@ -979,9 +981,10 @@ void ST25R3916Screen::onItemSelected(uint8_t index) {
   switch (index) {
     case 0: _scan(ST25R3916Backend::TECH_ALL); break;
     case 1: _genericReadTag(); break;
-    case 2: _scanReader(); break;
-    case 3: _familyFromScan = false; _showFamiliesMenu(); break;
-    case 4: _showDeviceInfo(); break;
+    case 2: _readEmv(); break;
+    case 3: _scanReader(); break;
+    case 4: _familyFromScan = false; _showFamiliesMenu(); break;
+    case 5: _showDeviceInfo(); break;
   }
 #else
   (void)index;
@@ -1073,7 +1076,7 @@ void ST25R3916Screen::_showStatusAndReturn(const char* message, State target, in
 void ST25R3916Screen::_showMenu() {
   _genericReadActive = false;
   _state = STATE_MENU;
-  setItems(_items, 5, _selMain);
+  setItems(_items, 6, _selMain);
 }
 
 void ST25R3916Screen::_showFamiliesMenu() {
@@ -5439,6 +5442,106 @@ void ST25R3916Screen::_experimentalEraseNdef(bool formatOnly) {
   static const uint8_t empty = 0;
   if(formatOnly){if(_experimentalWriteNdef(&empty,0,true))_showExperimentalNdefMenu();else _showExperimentalNdefMenu();return;}
   static const InputSelectAction::Option o[]={{"Erase NDEF","erase"}};const char*c=InputSelectAction::popup("Erase NDEF?",o,1,nullptr);if(!c){_showExperimentalNdefMenu();return;}if(_experimentalWriteNdef(&empty,0,false))_showExperimentalNdefMenu();else _showExperimentalNdefMenu();
+}
+
+void ST25R3916Screen::_readEmv() {
+#if defined(DEVICE_HAS_ST25R3916)
+  ST25R3916Backend dev;
+  if (!st25Begin(dev, _interface)) { ShowStatusAction::show("ST25R3916 not detected", 1600); return; }
+  _state = STATE_SCANNING; render();
+  ST25R3916Backend::ScanResult tag;
+  auto wait = st25WaitForTag(dev, ST25R3916Backend::TECH_A | ST25R3916Backend::TECH_B,
+                             tag, 8000, true);
+  if (wait != St25WaitResult::FOUND) {
+    ShowStatusAction::show(wait == St25WaitResult::CANCELLED ? "Cancelled" : "Tag not detected", 1200);
+    _showMenu(); return;
+  }
+  if (!tag.isoDep) { ShowStatusAction::show("Not an EMV card", 1400); dev.deactivate(); _showMenu(); return; }
+
+  auto xfer = [&](const uint8_t* tx, size_t n, uint8_t* rx, size_t& rn) -> bool {
+    rn = 0; return dev.isoDepTransceive(tx, n, rx, 256, rn, 800) && rn >= 2;
+  };
+
+  uint8_t apdu[22], rx[256]; size_t rn = 0;
+  const size_t ppseLen = EmvReader::buildSelectPpse(apdu);
+  if (!xfer(apdu, ppseLen, rx, rn)) { ShowStatusAction::show("PPSE failed", 1400); dev.deactivate(); _showMenu(); return; }
+
+  EmvReader::Application apps[EmvReader::kMaxApps];
+  const uint8_t appCount = EmvReader::parsePpse(rx, rn, apps, EmvReader::kMaxApps);
+  if (!appCount) { ShowStatusAction::show("No EMV app", 1400); dev.deactivate(); _showMenu(); return; }
+
+  String pan, expiry, appName, brand, aidHex;
+  EmvReader::CardInfo info;
+  for (uint8_t i = 0; i < appCount && !pan.length(); ++i) {
+    const size_t selLen = EmvReader::buildSelectAid(apps[i], apdu);
+    if (!selLen || !xfer(apdu, selLen, rx, rn)) continue;
+    EmvReader::SelectedApplication sel;
+    EmvReader::parseSelectAid(rx, rn, sel);
+    uint8_t gpo[160];
+    const size_t gpoLen = EmvReader::buildGpo(sel, gpo, sizeof(gpo));
+    if (!gpoLen || !xfer(gpo, gpoLen, rx, rn)) continue;
+    EmvReader::GpoResult gpoRes;
+    if (!EmvReader::parseGpo(rx, rn, gpoRes)) continue;
+    EmvReader::findCardInfo(rx, rn - 2, info);
+    for (uint8_t a = 0; a + 3 < gpoRes.aflLen && !info.pan.length(); a += 4) {
+      const uint8_t sfi = gpoRes.afl[a] >> 3;
+      const uint8_t first = gpoRes.afl[a + 1], last = gpoRes.afl[a + 2];
+      if (!sfi || sfi > 30 || !first || last < first) continue;
+      for (uint8_t rec = first; rec <= last && rec <= first + 8; ++rec) {
+        uint8_t rr[5];
+        if (!EmvReader::buildReadRecord(rec, sfi, rr)) break;
+        if (!xfer(rr, 5, rx, rn) || rn < 2 || rx[rn - 2] != 0x90) continue;
+        EmvReader::findCardInfo(rx, rn - 2, info);
+      }
+    }
+    if (info.pan.length()) {
+      pan = info.pan;
+      appName = sel.preferredName.length() ? sel.preferredName : (sel.label.length() ? sel.label : apps[i].label);
+      aidHex = EmvReader::hex(apps[i].aid, apps[i].aidLen);
+      const uint8_t* aid = apps[i].aid;
+      if (apps[i].aidLen >= 5 && aid[0] == 0xA0 && aid[3] == 0x00) {
+        if (aid[4] == 0x03) brand = "Visa";
+        else if (aid[4] == 0x04) brand = "Mastercard";
+        else if (aid[4] == 0x25) brand = "Amex";
+        else if (aid[4] == 0x65) brand = "JCB";
+      }
+      uint8_t gd[5] = {0x80, 0xCA, 0x9F, 0x36, 0x00};
+      if (xfer(gd, 5, rx, rn)) EmvReader::findCardInfo(rx, rn - 2, info);
+      gd[3] = 0x17;
+      if (xfer(gd, 5, rx, rn)) EmvReader::findCardInfo(rx, rn - 2, info);
+    }
+  }
+  dev.deactivate();
+  if (!pan.length()) { ShowStatusAction::show("No EMV data", 1400); _showMenu(); return; }
+
+  _rowCount = 0;
+  auto add = [&](const char* k, const String& v) {
+    if (!v.length() || _rowCount >= kMaxRows) return;
+    _rowLabels[_rowCount] = k; _rowValues[_rowCount] = v;
+    _rows[_rowCount] = {_rowLabels[_rowCount].c_str(), _rowValues[_rowCount]};
+    _rowCount++;
+  };
+  add("Brand", brand);
+  add("Application", appName);
+  add("PAN", pan);
+  add("Expires", info.expiry);
+  add("Valid", info.effective);
+  add("Holder", info.holder);
+  add("AID", aidHex);
+  if (info.country) { const char* n = EmvReader::countryName(info.country); if (n) add("Country", n); }
+  if (info.currency) { const char* n = EmvReader::currencyName(info.currency); if (n) add("Currency", n); }
+  add("Lang", info.language);
+  add("Auth", info.auth);
+  add("Usage", info.usage);
+  if (info.atc) add("ATC", String(info.atc));
+  if (info.pinTries) add("PIN tries", String(info.pinTries));
+  _scrollView.resetScroll();
+  _scrollView.setRows(_rows, _rowCount);
+  _state = STATE_EMV_DETAILS;
+  render();
+#else
+  ShowStatusAction::show("ST25R3916 not supported");
+#endif
 }
 
 void ST25R3916Screen::_showDeviceInfo() {

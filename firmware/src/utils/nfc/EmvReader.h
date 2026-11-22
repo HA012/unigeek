@@ -290,4 +290,69 @@ inline size_t buildSelectPpse(uint8_t out[20]) {
   return 20;
 }
 
+// Richer card data, on top of the PN532 API. The fields the limited reader
+// drops: holder, country, currency, language, auth method, usage, ATC, PIN tries.
+struct CardInfo {
+  String pan, expiry, effective, holder, language, auth, usage;
+  uint16_t country = 0, currency = 0, atc = 0;
+  uint8_t pinTries = 0, panSeq = 0;
+};
+
+inline void findCardInfo(const uint8_t* data, size_t len, CardInfo& c) {
+  size_t pos = 0;
+  while (pos < len) {
+    uint32_t tag = 0; size_t l = 0;
+    if (!readTag(data, len, pos, tag) || !readLength(data, len, pos, l)) return;
+    const uint8_t* v = data + pos;
+    if (tag == 0x5A && !c.pan.length()) c.pan = bcdDigits(v, l);
+    else if ((tag == 0x57 || tag == 0x9F6B) && !c.pan.length()) {
+      CardData tmp; parseTrack2(v, l, tmp); if (tmp.pan.length()) c.pan = tmp.pan;
+      if (!c.expiry.length() && tmp.expiry.length()) c.expiry = tmp.expiry;
+    } else if (tag == 0x5F24 && l >= 2 && !c.expiry.length()) {
+      String d = bcdDigits(v, 2); if (d.length() >= 4) c.expiry = d.substring(2, 4) + "/20" + d.substring(0, 2);
+    } else if (tag == 0x5F25 && l >= 2 && !c.effective.length()) {
+      String d = bcdDigits(v, 2); if (d.length() >= 4) c.effective = d.substring(2, 4) + "/20" + d.substring(0, 2);
+    } else if (tag == 0x5F20 && l && !c.holder.length()) c.holder = ascii(v, l);
+    else if (tag == 0x5F28 && l >= 2 && !c.country) c.country = (v[0] << 8) | v[1];
+    else if ((tag == 0x9F42 || tag == 0x5F2A) && l >= 2 && !c.currency) c.currency = (v[0] << 8) | v[1];
+    else if (tag == 0x5F2D && l >= 2 && !c.language.length()) c.language = ascii(v, 2);
+    else if (tag == 0x5F34 && l >= 1) c.panSeq = v[0];
+    else if (tag == 0x9F36 && l >= 2 && !c.atc) c.atc = (v[0] << 8) | v[1];
+    else if (tag == 0x9F17 && l >= 1) c.pinTries = v[0];
+    else if (tag == 0x8E && l >= 10 && !c.auth.length()) {
+      for (size_t k = 8; k + 1 < l; k += 2) {
+        const uint8_t m = v[k] & 0x3F; const char* sep = c.auth.length() ? "+" : "";
+        if (m == 0x01) c.auth += String(sep) + "PIN";
+        else if (m == 0x02) c.auth += String(sep) + "OnlinePIN";
+        else if (m == 0x1E) c.auth += String(sep) + "Sig";
+        else if (m == 0x1F) c.auth += String(sep) + "NoCVM";
+        else if (m == 0x20) c.auth += String(sep) + "Mobile";
+      }
+    } else if (tag == 0x9F07 && l >= 2 && !c.usage.length()) {
+      if (v[0] & 0x80) c.usage += "Cash";
+      if (v[0] & 0x20) c.usage += String(c.usage.length() ? "," : "") + "Goods";
+      if (v[0] & 0x08) c.usage += String(c.usage.length() ? "," : "") + "Services";
+      if (v[0] & 0x02) c.usage += String(c.usage.length() ? "," : "") + "ATM";
+    } else if ((tag & 0x20) != 0) findCardInfo(v, l, c);
+    pos += l;
+  }
+}
+
+inline const char* countryName(uint16_t code) {
+  switch (code) {
+    case 0x0076: return "Brazil"; case 0x0840: return "USA"; case 0x0826: return "UK";
+    case 0x0250: return "France"; case 0x0276: return "Germany"; case 0x0724: return "Spain";
+    case 0x0380: return "Italy"; case 0x0978: return "EU"; case 0x0124: return "Canada";
+    default: return nullptr;
+  }
+}
+
+inline const char* currencyName(uint16_t code) {
+  switch (code) {
+    case 0x0986: return "BRL"; case 0x0840: return "USD"; case 0x0978: return "EUR";
+    case 0x0826: return "GBP"; case 0x0124: return "CAD"; case 0x0392: return "JPY";
+    default: return nullptr;
+  }
+}
+
 }

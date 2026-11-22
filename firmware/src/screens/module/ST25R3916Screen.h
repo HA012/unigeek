@@ -67,6 +67,7 @@ public:
       case STATE_MFC_DICT_VIEW: return _dictViewTitle.length() ? _dictViewTitle.c_str() : "Dictionary";
       case STATE_MAGIC_DETECT: return "Detect Magic";
       case STATE_DEVICE_INFO: return "Device Info";
+      case STATE_EMV_DETAILS: return "Read EMV";
       case STATE_EXP_MENU: return _expFamilyTitle();
       case STATE_EXP_TAG_MENU: return "Tag Operations";
       case STATE_EXP_ADVANCED_MENU: return "Advanced";
@@ -129,6 +130,7 @@ private:
     STATE_MFC_DICT_ATTACK_SELECT,
     STATE_MAGIC_DETECT,
     STATE_DEVICE_INFO,
+    STATE_EMV_DETAILS,
     STATE_MFC_NDEF_WRITE_MENU,
     STATE_MFC_NDEF_FILE_SELECT,
     STATE_MFC_NDEF_READING,
@@ -200,9 +202,10 @@ private:
   uint8_t _expDesfireAid[3] = {};
   bool _expDesfireAidSelected = false;
 
-  ListItem _items[5] = {
+  ListItem _items[6] = {
     {"Scan Tag"},
     {"Read Tag"},
+    {"Read EMV"},
     {"Scan NFC Reader"},
     {"Families & Protocols"},
     {"Device Info"},
@@ -387,6 +390,7 @@ private:
   void _scanReader();
   void _scan(uint16_t techMask);
   void _genericReadTag();
+  void _readEmv();
   bool _matchesGenericReadTag(const uint8_t* uid, uint8_t uidLen) const;
   void _readMfcTag();
   void _emulateMfcTag(bool fullDump);
