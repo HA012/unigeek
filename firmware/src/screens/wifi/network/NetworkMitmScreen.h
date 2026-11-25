@@ -63,6 +63,11 @@ public:
   // Both IPs are network byte order (as from IPAddress / WiFi.gatewayIP()).
   void configureSniff(uint32_t hostIpNet, uint32_t gatewayIpNet);
 
+  // DNS Spoof shortcut (host Options popup / standalone entry): same two-target
+  // setup as Sniff, but preset for a spoof-only session — Capture off, DNS Spoof
+  // on. The Redirect IP (and optional Domain) are left for the user to fill in.
+  void configureDnsSpoof(uint32_t hostIpNet, uint32_t gatewayIpNet);
+
   // NetCut: ARP-poison the chosen hosts against the gateway with forwarding
   // off, so they lose the network. setCutMode() opens the setup in cut mode
   // (up to 4 targets); configureCut() also starts immediately on one host.
@@ -101,15 +106,32 @@ private:
   // Paused-preview selection. 0 = newest entry.
   uint8_t  _previewSel = 0;
   uint8_t  _previewView = 0;
+  // Master Capture toggle (relay modes only). Off = this session runs purely to
+  // DNS-spoof: the capture rows (Filters/Preview/Save) are hidden and the
+  // running view shows the DNS status instead of the packet preview. Passive
+  // mode ignores it — capturing is the only thing Passive does.
+  bool     _captureEnabled = true;
   bool     _saveToFile    = true;
   String   _fileName;
+  // DNS spoof (relay modes only): redirect every A query to one IP. Off by
+  // default; the Redirect IP row appears only while it is On. No web server is
+  // involved — the relay forges a reply packet (see MitmRelay), so this does
+  // not reintroduce the heap exhaustion that removed the old portal-serving
+  // DNS toggle.
+  bool     _dnsSpoofEnabled = false;
+  uint32_t _dnsRedirectIp   = 0;     // network order; 0 = unset
+  char     _dnsIpText[16]   = {};
+  char     _dnsDomain[64]   = {};    // "" = all A queries; else that domain + subdomains
   bool     _cut            = false;  // NetCut: poison but do not forward
   bool     _autoStart      = false;  // start cutting immediately on init
   bool     _integrated     = false;  // launched from host Options popup
   bool     _arpEnabled     = false;  // derived from Mode at Start
   bool     _snifferEnabled = true;   // derived from _saveToFile at Start
+  // Running-view routing, derived at Start: which purpose owns the screen.
+  bool     _captureActive  = false;  // relay + capture on → packet preview/counters
+  bool     _dnsActive      = false;  // relay + DNS spoof on → DNS status view
 
-  static constexpr uint8_t MAX_ROWS = 12;
+  static constexpr uint8_t MAX_ROWS = 16;
   String   _subs[MAX_ROWS];
   char     _rowLabels[MAX_ROWS][16];   // persistent labels (e.g. "Target 1")
   ListItem _menuItems[MAX_ROWS];
@@ -148,6 +170,8 @@ private:
   // (same pattern as SshClientScreen::_rebuildItems).
   void _showFilters();
   void _editTarget(uint8_t i);
+  void _editDnsIp();
+  void _editDnsDomain();
   void _drawPreview();   // PREVIEW_TRAFFIC: the per-packet list
   void _drawPreviewFooter(int statusY);
   void _drawCounters();  // PREVIEW_COUNTER: per-protocol packet counts
@@ -156,6 +180,7 @@ private:
   void _showPreviewOptions();  // paused preview: Details / DNS Lookup
   void _drawCapturing();
   void _drawCutting();   // NetCut running view: setup log + "Cutting..."
+  void _drawDnsSpoof();  // DNS-spoof-only running view: redirect, hits, last victim
   void _drawStats(int x, int y, int w);
   void _drawDetails();
   static void _previewSink(const MitmRelay::PacketMeta& m);

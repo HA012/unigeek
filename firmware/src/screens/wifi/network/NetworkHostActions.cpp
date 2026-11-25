@@ -101,12 +101,13 @@ bool NetworkHostActions::openOptions(const HostTarget& t,
   else          { macKnown = lookupHostMac(ip, mac, /*probe=*/false); }
 
   // Curate: only the actions that make sense for this target.
-  InputSelectAction::Option options[6];
+  InputSelectAction::Option options[7];
   uint8_t n = 0;
   options[n++] = {"Details", "details"};        // always
   options[n++] = {"Ping", "ping"};              // always; starts immediately
   if (sub)         options[n++] = {"Port Scan", "ports"};
   if (poison)      options[n++] = {"Sniff", "sniff"};
+  if (poison)      options[n++] = {"DNS Spoof", "dnsspoof"};
   if (poison)      options[n++] = {"NetCut", "netcut"};
   if (sub && chOk) options[n++] = {"Fox Hunt", "fox"};
 
@@ -146,6 +147,16 @@ bool NetworkHostActions::openOptions(const HostTarget& t,
     auto* m = new NetworkMitmScreen();
     m->configureSniff(t.ip, gw);
     Screen.push(m);
+    return true;
+  }
+
+  if (strcmp(choice, "dnsspoof") == 0) {
+    if (!gw)        { ShowStatusAction::show("No gateway"); return false; }
+    if (t.ip == gw) { ShowStatusAction::show("Host is the gateway"); return false; }
+    leave();
+    auto* d = new NetworkMitmScreen();
+    d->configureDnsSpoof(t.ip, gw);
+    Screen.push(d);
     return true;
   }
 

@@ -117,7 +117,9 @@ void NetworkMitmScreen::onBack() {
 
 // Row kinds, so a row can move as the mode changes without a fixed index.
 enum : uint8_t { R_MODE, R_TARGET1, R_TARGET2, R_TARGET3, R_TARGET4,
-                 R_FILTERS, R_PREVIEW, R_PREVFILT, R_SAVE, R_FILENAME, R_START };
+                 R_DNSSPOOF, R_DNSDOMAIN, R_DNSIP,
+                 R_CAPTURE, R_FILTERS, R_PREVIEW, R_PREVFILT, R_SAVE, R_FILENAME,
+                 R_START };
 
 void NetworkMitmScreen::_showMenu(uint8_t selected) {
   _state = STATE_MENU;
@@ -132,6 +134,10 @@ void NetworkMitmScreen::_showMenu(uint8_t selected) {
     _menuItems[n] = {_rowLabels[n], _subs[n].length() ? _subs[n].c_str() : nullptr};
     _rowKind[n] = kind; ++n;
   };
+  // Capture is implicit in Passive (the only thing it does) and off in NetCut;
+  // in the relay modes it follows the master toggle below.
+  const bool capturing = !_cut && (!decrypted || _captureEnabled);
+
   add("Mode", kModeNames[_mode], R_MODE);
   if (_mode == MODE_TARGETS) {
     for (uint8_t i = 0; i < 4; ++i) {
@@ -139,17 +145,30 @@ void NetworkMitmScreen::_showMenu(uint8_t selected) {
       add(lbl, _targets[i] ? String(_targetText[i]) : String("-"), R_TARGET1 + i);
     }
   }
-  // Capture filters only mean something on decrypted traffic. NetCut does not
-  // capture, so its menu is just Mode, Targets and Start.
-  if (decrypted && !_cut) add("Capture Filters", _captureMask ? "Custom" : "All", R_FILTERS);
-  // Preview (Counter/Traffic) and its filters only apply to decrypted traffic.
+  // DNS spoof needs the relay to intercept the victim's queries, so it is only
+  // offered in the decrypted (poisoning) modes, never Passive or NetCut. It sits
+  // above Capture because a session can run purely to spoof. Domain and Redirect
+  // IP rows appear only while the toggle is On.
   if (decrypted && !_cut) {
+    add("DNS Spoof", _dnsSpoofEnabled ? "On" : "Off", R_DNSSPOOF);
+    if (_dnsSpoofEnabled) {
+      add("Domain", _dnsDomain[0] ? String(_dnsDomain) : String("All"), R_DNSDOMAIN);
+      add("Redirect IP", _dnsRedirectIp ? String(_dnsIpText) : String("-"), R_DNSIP);
+    }
+  }
+  // Master Capture toggle: only in the relay modes (Passive always captures,
+  // NetCut never does). Off hides the capture rows below.
+  if (decrypted && !_cut) add("Capture", _captureEnabled ? "On" : "Off", R_CAPTURE);
+  // Capture filters only mean something on decrypted traffic that we are keeping.
+  if (decrypted && capturing) add("Capture Filters", _captureMask ? "Custom" : "All", R_FILTERS);
+  // Preview (Counter/Traffic) and its filters only apply to captured traffic.
+  if (decrypted && capturing) {
     static const char* kPreviewNames[] = {"Counters", "Packets"};
     add("Preview", kPreviewNames[_livePreview], R_PREVIEW);
     add("Preview Filters", _previewMask ? "Custom" : "All", R_PREVFILT);
   }
-  if (!_cut) add("Save to File", _saveToFile ? "On" : "Off", R_SAVE);
-  if (!_cut && _saveToFile) add("File Name", _fileName.length() ? _fileName : String("Auto"), R_FILENAME);
+  if (capturing) add("Save to File", _saveToFile ? "On" : "Off", R_SAVE);
+  if (capturing && _saveToFile) add("File Name", _fileName.length() ? _fileName : String("Auto"), R_FILENAME);
   add("Start", String(), R_START);
 
   _rowCount = n;
@@ -177,6 +196,40 @@ void NetworkMitmScreen::_editTarget(uint8_t i) {
   snprintf(_targetText[i], sizeof(_targetText[i]), "%s", v.c_str());
 }
 
+void NetworkMitmScreen::_editDnsIp() {
+  // The redirect target is an external host (a server you control elsewhere) —
+  // the device does not serve pages. So, unlike _editTarget, there is no local
+  // subnet prefix to pre-fill.
+#ifdef DEVICE_HAS_KEYBOARD
+  const auto mode = InputTextAction::INPUT_TEXT;
+#else
+  const auto mode = InputTextAction::INPUT_IP_ADDRESS;
+#endif
+  String v = InputTextAction::popup("Redirect IP",
+                                    _dnsRedirectIp ? String(_dnsIpText) : String(), mode);
+  render();  // the popup wipes its area to black and does not restore the menu
+  if (InputTextAction::wasCancelled()) return;
+  v.trim();
+  if (v.length() == 0) { _dnsRedirectIp = 0; _dnsIpText[0] = '\0'; return; }
+  IPAddress ip;
+  if (!ip.fromString(v)) { ShowStatusAction::show("Invalid IP", 1200); return; }
+  _dnsRedirectIp = (uint32_t)ip;  // network order on ESP32
+  snprintf(_dnsIpText, sizeof(_dnsIpText), "%s", v.c_str());
+}
+
+void NetworkMitmScreen::_editDnsDomain() {
+  // Empty = spoof every A query; a domain narrows it to that name + subdomains.
+  // Free text (a hostname, not an IP), so always the text keyboard.
+  String v = InputTextAction::popup("Spoof Domain (blank = all)",
+                                    _dnsDomain[0] ? String(_dnsDomain) : String(),
+                                    InputTextAction::INPUT_TEXT);
+  render();  // the popup wipes its area to black and does not restore the menu
+  if (InputTextAction::wasCancelled()) return;
+  v.trim();
+  v.toLowerCase();
+  snprintf(_dnsDomain, sizeof(_dnsDomain), "%s", v.c_str());
+}
+
 void NetworkMitmScreen::configureSniff(uint32_t hostIpNet, uint32_t gatewayIpNet) {
   // Two-target ARP capture: the host and the gateway. The engine poisons each
   // against the other, so the host's upstream traffic is diverted through us.
@@ -191,6 +244,15 @@ void NetworkMitmScreen::configureSniff(uint32_t hostIpNet, uint32_t gatewayIpNet
   };
   fill(0, gatewayIpNet);  // Target 1 shows the gateway
   fill(1, hostIpNet);     // Target 2 shows the selected host
+}
+
+void NetworkMitmScreen::configureDnsSpoof(uint32_t hostIpNet, uint32_t gatewayIpNet) {
+  // Same two-target poisoning as Sniff, but preset for a spoof-only session:
+  // Capture off (so the menu is just Mode/Targets/DNS Spoof/Domain/Redirect IP)
+  // and DNS Spoof already on. Redirect IP is left blank for the user to set.
+  configureSniff(hostIpNet, gatewayIpNet);
+  _captureEnabled  = false;
+  _dnsSpoofEnabled = true;
 }
 
 void NetworkMitmScreen::setCutMode() {
@@ -241,6 +303,10 @@ void NetworkMitmScreen::onItemSelected(uint8_t index) {
       _editTarget(_rowKind[index] - R_TARGET1);
       _showMenu(_selectedIndex);
       break;
+    case R_CAPTURE:
+      _captureEnabled = !_captureEnabled;
+      _showMenu(_selectedIndex);
+      break;
     case R_FILTERS:
       _editingPreview = false;
       _selectedIndex = 0;  // fresh list → top
@@ -269,6 +335,18 @@ void NetworkMitmScreen::onItemSelected(uint8_t index) {
       _showMenu(_selectedIndex);
       break;
     }
+    case R_DNSSPOOF:
+      _dnsSpoofEnabled = !_dnsSpoofEnabled;
+      _showMenu(_selectedIndex);
+      break;
+    case R_DNSDOMAIN:
+      _editDnsDomain();
+      _showMenu(_selectedIndex);
+      break;
+    case R_DNSIP:
+      _editDnsIp();
+      _showMenu(_selectedIndex);
+      break;
     case R_START:
       _start();
       break;
@@ -316,7 +394,22 @@ void NetworkMitmScreen::_start() {
   // Mode -> engine flags. All/Targets poison (relay, decrypted); Passive does
   // not (monitor, encrypted). Targets needs at least one IP.
   _arpEnabled     = _mode != MODE_PASSIVE;
-  _snifferEnabled = _saveToFile && !_cut;  // NetCut does not capture
+  // Capturing: implicit in Passive, off in NetCut, master toggle in relay modes.
+  const bool capturing = !_cut && (_mode == MODE_PASSIVE || _captureEnabled);
+  _snifferEnabled = _saveToFile && capturing;   // PCAP only when capturing
+  const bool dnsSpoof = _dnsSpoofEnabled && _arpEnabled && !_cut;
+  // DNS spoof requires a relay (poisoning mode) and a destination IP.
+  if (dnsSpoof && _dnsRedirectIp == 0) {
+    ShowStatusAction::show("Redirect IP not set", 1800);
+    return;
+  }
+  // A relay session with neither capture nor DNS spoof would just forward
+  // silently — nothing for the user to see. Block it. (Passive always captures,
+  // NetCut is its own purpose, so this only bites the relay modes.)
+  if (_arpEnabled && !_cut && !capturing && !dnsSpoof) {
+    ShowStatusAction::show("Nothing to capture", 1800);
+    return;
+  }
   statusReset();
   static const char* kModeN[] = {"Full", "Targets", "Passive"};
   { char l[40]; snprintf(l, sizeof(l), "%s %s", _cut ? "NetCut" : "MITM", kModeN[_mode]); statusLog(l); }
@@ -416,8 +509,9 @@ void NetworkMitmScreen::_start() {
     // Capture Filters only apply to decrypted (relay) traffic.
     s_captureMask = relayMode ? _captureMask : 0;
     _relay.setCaptureFilter(relayMode ? &mitmCaptureFilter : nullptr);
-    // Live Preview only on decrypted (relay) traffic.
-    const bool preview = relayMode;   // always previewing (Counter/Traffic)
+    // Live Preview only on decrypted (relay) traffic we are capturing. With
+    // Capture off (DNS-spoof-only) there is no preview to feed or draw.
+    const bool preview = relayMode && capturing;
     s_previewMask = preview ? _previewMask : 0;
     s_ringHead = s_ringTail = 0;
     s_dispHead = s_dispCount = 0;
@@ -426,6 +520,10 @@ void NetworkMitmScreen::_start() {
     _previewPaused = false;
     _previewSel = _previewView = 0;
     _relay.setPreviewSink(preview ? &_previewSink : nullptr);
+    // DNS spoof only in the relay (poisoning) modes, never NetCut. Light forge
+    // in the RX hook — no web server, so no heap competition with the TX path.
+    // An empty Domain spoofs every A query; otherwise only that domain + subs.
+    _relay.setDnsSpoof(dnsSpoof, _dnsRedirectIp, _dnsDomain[0] ? _dnsDomain : nullptr);
 
     if (_relay.begin(relayMode ? MitmRelay::MODE_RELAY : MitmRelay::MODE_MONITOR)) {
       _relayUp = true;
@@ -450,6 +548,10 @@ void NetworkMitmScreen::_start() {
   // implementation of this screen.
   if (Achievement.inc("wifi_mitm_started") == 1) Achievement.unlock("wifi_mitm_started");
 
+  // Which running view owns the screen. Capture wins the main body (its preview
+  // already surfaces DNS packets); a capture-off session shows the DNS view.
+  _captureActive = relayMode && capturing;
+  _dnsActive     = dnsSpoof;
   _state       = STATE_RUNNING;
   _lastSweep   = 0;
   _lastPoison  = 0;
@@ -625,7 +727,7 @@ void NetworkMitmScreen::onUpdate() {
 
   // Drain the preview ring into the display list (unless paused). Capture never
   // pauses — only the on-screen list freezes for inspection.
-  if (_arpEnabled && !_previewPaused && _state != STATE_DETAILS) {
+  if (_captureActive && !_previewPaused && _state != STATE_DETAILS) {
     while (s_ringTail != s_ringHead) {
       volatile MitmRelay::PacketMeta& v = s_ring[s_ringTail];
       MitmRelay::PacketMeta m;
@@ -648,7 +750,7 @@ void NetworkMitmScreen::onUpdate() {
       if (dir == INavigation::DIR_BACK) { _state = STATE_RUNNING; render(); }
       return;
     }
-    if (_livePreview == PREVIEW_COUNTER && _arpEnabled) {
+    if (_livePreview == PREVIEW_COUNTER && _captureActive) {
       if (dir == INavigation::DIR_BACK) {
         _stop("Stopped");
         if (_integrated) Screen.goBack();
@@ -656,7 +758,7 @@ void NetworkMitmScreen::onUpdate() {
       }
       return;  // running total: no pause/inspect
     }
-    if (_livePreview == PREVIEW_TRAFFIC && _arpEnabled) {
+    if (_livePreview == PREVIEW_TRAFFIC && _captureActive) {
       if (!_previewPaused) {
         if (dir == INavigation::DIR_PRESS) {
           dispFreeze();                 // stable snapshot for inspection
@@ -706,8 +808,9 @@ void NetworkMitmScreen::onRender() {
   if (_state == STATE_DETAILS) { _drawDetails(); return; }
   if (_state == STATE_RUNNING) {
     if (_cut) { _drawCutting(); return; }
-    if (_arpEnabled && _livePreview == PREVIEW_COUNTER) { _drawCounters(); return; }
-    if (_arpEnabled && _livePreview == PREVIEW_TRAFFIC) { _drawPreview(); return; }
+    if (_captureActive && _livePreview == PREVIEW_COUNTER) { _drawCounters(); return; }
+    if (_captureActive && _livePreview == PREVIEW_TRAFFIC) { _drawPreview(); return; }
+    if (_dnsActive) { _drawDnsSpoof(); return; }  // capture-off: DNS status view
     _drawCapturing();
     return;
   }
@@ -773,6 +876,57 @@ void NetworkMitmScreen::_drawCutting() {
   for (uint8_t i = 0; i < s_statusCount && yy + fh < bodyY() + listH; ++i) {
     lcd.drawString(s_status[i], bodyX() + 2, yy);
     yy += lineH;
+  }
+
+  const int sepY = bodyY() + bh - footerH;
+  lcd.drawFastHLine(bodyX(), sepY, bodyW(), TFT_DARKGREY);
+  const uint32_t seconds = (millis() - _sessionStartMs) / 1000;
+  char foot[28];
+  snprintf(foot, sizeof(foot), "Time %02lu:%02lu",
+           (unsigned long)(seconds / 60), (unsigned long)(seconds % 60));
+  lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  lcd.setTextDatum(TL_DATUM);
+  lcd.drawString(foot, bodyX() + 2, sepY + 3);
+}
+
+void NetworkMitmScreen::_drawDnsSpoof() {
+  // DNS-spoof-only session (Capture off): no packet list. The setup log shows
+  // until poisoning is live, then the redirect target, queries answered and the
+  // last victim we answered — the Redirect IP is what matters here, so it leads.
+  auto& lcd = Uni.Lcd;
+  lcd.setTextSize(1);
+  const int fh = lcd.fontHeight();
+  const int lineH = fh + 3;
+  const int footerH = fh + 6;
+  const int bh = bodyH();
+  const int listH = bh - footerH;
+
+  lcd.fillRect(bodyX(), bodyY(), bodyW(), bh, TFT_BLACK);
+  lcd.setTextDatum(TL_DATUM);
+  int yy = bodyY() + 2;
+
+  if (!s_prepDone) {
+    lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    for (uint8_t i = 0; i < s_statusCount && yy + fh < bodyY() + listH; ++i) {
+      lcd.drawString(s_status[i], bodyX() + 2, yy);
+      yy += lineH;
+    }
+  } else {
+    char line[48];
+    lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    lcd.drawString(_dnsDomain[0] ? _dnsDomain : "all domains", bodyX() + 2, yy);
+    yy += lineH;
+    lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    snprintf(line, sizeof(line), "  -> %s", _dnsRedirectIp ? _dnsIpText : "-");
+    lcd.drawString(line, bodyX() + 2, yy); yy += lineH + 2;
+
+    snprintf(line, sizeof(line), "Answered: %lu", (unsigned long)_relay.dnsHits());
+    lcd.drawString(line, bodyX() + 2, yy); yy += lineH;
+
+    const uint32_t last = _relay.dnsLastClient();
+    if (last) { char ipb[20]; ipStr(last, ipb, sizeof(ipb)); snprintf(line, sizeof(line), "Last: %s", ipb); }
+    else      { snprintf(line, sizeof(line), "Last: -"); }
+    lcd.drawString(line, bodyX() + 2, yy); yy += lineH;
   }
 
   const int sepY = bodyY() + bh - footerH;

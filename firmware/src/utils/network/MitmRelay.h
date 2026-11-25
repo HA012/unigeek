@@ -68,6 +68,17 @@ public:
   void setPreviewSink(PreviewSink s) { _previewSink = s; }
   void setArp(ArpSpoofer* a)      { _arp = a; }
   void setForward(bool on)        { _forward = on; }
+  // DNS spoof: while on, a transit DNS A/IN query from a poisoned host is
+  // answered in-hook with redirectIpNet (network order) and NOT forwarded, so
+  // the victim resolves the name to that IP. redirectIpNet points at an
+  // external host you control — nothing is served on the device, so unlike the
+  // old portal DNS toggle this adds no web server and no heap pressure.
+  //
+  // domain narrows the attack: null/empty = spoof every A query; otherwise only
+  // queries for that domain or any subdomain of it (suffix match, case-folded)
+  // are answered and the rest are forwarded untouched, so the victim still
+  // resolves everything else normally.
+  void setDnsSpoof(bool on, uint32_t redirectIpNet, const char* domain = nullptr);
 
   Mode     mode()      const { return _mode; }
   // Frames handed to the RX hook at all. Stops climbing the moment the driver
@@ -82,6 +93,10 @@ public:
   uint32_t txFailed()  const { return _txFailed; }
   // Frames dropped instead of being bounced to the gateway — see _rxCb.
   uint32_t loopDropped() const { return _loopDropped; }
+  // DNS spoof telemetry for the running view: queries answered, and the last
+  // victim we answered (its IP, network order; 0 = none yet).
+  uint32_t dnsHits()       const { return _dnsHits; }
+  uint32_t dnsLastClient() const { return _dnsLastClient; }
 
   bool     storageFailed() const { return _storageFailed; }
   // Why the last begin() returned false. Never null after a failed begin().
@@ -136,6 +151,17 @@ private:
   static PreviewSink    _previewSink;
   static void _emitPreview(const uint8_t* eth, uint16_t len);
   static char           _errBuf[48];  // backs _error when the text is dynamic
+
+  // DNS spoof config, read in the RX hook.
+  static volatile bool     _dnsSpoofS;
+  static volatile uint32_t _dnsRedirectIpS;   // network order
+  static char              _dnsDomainS[64];    // "" = all domains; else suffix filter (lowercase)
+  static volatile uint32_t _dnsHits;           // queries answered this session
+  static volatile uint32_t _dnsLastClient;     // last victim answered (IP, network order)
+  // Returns true if the frame was a DNS A/IN query and has been answered +
+  // consumed (rx buffer freed); the caller must then stop processing it. False
+  // leaves the frame untouched for normal forwarding.
+  static bool _tryDnsSpoof(uint8_t* eth, uint16_t len, void* eb);
 
   static esp_err_t _rxCb(void* buffer, uint16_t len, void* eb);
   static void      _promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t type);
