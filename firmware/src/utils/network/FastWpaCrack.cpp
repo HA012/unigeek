@@ -242,6 +242,26 @@ bool fast_wpa2_try_password(const char *pw, uint8_t pw_len,
   return memcmp(calc_mic, mic, 16) == 0;
 }
 
+bool fast_wpa2_try_password_pmkid(const char *pw, uint8_t pw_len,
+                                  const char *ssid, uint8_t ssid_len,
+                                  const uint8_t ap[6], const uint8_t sta[6],
+                                  const uint8_t pmkid[16]) {
+  FastHmacPre pw_pre;
+  fast_hmac_precompute((const uint8_t*)pw, pw_len, pw_pre);
+  uint8_t pmk[32];
+  fast_pbkdf2(pw_pre, (const uint8_t*)ssid, ssid_len, 4096, pmk);
+  // PMKID = HMAC-SHA1(PMK, "PMK Name" || AP || STA), first 16 bytes.
+  uint8_t data[20];
+  memcpy(data, "PMK Name", 8);
+  memcpy(data + 8, ap, 6);
+  memcpy(data + 14, sta, 6);
+  FastHmacPre pmk_pre;
+  fast_hmac_precompute(pmk, 32, pmk_pre);
+  uint8_t calc[20];
+  fast_hmac_sha1_pre(pmk_pre, data, 20, calc);
+  return memcmp(calc, pmkid, 16) == 0;
+}
+
 // ── PCAP parsing ──────────────────────────────────────────────────────────
 
 static const uint8_t kPcapEapolSnap[8] = {0xAA,0xAA,0x03,0x00,0x00,0x00,0x88,0x8E};

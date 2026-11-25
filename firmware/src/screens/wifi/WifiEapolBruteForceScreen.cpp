@@ -378,6 +378,13 @@ bool WifiEapolBruteForceScreen::_parsePcap(const char* path) {
   uint8_t pendM2Eapol[400] = {};
   uint16_t pendM2EapolLen = 0;
 
+  // PMKID (hashcat -m 16800) harvested from an M1's key data — used only if no
+  // full 4-way is found in the capture (4-way is preferred when both exist).
+  bool    gotPmkid   = false;
+  uint8_t pmkidVal[16] = {};
+  uint8_t pmkidAp[6]   = {};
+  uint8_t pmkidSta[6]  = {};
+
   while (f.available() > 16) {
     READ_FRAME(frm, flen)
 
@@ -417,6 +424,28 @@ bool WifiEapolBruteForceScreen::_parsePcap(const char* path) {
       memcpy(lastSta,    frm + 4,  6);   // addr1 = STA
       memcpy(lastAnonce, key + 13, 32);
       gotAnonce = true;
+
+      // M1 (ACK, no MIC) may carry a PMKID in its key data (RSN KDE,
+      // OUI 00-0F-AC type 4). Extract it once, clientless-crackable on its own.
+      if (!mic && !gotPmkid && total >= 99) {
+        uint16_t kdLen = ((uint16_t)eapol[97] << 8) | eapol[98];
+        const uint8_t* kd = eapol + 99;
+        uint16_t kdAvail = total - 99;
+        if (kdLen > kdAvail) kdLen = kdAvail;
+        for (uint16_t i = 0; i + 22 <= kdLen; i++) {
+          if (kd[i] == 0xDD && kd[i+2] == 0x00 && kd[i+3] == 0x0F &&
+              kd[i+4] == 0xAC && kd[i+5] == 0x04) {
+            bool z = true; for (int q = 0; q < 16; q++) if (kd[i+6+q]) { z = false; break; }
+            if (!z) {
+              memcpy(pmkidVal, kd + i + 6, 16);
+              memcpy(pmkidAp,  frm + 10, 6);
+              memcpy(pmkidSta, frm + 4,  6);
+              gotPmkid = true;
+            }
+            break;
+          }
+        }
+      }
 
       // Check if a buffered M2 from this same AP/STA pair can be paired now
       if (pendM2 &&
@@ -477,7 +506,7 @@ bool WifiEapolBruteForceScreen::_parsePcap(const char* path) {
   #undef READ_FRAME
   f.close();
 
-  if (!gotM2) return false;
+  if (!gotM2 && !gotPmkid) return false;
 
   // SSID fallback: extract from filename (BSSID_SSID.pcap)
   if (hs.ssid[0] == '\0') {
@@ -493,17 +522,26 @@ bool WifiEapolBruteForceScreen::_parsePcap(const char* path) {
     if (hs.ssid[0] == '\0') return false;
   }
 
-  // Build prf_data[76]: min(AP,STA)||max(AP,STA)||min(ANonce,SNonce)||max(ANonce,SNonce)
-  uint8_t* p = hs.prf_data;
-  if (memcmp(hs.ap, hs.sta, 6) < 0) {
-    memcpy(p, hs.ap,  6); p += 6; memcpy(p, hs.sta, 6); p += 6;
+  if (gotM2) {
+    // 4-way: build prf_data[76] =
+    //   min(AP,STA)||max(AP,STA)||min(ANonce,SNonce)||max(ANonce,SNonce)
+    uint8_t* p = hs.prf_data;
+    if (memcmp(hs.ap, hs.sta, 6) < 0) {
+      memcpy(p, hs.ap,  6); p += 6; memcpy(p, hs.sta, 6); p += 6;
+    } else {
+      memcpy(p, hs.sta, 6); p += 6; memcpy(p, hs.ap,  6); p += 6;
+    }
+    if (memcmp(hs.anonce, hs.snonce, 32) < 0) {
+      memcpy(p, hs.anonce, 32); p += 32; memcpy(p, hs.snonce, 32);
+    } else {
+      memcpy(p, hs.snonce, 32); p += 32; memcpy(p, hs.anonce, 32);
+    }
   } else {
-    memcpy(p, hs.sta, 6); p += 6; memcpy(p, hs.ap,  6); p += 6;
-  }
-  if (memcmp(hs.anonce, hs.snonce, 32) < 0) {
-    memcpy(p, hs.anonce, 32); p += 32; memcpy(p, hs.snonce, 32);
-  } else {
-    memcpy(p, hs.snonce, 32); p += 32; memcpy(p, hs.anonce, 32);
+    // PMKID-only capture: crack via hashcat -m 16800.
+    hs.isPmkid = true;
+    memcpy(hs.ap,    pmkidAp,  6);
+    memcpy(hs.sta,   pmkidSta, 6);
+    memcpy(hs.pmkid, pmkidVal, 16);
   }
 
   hs.valid = true;
@@ -523,11 +561,16 @@ void WifiEapolBruteForceScreen::_workerTask(void* param) {
       __atomic_fetch_add(&ctx->tested, 1, __ATOMIC_RELAXED);
       continue;
     }
-    if (fast_wpa2_try_password(entry.pw, entry.len,
-                                ctx->hs.ssid, ctx->hs.ssid_len,
-                                ctx->hs.prf_data,
-                                ctx->hs.eapol, ctx->hs.eapol_len,
-                                ctx->hs.mic)) {
+    const bool hit = ctx->hs.isPmkid
+      ? fast_wpa2_try_password_pmkid(entry.pw, entry.len,
+                                     ctx->hs.ssid, ctx->hs.ssid_len,
+                                     ctx->hs.ap, ctx->hs.sta, ctx->hs.pmkid)
+      : fast_wpa2_try_password(entry.pw, entry.len,
+                               ctx->hs.ssid, ctx->hs.ssid_len,
+                               ctx->hs.prf_data,
+                               ctx->hs.eapol, ctx->hs.eapol_len,
+                               ctx->hs.mic);
+    if (hit) {
       ctx->found = true;
       memcpy(ctx->foundPass, entry.pw, entry.len + 1);
     }
@@ -547,11 +590,16 @@ void WifiEapolBruteForceScreen::_crackTask(void* param) {
   // Crack one password on this core (producer side)
   auto tryHere = [&](const char* pw, size_t len) {
     memcpy(ctx->curPass, pw, len + 1);
-    if (fast_wpa2_try_password(pw, (uint8_t)len,
-                                ctx->hs.ssid, ctx->hs.ssid_len,
-                                ctx->hs.prf_data,
-                                ctx->hs.eapol, ctx->hs.eapol_len,
-                                ctx->hs.mic)) {
+    const bool hit = ctx->hs.isPmkid
+      ? fast_wpa2_try_password_pmkid(pw, (uint8_t)len,
+                                     ctx->hs.ssid, ctx->hs.ssid_len,
+                                     ctx->hs.ap, ctx->hs.sta, ctx->hs.pmkid)
+      : fast_wpa2_try_password(pw, (uint8_t)len,
+                               ctx->hs.ssid, ctx->hs.ssid_len,
+                               ctx->hs.prf_data,
+                               ctx->hs.eapol, ctx->hs.eapol_len,
+                               ctx->hs.mic);
+    if (hit) {
       memcpy(ctx->foundPass, pw, len + 1);
       ctx->found = true;
     }

@@ -32,6 +32,10 @@ public:
     uint8_t  eapol[300]   = {};   // M2 body with MIC zeroed
     uint16_t eapol_len    = 0;
     uint8_t  prf_data[76] = {};   // sorted MACs + sorted nonces for PTK derivation
+    // PMKID path (hashcat -m 16800): set when no 4-way is present but an M1
+    // carried a PMKID. Cracked via fast_wpa2_try_password_pmkid instead.
+    bool     isPmkid      = false;
+    uint8_t  pmkid[16]    = {};
   };
 
 private:

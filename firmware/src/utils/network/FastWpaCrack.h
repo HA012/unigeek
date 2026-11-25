@@ -36,6 +36,14 @@ bool fast_wpa2_try_password(const char *pw, uint8_t pw_len,
                             const uint8_t *eapol, uint16_t eapol_len,
                             const uint8_t *mic);
 
+// PMKID password test (hashcat -m 16800): PBKDF2 → PMK, then
+// PMKID' = HMAC-SHA1(PMK, "PMK Name" || AP || STA)[:16]. No 4-way needed.
+// Returns true if the derived PMKID matches the captured one.
+bool fast_wpa2_try_password_pmkid(const char *pw, uint8_t pw_len,
+                                  const char *ssid, uint8_t ssid_len,
+                                  const uint8_t ap[6], const uint8_t sta[6],
+                                  const uint8_t pmkid[16]);
+
 // WPA2 handshake extracted from a PCAP file
 struct CrackHandshake {
   char     ssid[33]     = {};
