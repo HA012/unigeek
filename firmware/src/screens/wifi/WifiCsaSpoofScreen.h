@@ -1,24 +1,32 @@
 #pragma once
 
+#include <esp_wifi.h>
 #include "ui/templates/ListScreen.h"
 
 // ── CSA Spoof (802.11h Channel Switch Announcement DoS) ─────────────────────
-// Beacons spoofing a target AP that carry a Channel Switch Announcement element,
-// so clients honouring 802.11h follow the "AP" to a channel where it is not and
-// drop the link. Structured after WifiDeauthDisassocScreen (lean variant: no
-// per-client targeting, no All mode — CSA is broadcast to the whole BSS).
+// Tells clients their AP is moving to another channel, so those honouring
+// 802.11h follow to a channel where the AP is not and drop the link. Mirrors
+// WifiDeauthDisassocScreen: Mode Target/All, up to 4 client targets, AP + client
+// scans. Broadcast form = beacon with the CSA element (whole BSS); targeted form
+// = unicast CSA action frame per selected client.
 class WifiCsaSpoofScreen : public ListScreen
 {
 public:
   const char* title() override { return "CSA Spoof"; }
   bool inhibitPowerOff() override { return _state == STATE_RUNNING; }
 
-  WifiCsaSpoofScreen() { memset(_mainItems, 0, sizeof(_mainItems)); }
+  WifiCsaSpoofScreen() {
+    memset(_mainItems,  0, sizeof(_mainItems));
+    memset(_scanItems,  0, sizeof(_scanItems));
+    memset(_scanLabels,   0, sizeof(_scanLabels));
+    memset(_scanValues,   0, sizeof(_scanValues));
+    memset(_scanChannels, 0, sizeof(_scanChannels));
+  }
   ~WifiCsaSpoofScreen() override;
 
-  // Contextual entry from WiFi Scanner / Traffic Monitor: prefills the AP and
-  // auto-starts in onInit.
-  void configureFromChannel(uint8_t channel, const uint8_t* bssid, const char* ssid = nullptr);
+  // Contextual entry from WiFi Scanner / Traffic Monitor.
+  void configureFromChannel(uint8_t channel, const uint8_t* bssid,
+                            const uint8_t* client = nullptr, const char* ssid = nullptr);
 
   void onInit() override;
   void onItemSelected(uint8_t index) override;
@@ -27,31 +35,76 @@ public:
   void onBack() override;
 
 private:
-  struct Target { String ssid = "-"; uint8_t bssid[6] = {0, 0, 0, 0, 0, 0}; int channel = 1; };
-  enum State { STATE_MAIN, STATE_SELECT_WIFI, STATE_RUNNING };
+  typedef uint8_t MacAddr[6];
 
-  State   _state       = STATE_MAIN;
-  Target  _target;
-  uint8_t _toChannel   = 11;   // channel the clients are told to move to
-  uint8_t _mainSel     = 0;
-  bool    _fromContext = false;
-  bool    _chromeDrawn = false;
+  struct Target {
+    String  ssid    = "-";
+    MacAddr bssid   = {0, 0, 0, 0, 0, 0};
+    int     channel = 1;
+  };
+
+  struct ApEntry {
+    uint8_t bssid[6];
+    uint8_t channel;
+    bool    valid;
+  };
+
+  enum State { STATE_MAIN, STATE_SELECT_WIFI, STATE_SELECT_CLIENTS, STATE_RUNNING };
+  enum Mode  { MODE_TARGET, MODE_ALL };
+
+  State  _state = STATE_MAIN;
+  Mode   _mode  = MODE_TARGET;
+  Target _target;
+  uint8_t _toChannel = 11;    // channel clients are told to move to
+  uint8_t _mainSel = 0;
+  bool _fromContext = false;
 
   class WifiAttackUtil* _attacker = nullptr;
 
   static constexpr int MAX_SCAN = 20;
-  ListItem _mainItems[3];
+  static constexpr int MAX_ALL  = 30;
+
+  uint8_t _allChanHop = 0;
+  bool    _chromeDrawn = false;
+
+  ListItem _mainItems[5];
+  String _clientsSub;
+  String _toChannelSub;
+
+  static constexpr uint8_t MAX_SELECTED_CLIENTS = 4;
+  static constexpr uint8_t MAX_SEEN_CLIENTS = 20;
+  struct ClientEntry { uint8_t mac[6]; int8_t rssi; char macStr[18]; };
+  ClientEntry _seenClients[MAX_SEEN_CLIENTS] = {};
+  uint8_t _seenClientCount = 0;
+  uint8_t _clientOrder[MAX_SEEN_CLIENTS] = {};
+  uint8_t _selectedClients[MAX_SELECTED_CLIENTS][6] = {};
+  uint8_t _selectedClientCount = 0;
+  char _selectedClientMacStr[18] = {};
+  ListItem _clientItems[MAX_SEEN_CLIENTS + 2];
+  char _clientLabels[MAX_SEEN_CLIENTS + 2][32] = {};
+  static WifiCsaSpoofScreen* _clientScanner;
+  static portMUX_TYPE _clientLock;
+  static void _clientCb(void* buf, wifi_promiscuous_pkt_type_t type);
+  void _scanClients();
+  void _showClients(bool preserveSelection = false);
+  bool _clientSelected(const uint8_t* mac) const;
+  void _refreshSelectedClientMacStr();
+  String   _modeSub;
   String   _targetSub;
-  String   _toChannelSub;
 
   ListItem _scanItems[MAX_SCAN + 1];
   char     _scanLabels[MAX_SCAN][52];
   char     _scanValues[MAX_SCAN][18];
   char     _scanDisplay[MAX_SCAN][24];
-  int16_t  _scanRssi[MAX_SCAN]     = {};
+  int16_t  _scanRssi[MAX_SCAN] = {};
   uint8_t  _scanChannels[MAX_SCAN] = {};
   int      _scanCount = 0;
   bool     _scanValid = false;
+
+  static ApEntry      _allTargets[MAX_ALL];
+  static int          _allCount;
+  static portMUX_TYPE _allLock;
+  static void _beaconCb(void* buf, wifi_promiscuous_pkt_type_t type);
 
   String _statusTitle;
   String _statusDetail;
@@ -62,5 +115,6 @@ private:
   void _defaultToChannel();
   void _startAttack();
   void _stopAttack();
+  void _csaAll();
   void _drawStatus(const char* titleLine, const char* detailLine);
 };

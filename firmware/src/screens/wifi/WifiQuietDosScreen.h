@@ -1,19 +1,26 @@
 #pragma once
 
+#include <esp_wifi.h>
 #include "ui/templates/ListScreen.h"
 
 // ── Quiet DoS (802.11h Quiet element) ───────────────────────────────────────
 // Beacons spoofing a target AP that carry a Quiet element asking stations to
-// withhold transmissions for a chosen duration every beacon interval. Clients
-// honouring 802.11h fall silent, degrading the BSS throughput. Same lean
-// structure as WifiCsaSpoofScreen (AP target only, broadcast — no per-client).
+// withhold transmissions, degrading the BSS. Clients honouring 802.11h fall
+// silent. Mirrors WifiDeauthDisassocScreen's Mode Target/All; no per-client
+// targeting — the Quiet element has no unicast form, so it is always broadcast.
 class WifiQuietDosScreen : public ListScreen
 {
 public:
   const char* title() override { return "Quiet DoS"; }
   bool inhibitPowerOff() override { return _state == STATE_RUNNING; }
 
-  WifiQuietDosScreen() { memset(_mainItems, 0, sizeof(_mainItems)); }
+  WifiQuietDosScreen() {
+    memset(_mainItems,  0, sizeof(_mainItems));
+    memset(_scanItems,  0, sizeof(_scanItems));
+    memset(_scanLabels,   0, sizeof(_scanLabels));
+    memset(_scanValues,   0, sizeof(_scanValues));
+    memset(_scanChannels, 0, sizeof(_scanChannels));
+  }
   ~WifiQuietDosScreen() override;
 
   void configureFromChannel(uint8_t channel, const uint8_t* bssid, const char* ssid = nullptr);
@@ -25,20 +32,30 @@ public:
   void onBack() override;
 
 private:
-  struct Target { String ssid = "-"; uint8_t bssid[6] = {0, 0, 0, 0, 0, 0}; int channel = 1; };
+  typedef uint8_t MacAddr[6];
+
+  struct Target { String ssid = "-"; MacAddr bssid = {0, 0, 0, 0, 0, 0}; int channel = 1; };
+  struct ApEntry { uint8_t bssid[6]; uint8_t channel; bool valid; };
+
   enum State { STATE_MAIN, STATE_SELECT_WIFI, STATE_RUNNING };
+  enum Mode  { MODE_TARGET, MODE_ALL };
 
   State   _state       = STATE_MAIN;
+  Mode    _mode        = MODE_TARGET;
   Target  _target;
   uint8_t _durIdx      = 1;    // index into kDur / kDurName
   uint8_t _mainSel     = 0;
   bool    _fromContext = false;
   bool    _chromeDrawn = false;
+  uint8_t _allChanHop  = 0;
 
   class WifiAttackUtil* _attacker = nullptr;
 
   static constexpr int MAX_SCAN = 20;
-  ListItem _mainItems[3];
+  static constexpr int MAX_ALL  = 30;
+
+  ListItem _mainItems[4];
+  String   _modeSub;
   String   _targetSub;
   String   _durSub;
 
@@ -51,6 +68,11 @@ private:
   int      _scanCount = 0;
   bool     _scanValid = false;
 
+  static ApEntry      _allTargets[MAX_ALL];
+  static int          _allCount;
+  static portMUX_TYPE _allLock;
+  static void _beaconCb(void* buf, wifi_promiscuous_pkt_type_t type);
+
   String _statusTitle;
   String _statusDetail;
 
@@ -59,5 +81,6 @@ private:
   void _showScanResults();
   void _startAttack();
   void _stopAttack();
+  void _quietAll();
   void _drawStatus(const char* titleLine, const char* detailLine);
 };

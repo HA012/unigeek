@@ -34,6 +34,11 @@ public:
   // intervals until the announced switch.
   esp_err_t channelSwitch(const MacAddr bssid, const char* ssid, uint8_t channel,
                           uint8_t newChannel, uint8_t switchCount = 3);
+  // Targeted CSA: a unicast Channel Switch Announcement *action* frame
+  // (Spectrum Management category, addr1 = the station) so only that client is
+  // told to move — the per-client analogue of a directed deauth.
+  esp_err_t channelSwitchUnicast(const MacAddr client, const MacAddr bssid, uint8_t channel,
+                                 uint8_t newChannel, uint8_t switchCount = 3);
   // quiet: a Quiet element asking stations to withhold transmissions for
   // `duration` TUs, `offset` TUs into every `period` beacon intervals, starting
   // `count` beacons from now.
