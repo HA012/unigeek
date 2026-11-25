@@ -12,7 +12,7 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[10] = {
+  ListItem _items[11] = {
     {"Deauth/Disassoc"},
     {"CSA Spoof"},
     {"Quiet DoS"},
@@ -21,6 +21,7 @@ private:
     {"Evil Twin"},
     {"Karma"},
     {"EAPOL Capture"},
+    {"PMKID Capture"},
     {"EAPOL Brute Force"},
     {"CIW Zeroclick"},
   };

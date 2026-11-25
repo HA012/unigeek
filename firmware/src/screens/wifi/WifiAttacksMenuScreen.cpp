@@ -9,6 +9,7 @@
 #include "WifiBeaconFloodScreen.h"
 #include "WifiCiwZeroclickScreen.h"
 #include "WifiEapolScreen.h"
+#include "WifiPmkidCaptureScreen.h"
 #include "WifiEapolBruteForceScreen.h"
 
 void WifiAttacksMenuScreen::onInit() {
@@ -25,8 +26,9 @@ void WifiAttacksMenuScreen::onItemSelected(uint8_t index) {
     case 5: Screen.push(new WifiEvilTwinScreen()); break;
     case 6: Screen.push(new WifiKarmaMenuScreen()); break;
     case 7: Screen.push(new WifiEapolScreen()); break;
-    case 8: Screen.push(new WifiEapolBruteForceScreen()); break;
-    case 9: Screen.push(new WifiCiwZeroclickScreen()); break;
+    case 8: Screen.push(new WifiPmkidCaptureScreen()); break;
+    case 9: Screen.push(new WifiEapolBruteForceScreen()); break;
+    case 10: Screen.push(new WifiCiwZeroclickScreen()); break;
   }
 }
 
