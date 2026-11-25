@@ -860,7 +860,7 @@ void WifiWatchcatScreen::_openOptions()
   uint8_t allowed = WifiTargetActions::DETAILS | WifiTargetActions::FOX_HUNT;
   if (_view != VIEW_PROBES)
     allowed |= WifiTargetActions::MONITOR | WifiTargetActions::SNIFFER |
-               WifiTargetActions::FOX_HUNT_AP;
+               WifiTargetActions::FOX_HUNT_AP | WifiTargetActions::CSA;
 
   const auto action = WifiTargetActions::choose(allowed);
   if (action == WifiTargetActions::NONE) { render(); return; }

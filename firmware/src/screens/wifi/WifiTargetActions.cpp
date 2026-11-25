@@ -4,6 +4,7 @@
 #include <string.h>
 #include "core/ScreenManager.h"
 #include "screens/wifi/network/NetworkMenuScreen.h"
+#include "screens/wifi/WifiCsaSpoofScreen.h"
 #include "screens/wifi/WifiDeauthDisassocScreen.h"
 #include "screens/wifi/WifiFoxHuntScreen.h"
 #include "screens/wifi/WifiPacketMonitorScreen.h"
@@ -28,6 +29,7 @@ constexpr Entry kEntries[] = {
   {MONITOR,  "Packet Monitor",  "monitor"},
   {SNIFFER,  "Packet Sniffer",  "sniffer"},
   {DEAUTH,   "Deauth/Disassoc", "deauth"},
+  {CSA,      "CSA Spoof",       "csa"},
   {FOX_HUNT, "Fox Hunt",        "foxhunt"},
   {FOX_HUNT_AP, "Fox Hunt (AP)",  "foxhunt_ap"},
 };
@@ -99,6 +101,15 @@ void open(Action action, const WifiTarget& t) {
       auto* deauth = new WifiDeauthDisassocScreen();
       deauth->configureFromChannel(t.channel, apFilter, clientFilter, ssid);
       Screen.push(deauth);
+      break;
+    }
+    case CSA: {
+      // Spoofs the AP, so a station target needs a known AP (same as DEAUTH).
+      // Opened from context, CSA Spoof auto-starts (no setup screen).
+      if (t.client && !t.hasAp) { ShowStatusAction::show("Client's AP unknown", 1500); break; }
+      auto* csa = new WifiCsaSpoofScreen();
+      csa->configureFromChannel(t.channel, apFilter, clientFilter, ssid);
+      Screen.push(csa);
       break;
     }
     case CONNECT: {

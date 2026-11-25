@@ -491,7 +491,7 @@ void WifiAnalyzerScreen::_openOptions(int index)
 {
   uint8_t allowed = WifiTargetActions::DETAILS | WifiTargetActions::MONITOR |
                     WifiTargetActions::SNIFFER | WifiTargetActions::FOX_HUNT |
-                    WifiTargetActions::DEAUTH;
+                    WifiTargetActions::DEAUTH | WifiTargetActions::CSA;
   if (!_stationMode) allowed |= WifiTargetActions::CONNECT;
 
   const auto action = WifiTargetActions::choose(allowed);

@@ -1154,7 +1154,7 @@ void WifiWatchdogScreen::_openOptions()
       const FloodRow& row = _floodSnap[index];
       const auto action = WifiTargetActions::choose(
           WifiTargetActions::DETAILS | WifiTargetActions::MONITOR | WifiTargetActions::SNIFFER |
-          WifiTargetActions::FOX_HUNT);
+          WifiTargetActions::FOX_HUNT | WifiTargetActions::CSA);
       if (action == WifiTargetActions::NONE) { render(); return; }
       if (action == WifiTargetActions::DETAILS) { _openSelectedDetails(); return; }
       _actionOpen = true;
@@ -1176,7 +1176,7 @@ void WifiWatchdogScreen::_openOptions()
   if (!_selectedTarget(target)) return;
   const auto action = WifiTargetActions::choose(
       WifiTargetActions::DETAILS | WifiTargetActions::MONITOR |
-      WifiTargetActions::SNIFFER | WifiTargetActions::FOX_HUNT);
+      WifiTargetActions::SNIFFER | WifiTargetActions::FOX_HUNT | WifiTargetActions::CSA);
   if (action == WifiTargetActions::NONE) { render(); return; }
   if (action == WifiTargetActions::DETAILS) { _openSelectedDetails(); return; }
   _actionOpen = true;

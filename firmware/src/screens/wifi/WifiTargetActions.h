@@ -28,6 +28,7 @@ enum Action : uint8_t {
   // Fox Hunt the station's AP (target.bssid) instead of the station. When
   // both are offered they read "Fox Hunt (Client)" and "Fox Hunt (AP)".
   FOX_HUNT_AP = 1 << 5,
+  CSA      = 1 << 7,  // CSA Spoof: like DEAUTH, an AP-targeted channel-switch DoS
 };
 
 // Show the "Options" popup with the allowed actions, always in the same order.

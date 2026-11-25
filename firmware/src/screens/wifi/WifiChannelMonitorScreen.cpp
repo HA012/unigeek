@@ -821,7 +821,7 @@ void WifiChannelMonitorScreen::_openOptions()
   if (!_selectedTarget(target)) return;
   const auto action = WifiTargetActions::choose(
       WifiTargetActions::DETAILS | WifiTargetActions::MONITOR | WifiTargetActions::SNIFFER |
-      WifiTargetActions::FOX_HUNT | WifiTargetActions::DEAUTH);
+      WifiTargetActions::FOX_HUNT | WifiTargetActions::DEAUTH | WifiTargetActions::CSA);
   if (action == WifiTargetActions::NONE) { render(); return; }
   if (action == WifiTargetActions::DETAILS) { _openSelectedDetails(); return; }
   _releaseRadio();
