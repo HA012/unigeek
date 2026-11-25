@@ -22,6 +22,25 @@ public:
   // exists nearby, so a device that has the network saved will try to connect.
   // dst = the probing client's MAC. wpa2 mirrors the beacon RSN mimicry.
   esp_err_t probeResponse(const char* ssid, const MacAddr dst, uint8_t channel, bool wpa2 = true, const uint8_t* srcMac = nullptr);
+
+  // 802.11h management-frame attacks: a beacon spoofing the target BSSID/SSID
+  // that carries one spectrum-management element. Clients that honour 802.11h
+  // act on it; those that ignore it are unaffected. Broadcast (whole BSS) — no
+  // per-client targeting, unlike deauth.
+  //
+  // channelSwitch: a Channel Switch Announcement element telling associated
+  // stations their AP is moving to newChannel, so compliant clients follow to a
+  // channel where the AP is not and drop the link. switchCount = beacon
+  // intervals until the announced switch.
+  esp_err_t channelSwitch(const MacAddr bssid, const char* ssid, uint8_t channel,
+                          uint8_t newChannel, uint8_t switchCount = 3);
+  // quiet: a Quiet element asking stations to withhold transmissions for
+  // `duration` TUs, `offset` TUs into every `period` beacon intervals, starting
+  // `count` beacons from now.
+  esp_err_t quiet(const MacAddr bssid, const char* ssid, uint8_t channel,
+                  uint8_t count = 2, uint8_t period = 1,
+                  uint16_t duration = 1000, uint16_t offset = 0);
+
   esp_err_t setChannel(uint8_t channel);
 
 private:

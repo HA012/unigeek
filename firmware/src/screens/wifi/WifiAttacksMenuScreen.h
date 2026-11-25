@@ -12,9 +12,11 @@ public:
   void onBack() override;
 
 private:
-  ListItem _items[8] = {
+  ListItem _items[10] = {
     {"Beacon Flood"},
     {"Deauth/Disassoc"},
+    {"CSA Spoof"},
+    {"Quiet DoS"},
     {"Rogue Access Point"},
     {"Evil Twin"},
     {"Karma"},
