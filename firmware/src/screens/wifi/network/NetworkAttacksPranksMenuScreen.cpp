@@ -7,6 +7,7 @@
 #include "PrinterPrankScreen.h"
 #ifdef HAS_NET_TOOLS
 #include "ResponderScreen.h"
+#include "NtlmCrackScreen.h"
 #endif
 
 void NetworkAttacksPranksMenuScreen::onInit() {
@@ -21,9 +22,10 @@ void NetworkAttacksPranksMenuScreen::onItemSelected(uint8_t index) {
     case 1: openCut();                             break;
     case 2: Screen.push(new DhcpAttackScreen());   break;
     case 3: Screen.push(new ResponderScreen());    break;
-    case 4: Screen.push(new CastBombScreen());     break;
-    case 5: Screen.push(new BonjourSpamScreen());  break;
-    case 6: Screen.push(new PrinterPrankScreen()); break;
+    case 4: Screen.push(new NtlmCrackScreen());    break;
+    case 5: Screen.push(new CastBombScreen());     break;
+    case 6: Screen.push(new BonjourSpamScreen());  break;
+    case 7: Screen.push(new PrinterPrankScreen()); break;
   }
 #else
   switch (index) {

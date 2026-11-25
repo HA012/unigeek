@@ -14,7 +14,7 @@ public:
 
 private:
 #ifdef HAS_NET_TOOLS
-  ListItem _items[7] = {
+  ListItem _items[8] = {
 #else
   ListItem _items[6] = {
 #endif
@@ -23,6 +23,7 @@ private:
     {"DHCP Attack"},
 #ifdef HAS_NET_TOOLS
     {"Responder"},
+    {"NTLM Crack"},
 #endif
     {"Cast Bomb"},
     {"Bonjour Spam"},
