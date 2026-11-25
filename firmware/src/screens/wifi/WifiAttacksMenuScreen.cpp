@@ -17,10 +17,10 @@ void WifiAttacksMenuScreen::onInit() {
 
 void WifiAttacksMenuScreen::onItemSelected(uint8_t index) {
   switch (index) {
-    case 0: Screen.push(new WifiBeaconFloodScreen()); break;
-    case 1: Screen.push(new WifiDeauthDisassocScreen()); break;
-    case 2: Screen.push(new WifiCsaSpoofScreen()); break;
-    case 3: Screen.push(new WifiQuietDosScreen()); break;
+    case 0: Screen.push(new WifiDeauthDisassocScreen()); break;
+    case 1: Screen.push(new WifiCsaSpoofScreen()); break;
+    case 2: Screen.push(new WifiQuietDosScreen()); break;
+    case 3: Screen.push(new WifiBeaconFloodScreen()); break;
     case 4: Screen.push(new WifiRogueAPScreen()); break;
     case 5: Screen.push(new WifiEvilTwinScreen()); break;
     case 6: Screen.push(new WifiKarmaMenuScreen()); break;

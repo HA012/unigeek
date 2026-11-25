@@ -13,10 +13,10 @@ public:
 
 private:
   ListItem _items[10] = {
-    {"Beacon Flood"},
     {"Deauth/Disassoc"},
     {"CSA Spoof"},
     {"Quiet DoS"},
+    {"Beacon Flood"},
     {"Rogue Access Point"},
     {"Evil Twin"},
     {"Karma"},
