@@ -174,6 +174,31 @@ AttackMonitor::St AttackMonitor::_state(const Client& c) const
   return ST_UNKNOWN;
 }
 
+// Hysteresis: the raw state flips on every stray frame, so the *displayed* state
+// (c.stCur) only follows once the raw state has held long enough. Re-entering
+// "Active"/"Connected" is the most damped, so a lone uplink frame can't undo a
+// confirmed "Moved"/"Kicked"; leaving it (silence) needs sustained quiet too,
+// while "Reconnecting" is immediate so a real kick shows at once.
+void AttackMonitor::_commit(Client& c, uint32_t now)
+{
+  const St raw = _state(c);
+  if (raw == (St)c.stCur) { c.stCandSince = 0; return; }       // already displayed
+  if (c.stCandSince == 0 || raw != (St)c.stCand) {             // (new) candidate
+    c.stCand = (uint8_t)raw;
+    c.stCandSince = now ? now : 1;
+    return;
+  }
+  uint32_t dwell;                                              // hold time before commit
+  switch (raw) {
+    case ST_CONNECTED:    dwell = 2000; break;  // hard to (re)enter Active → kills flicker
+    case ST_DOWN:         dwell = 1500; break;  // sustained silence before Moved/Silent/Down
+    case ST_KICKED:       dwell = 800;  break;
+    case ST_RECONNECTING: dwell = 0;    break;  // show a real kick immediately
+    default:              dwell = 500;  break;  // UNKNOWN
+  }
+  if (now - c.stCandSince >= dwell) { c.stCur = (uint8_t)raw; c.stCandSince = 0; }
+}
+
 const char* AttackMonitor::_stateName(St s) const
 {
   if (_kind == KIND_DEAUTH) {
@@ -216,7 +241,7 @@ uint8_t AttackMonitor::_metricCount(const Client* arr, int n) const
   // Deauth → Kicked/Down; CSA/Quiet → Active (still transmitting).
   uint8_t m = 0;
   for (int i = 0; i < n; ++i) {
-    const St s = _state(arr[i]);
+    const St s = (St)arr[i].stCur;               // committed (displayed) state
     if (_kind == KIND_DEAUTH) { if (s == ST_KICKED || s == ST_DOWN) ++m; }
     else                      { if (s == ST_CONNECTED) ++m; }
   }
@@ -243,6 +268,14 @@ int AttackMonitor::_snapshotLive(Client* out) const
 void AttackMonitor::poll()
 {
   if (!_active) return;
+
+  // Advance each client's hysteresis so the displayed state is stable. The table
+  // only ever grows (no reorder/remove), so this runs under one brief lock.
+  const uint32_t now = millis();
+  portENTER_CRITICAL(&_mux);
+  for (uint8_t i = 0; i < _count; ++i) _commit(_tbl[i], now);
+  portEXIT_CRITICAL(&_mux);
+
   // Live details: refresh the open client's rows from the live table.
   if (_view == VIEW_DETAILS) {
     Client c;
@@ -284,7 +317,7 @@ void AttackMonitor::onPress()
   _dirty = true;
   if (_view == VIEW_LIVE) {
     _snapCount = _snapshotLive(_snap);            // freeze preview (attack keeps running)
-    for (uint8_t i = 0; i < _snapCount; ++i) { _order[i] = i; _snapState[i] = _state(_snap[i]); }
+    for (uint8_t i = 0; i < _snapCount; ++i) { _order[i] = i; _snapState[i] = (St)_snap[i].stCur; }
     _sel = _scroll < _snapCount ? _scroll : 0;
     _view = VIEW_PAUSED;
   } else if (_view == VIEW_PAUSED) {
@@ -328,7 +361,7 @@ void AttackMonitor::_fillDetailRows(const Client& c)
            c.mac[0], c.mac[1], c.mac[2], c.mac[3], c.mac[4], c.mac[5]);
   _rows[0].value = mac;
   // _rows[1] (Vendor) owned by the lookup path.
-  _rows[2].value = _stateName(_state(c));
+  _rows[2].value = _stateName((St)c.stCur);
   _rows[3].value = String((int)c.rssi) + " dBm";
   _rows[4].value = String(c.cDeauth);
   _rows[5].value = String(c.cReassoc);
@@ -403,7 +436,7 @@ void AttackMonitor::_drawList(int x, int y, int w, int h)
       lcd.setTextColor(TFT_WHITE, bg);
       lcd.drawString(mac, x + 3, yy);
 
-      const St s = paused ? _snapState[ci] : _state(c);
+      const St s = paused ? _snapState[ci] : (St)c.stCur;
       lcd.setTextDatum(TR_DATUM);
       lcd.setTextColor(selected ? TFT_WHITE : _stateColor(s), bg);
       lcd.drawString(_stateName(s), rightEdge - 3, yy);

@@ -30,6 +30,9 @@ public:
     uint32_t cDeauth, cReassoc, cAssocOk, cData;
     uint32_t tDeauth, tReassoc, tAssocOk, tData, tAny;
     uint32_t upIvl;    // EWMA of uplink-data inter-arrival (ms); 0 = no baseline
+    uint8_t  stCur;    // committed (displayed) state — hysteresis output
+    uint8_t  stCand;   // pending candidate state
+    uint32_t stCandSince; // when the candidate first appeared (ms)
   };
 
   void begin(Kind kind, const uint8_t ap[6],
@@ -94,7 +97,8 @@ private:
   int   _snapshotLive(Client* out) const;    // copy+sort live table (packets desc)
   void  _enterDetails();
   void  _fillDetailRows(const Client& c);
-  St    _state(const Client& c) const;
+  St    _state(const Client& c) const;          // raw (instantaneous) state
+  void  _commit(Client& c, uint32_t now);       // apply hysteresis → c.stCur
   const char* _stateName(St s) const;
   uint16_t    _stateColor(St s) const;
   uint8_t _metricCount(const Client* arr, int n) const;  // Kicked / Active
