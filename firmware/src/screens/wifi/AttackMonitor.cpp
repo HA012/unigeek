@@ -433,7 +433,7 @@ void AttackMonitor::_drawFooter(int x, int y, int w, int h, int clients, int met
   // Lower bar — hints.
   lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);
   lcd.setTextDatum(BC_DATUM);
-  lcd.drawString(paused ? "[Press] Details   [Back] Resume Preview"
+  lcd.drawString(paused ? "[Press] Details   [Back] Resume"
                         : "[Press] Pause Preview",
                  x + w / 2, y + h - 1);
   lcd.setTextDatum(TL_DATUM);
