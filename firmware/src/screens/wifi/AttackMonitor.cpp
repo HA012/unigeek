@@ -110,8 +110,11 @@ void AttackMonitor::_cb(void* buf, wifi_promiscuous_pkt_type_t type)
         if (st == 0) { c.cAssocOk++; c.tAssocOk = now; }
       }
     }
-  } else if (ftype == 2) {                         // data → active association
-    c.cData++; c.tData = now;
+  } else if (ftype == 2) {                         // data
+    // Only uplink data (client → AP, so the station is the transmitter) proves
+    // the client is still on this channel. Downlink retries the AP keeps sending
+    // to a client that already moved/left would otherwise read as "Active".
+    if (macEq(a1, _apS)) { c.cData++; c.tData = now; }
   }
   portEXIT_CRITICAL(&_mux);
 }
