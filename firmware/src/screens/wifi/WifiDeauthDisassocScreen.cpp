@@ -155,6 +155,20 @@ void WifiDeauthDisassocScreen::onUpdate()
 
     if (Uni.Nav->wasPressed()) {
       const auto dir = Uni.Nav->readDirection();
+      if (_mode == MODE_TARGET && _monitor.active()) {
+        // Target mode delegates the running view to the live monitor.
+        if (dir == INavigation::DIR_BACK) {
+          if (!_monitor.onBack()) { _stopDeauth(); return; }
+        } else if (dir == INavigation::DIR_PRESS) {
+          _monitor.onPress();
+        } else if (dir == INavigation::DIR_DOWN || dir == INavigation::DIR_RIGHT) {
+          _monitor.onScroll(+1);
+        } else if (dir == INavigation::DIR_UP || dir == INavigation::DIR_LEFT) {
+          _monitor.onScroll(-1);
+        }
+        render();
+        return;
+      }
       if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) {
         _stopDeauth();
         return;
@@ -180,10 +194,15 @@ void WifiDeauthDisassocScreen::onUpdate()
         _statusMsg = String("Deauthing ") + _selectedClientCount + " clients...";
     }
 
+    if (_mode == MODE_TARGET) {
+      _monitor.addSent(_selectedClientCount ? _selectedClientCount : 1);
+      _monitor.poll();
+    }
+
     render();
 
     delay(100);
-    
+
 }
 
 void WifiDeauthDisassocScreen::onBack()
@@ -201,7 +220,13 @@ void WifiDeauthDisassocScreen::onBack()
 
 void WifiDeauthDisassocScreen::onRender()
 {
-  if (_state == STATE_DEAUTHING) { _drawStatus(_statusMsg.c_str()); return; }
+  if (_state == STATE_DEAUTHING) {
+    if (_mode == MODE_TARGET && _monitor.active())
+      _monitor.draw(bodyX(), bodyY(), bodyW(), bodyH());
+    else
+      _drawStatus(_statusMsg.c_str());
+    return;
+  }
   ListScreen::onRender();
 }
 
@@ -437,6 +462,9 @@ void WifiDeauthDisassocScreen::_startDeauth()
     _statusMsg = "Scanning...";
   } else {
     _statusMsg = "Deauthing " + _target.ssid + "...";
+    _attacker->setChannel((uint8_t)_target.channel);   // stay on the AP's channel
+    _monitor.begin(AttackMonitor::KIND_DEAUTH, _target.bssid,
+                   _selectedClients, _selectedClientCount);
   }
   render();
 }
@@ -444,6 +472,7 @@ void WifiDeauthDisassocScreen::_startDeauth()
 
 void WifiDeauthDisassocScreen::_stopDeauth()
 {
+  _monitor.end();
   if (_mode == MODE_ALL) {
     esp_wifi_set_promiscuous_rx_cb(nullptr);
     esp_wifi_set_promiscuous(false);

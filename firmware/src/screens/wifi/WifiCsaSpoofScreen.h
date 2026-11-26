@@ -2,6 +2,7 @@
 
 #include <esp_wifi.h>
 #include "ui/templates/ListScreen.h"
+#include "AttackMonitor.h"
 
 // ── CSA Spoof (802.11h Channel Switch Announcement DoS) ─────────────────────
 // Tells clients their AP is moving to another channel, so those honouring
@@ -109,6 +110,8 @@ private:
 
   String _statusTitle;
   String _statusDetail;
+
+  AttackMonitor _monitor;   // Target-mode live feedback
 
   void _showMain();
   void _selectWifi(bool forceScan = false);

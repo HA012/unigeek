@@ -2,6 +2,7 @@
 
 #include <esp_wifi.h>
 #include "ui/templates/ListScreen.h"
+#include "AttackMonitor.h"
 
 // ── Quiet DoS (802.11h Quiet element) ───────────────────────────────────────
 // Beacons spoofing a target AP that carry a Quiet element asking stations to
@@ -75,6 +76,8 @@ private:
 
   String _statusTitle;
   String _statusDetail;
+
+  AttackMonitor _monitor;   // Target-mode live feedback
 
   void _showMain();
   void _selectWifi(bool forceScan = false);

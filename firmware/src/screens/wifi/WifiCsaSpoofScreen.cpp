@@ -123,6 +123,19 @@ void WifiCsaSpoofScreen::onUpdate()
 
   if (Uni.Nav->wasPressed()) {
     const auto dir = Uni.Nav->readDirection();
+    if (_mode == MODE_TARGET && _monitor.active()) {
+      if (dir == INavigation::DIR_BACK) {
+        if (!_monitor.onBack()) { _stopAttack(); return; }
+      } else if (dir == INavigation::DIR_PRESS) {
+        _monitor.onPress();
+      } else if (dir == INavigation::DIR_DOWN || dir == INavigation::DIR_RIGHT) {
+        _monitor.onScroll(+1);
+      } else if (dir == INavigation::DIR_UP || dir == INavigation::DIR_LEFT) {
+        _monitor.onScroll(-1);
+      }
+      render();
+      return;
+    }
     if (dir == INavigation::DIR_BACK || dir == INavigation::DIR_PRESS) { _stopAttack(); return; }
   }
 
@@ -145,6 +158,11 @@ void WifiCsaSpoofScreen::onUpdate()
                                                : String(_selectedClientCount) + " clients") + toCh;
   }
 
+  if (_mode == MODE_TARGET) {
+    _monitor.addSent(_selectedClientCount ? _selectedClientCount : 1);
+    _monitor.poll();
+  }
+
   render();
   delay(100);
 }
@@ -158,7 +176,13 @@ void WifiCsaSpoofScreen::onBack()
 
 void WifiCsaSpoofScreen::onRender()
 {
-  if (_state == STATE_RUNNING) { _drawStatus(_statusTitle.c_str(), _statusDetail.c_str()); return; }
+  if (_state == STATE_RUNNING) {
+    if (_mode == MODE_TARGET && _monitor.active())
+      _monitor.draw(bodyX(), bodyY(), bodyW(), bodyH());
+    else
+      _drawStatus(_statusTitle.c_str(), _statusDetail.c_str());
+    return;
+  }
   ListScreen::onRender();
 }
 
@@ -373,12 +397,17 @@ void WifiCsaSpoofScreen::_startAttack()
     portEXIT_CRITICAL(&_allLock);
     esp_wifi_set_promiscuous(true);
     esp_wifi_set_promiscuous_rx_cb(&WifiCsaSpoofScreen::_beaconCb);
+  } else {
+    _attacker->setChannel((uint8_t)_target.channel);   // stay on the AP's channel
+    _monitor.begin(AttackMonitor::KIND_CSA, _target.bssid,
+                   _selectedClients, _selectedClientCount);
   }
   render();
 }
 
 void WifiCsaSpoofScreen::_stopAttack()
 {
+  _monitor.end();
   if (_mode == MODE_ALL) {
     esp_wifi_set_promiscuous_rx_cb(nullptr);
     esp_wifi_set_promiscuous(false);

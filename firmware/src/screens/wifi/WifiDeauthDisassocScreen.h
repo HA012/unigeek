@@ -2,6 +2,7 @@
 
 #include <esp_wifi.h>
 #include "ui/templates/ListScreen.h"
+#include "AttackMonitor.h"
 
 class WifiDeauthDisassocScreen : public ListScreen
 {
@@ -102,6 +103,8 @@ private:
   static void _beaconCb(void* buf, wifi_promiscuous_pkt_type_t type);
 
   String _statusMsg;
+
+  AttackMonitor _monitor;   // Target-mode live feedback
 
   void _showMain();
   void _selectWifi(bool forceScan = false);
