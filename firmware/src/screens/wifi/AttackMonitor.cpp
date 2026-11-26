@@ -122,19 +122,36 @@ void AttackMonitor::_cb(void* buf, wifi_promiscuous_pkt_type_t type)
 // ── Per-client state inference ──────────────────────────────────────────────
 AttackMonitor::St AttackMonitor::_state(const Client& c) const
 {
+  // Evidence is one-sided: we only hear this channel, so a silent uplink is
+  // ambiguous between gone / idle / quieted. We lean on positive signals where
+  // we have them (reassoc attempts for Deauth) and require a real activity
+  // baseline before claiming an effect, to avoid single-frame flapping.
   const uint32_t now = millis();
-  const bool recentData = c.tData && (now - c.tData) < 2000;
+  const uint16_t upWin = (_kind == KIND_DEAUTH) ? 3000 : 2500;
+  const bool up = c.tData && (now - c.tData) < upWin;      // client transmitting now
+
   if (_kind == KIND_DEAUTH) {
-    const bool recentReassoc = c.tReassoc && (now - c.tReassoc) < 3000;
-    if (recentData)                               return ST_CONNECTED;
-    if (recentReassoc)                            return ST_RECONNECTING;
-    if (c.tData && (now - c.tData) < 8000)        return ST_KICKED;   // was active, now silent
-    if (c.tData)                                  return ST_DOWN;
+    // Had a real association at some point: carried uplink, associated OK, or at
+    // least attempted to (re)join.
+    const bool everOn = c.cData >= 2 || c.cAssocOk >= 1 || c.cReassoc >= 1;
+    const bool reconnecting = c.tReassoc && (now - c.tReassoc) < 4000;
+    if (reconnecting) return ST_RECONNECTING;   // (re)joining = being kicked (strongest signal)
+    if (up)           return ST_CONNECTED;       // transmitting normally
+    if (everOn) {
+      uint32_t last = c.tData;                   // most recent sign of life
+      if (c.tReassoc > last) last = c.tReassoc;
+      if (c.tAssocOk > last) last = c.tAssocOk;
+      return (now - last) < 10000 ? ST_KICKED : ST_DOWN;
+    }
     return ST_UNKNOWN;
   }
-  // CSA / Quiet: effect = the client stops transmitting (moved / silenced).
-  if (recentData)                                 return ST_CONNECTED;  // "Active"
-  if (c.tData)                                    return ST_DOWN;       // "Moved"/"Silent"
+
+  // CSA / Quiet: success = the client stops transmitting (moved / silenced).
+  // Presence is proven only by uplink; require a baseline so we don't flip a
+  // client to "Moved" off one stray frame.
+  const bool everOn = c.cData >= 2 || c.cAssocOk >= 1;
+  if (up)     return ST_CONNECTED;               // "Active"
+  if (everOn) return ST_DOWN;                     // was transmitting, now silent
   return ST_UNKNOWN;
 }
 
