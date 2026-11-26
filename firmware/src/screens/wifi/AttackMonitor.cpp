@@ -114,7 +114,14 @@ void AttackMonitor::_cb(void* buf, wifi_promiscuous_pkt_type_t type)
     // Only uplink data (client → AP, so the station is the transmitter) proves
     // the client is still on this channel. Downlink retries the AP keeps sending
     // to a client that already moved/left would otherwise read as "Active".
-    if (macEq(a1, _apS)) { c.cData++; c.tData = now; }
+    if (macEq(a1, _apS)) {
+      if (c.tData) {                                // learn the client's cadence
+        uint32_t ivl = now - c.tData;
+        if (ivl > 15000) ivl = 15000;              // bound a one-off long gap
+        c.upIvl = c.upIvl ? (c.upIvl * 3 + ivl) / 4 : ivl;
+      }
+      c.cData++; c.tData = now;
+    }
   }
   portEXIT_CRITICAL(&_mux);
 }
@@ -127,7 +134,19 @@ AttackMonitor::St AttackMonitor::_state(const Client& c) const
   // we have them (reassoc attempts for Deauth) and require a real activity
   // baseline before claiming an effect, to avoid single-frame flapping.
   const uint32_t now = millis();
-  const uint16_t upWin = (_kind == KIND_DEAUTH) ? 3000 : 2500;
+  // Adaptive presence window: judge silence against the client's own uplink
+  // cadence. A chatty client is called silent quickly (fast move/kick detection);
+  // a sporadic one gets slack so idle isn't misread as gone. Clamped per kind.
+  uint32_t upWin;
+  if (c.upIvl == 0) {
+    upWin = (_kind == KIND_DEAUTH) ? 3000 : 2500;
+  } else {
+    upWin = c.upIvl * 3;
+    const uint32_t lo = (_kind == KIND_DEAUTH) ? 2000 : 1500;
+    const uint32_t hi = (_kind == KIND_DEAUTH) ? 8000 : 6000;
+    if (upWin < lo) upWin = lo;
+    if (upWin > hi) upWin = hi;
+  }
   const bool up = c.tData && (now - c.tData) < upWin;      // client transmitting now
 
   if (_kind == KIND_DEAUTH) {

@@ -29,6 +29,7 @@ public:
     uint32_t packets;
     uint32_t cDeauth, cReassoc, cAssocOk, cData;
     uint32_t tDeauth, tReassoc, tAssocOk, tData, tAny;
+    uint32_t upIvl;    // EWMA of uplink-data inter-arrival (ms); 0 = no baseline
   };
 
   void begin(Kind kind, const uint8_t ap[6],
