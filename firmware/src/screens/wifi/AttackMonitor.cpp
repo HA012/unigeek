@@ -33,8 +33,12 @@ void AttackMonitor::begin(Kind kind, const uint8_t ap[6],
 
   memcpy(_apS, ap, 6);
   portENTER_CRITICAL(&_mux);
-  _count = 0;
   memset(_tbl, 0, sizeof(_tbl));
+  _count = 0;
+  for (uint8_t i = 0; i < _selN; ++i) {        // seed selected targets so they
+    memcpy(_tbl[_count].mac, _selMacs[i], 6);  // appear even while silent
+    _count++;
+  }
   portEXIT_CRITICAL(&_mux);
 
   _self = this;
@@ -81,6 +85,8 @@ void AttackMonitor::_cb(void* buf, wifi_promiscuous_pkt_type_t type)
   // The station is the a1/a2 address that isn't the AP; unicast only.
   const uint8_t* sta = macEq(a1, _apS) ? a2 : a1;
   if (!sta || (sta[0] & 0x01) || macEq(sta, _apS)) return;
+  // Targeted run: track only the explicitly selected clients.
+  if (_self->_selN > 0 && !_self->_isSelected(sta)) return;
 
   const uint32_t now = millis();
   portENTER_CRITICAL(&_mux);
@@ -239,7 +245,7 @@ void AttackMonitor::onPress()
   _dirty = true;
   if (_view == VIEW_LIVE) {
     _snapCount = _snapshotLive(_snap);            // freeze preview (attack keeps running)
-    for (uint8_t i = 0; i < _snapCount; ++i) _order[i] = i;
+    for (uint8_t i = 0; i < _snapCount; ++i) { _order[i] = i; _snapState[i] = _state(_snap[i]); }
     _sel = _scroll < _snapCount ? _scroll : 0;
     _view = VIEW_PAUSED;
   } else if (_view == VIEW_PAUSED) {
@@ -300,7 +306,10 @@ void AttackMonitor::draw(int x, int y, int w, int h)
   // at most a few times a second, so the heavy list/sprite paint doesn't slow
   // the per-tick frame injection.
   const uint32_t now = millis();
-  if (!_dirty && (now - _lastDraw) < 400) return;
+  if (!_dirty) {
+    if (_view == VIEW_PAUSED) return;             // paused is static: redraw on input only
+    if ((now - _lastDraw) < 400) return;          // live/details refresh a few times/s
+  }
   _lastDraw = now;
   _dirty = false;
 
@@ -340,7 +349,8 @@ void AttackMonitor::_drawList(int x, int y, int w, int h)
     for (int i = 0; i < visible && i + _scroll < rows; ++i) {
       const int pos = i + _scroll;
       const int yy = top + i * rowH;
-      const Client& c = paused ? _snap[_order[pos]] : live[pos];
+      const int ci = paused ? _order[pos] : pos;
+      const Client& c = paused ? _snap[ci] : live[ci];
       const bool selected = paused && pos == _sel;
       const uint16_t bg = selected ? Config.getThemeColor() : TFT_BLACK;
 
@@ -348,14 +358,13 @@ void AttackMonitor::_drawList(int x, int y, int w, int h)
       if (selected) lcd.fillRoundRect(x, yy - 2, rightEdge - x, rowH, 3, bg);
 
       char mac[20];
-      snprintf(mac, sizeof(mac), "%s%02X:%02X:%02X:%02X:%02X:%02X",
-               _isSelected(c.mac) ? "*" : "",
+      snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
                c.mac[0], c.mac[1], c.mac[2], c.mac[3], c.mac[4], c.mac[5]);
       lcd.setTextDatum(TL_DATUM);
       lcd.setTextColor(TFT_WHITE, bg);
       lcd.drawString(mac, x + 3, yy);
 
-      const St s = _state(c);
+      const St s = paused ? _snapState[ci] : _state(c);
       lcd.setTextDatum(TR_DATUM);
       lcd.setTextColor(selected ? TFT_WHITE : _stateColor(s), bg);
       lcd.drawString(_stateName(s), rightEdge - 3, yy);
@@ -383,8 +392,19 @@ void AttackMonitor::_drawList(int x, int y, int w, int h)
     }
   }
 
-  const Client* set = paused ? _snap : live;
-  _drawFooter(x, y, w, h, rows, _metricCount(set, rows));
+  int metricN;
+  if (paused) {                                   // count from the frozen states
+    int m = 0;
+    for (int i = 0; i < _snapCount; ++i) {
+      const St s = _snapState[i];
+      if (_kind == KIND_DEAUTH) { if (s == ST_KICKED || s == ST_DOWN) ++m; }
+      else                      { if (s == ST_CONNECTED) ++m; }
+    }
+    metricN = m;
+  } else {
+    metricN = _metricCount(live, rows);
+  }
+  _drawFooter(x, y, w, h, rows, metricN);
 }
 
 void AttackMonitor::_drawFooter(int x, int y, int w, int h, int clients, int metricN)

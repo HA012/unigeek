@@ -76,6 +76,7 @@ private:
 
   // ── Main-thread view state ──
   Client   _snap[MAX_CLIENTS];               // frozen list while paused
+  St       _snapState[MAX_CLIENTS];          // state frozen at pause (truly static)
   uint8_t  _order[MAX_CLIENTS] = {};         // frozen display order (packets desc)
   uint8_t  _snapCount = 0;
   int      _scroll = 0;                      // live-list top row
