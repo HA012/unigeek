@@ -228,9 +228,9 @@ void WifiAnalyzerScreen::onUpdate()
     _updateClientVendors();
     if (Uni.Nav->wasPressed()) {
       auto dir = Uni.Nav->readDirection();
-      if (dir == INavigation::DIR_BACK) { _stopClients(); _showScan(); return; }
+      if (dir == INavigation::DIR_BACK) { _stopClients(); _showScan((uint8_t)(_selectedAp + 1)); return; }
 #ifndef DEVICE_HAS_KEYBOARD
-      if (dir == INavigation::DIR_PRESS) { _stopClients(); _showScan(); return; }
+      if (dir == INavigation::DIR_PRESS) { _stopClients(); _showScan((uint8_t)(_selectedAp + 1)); return; }
 #endif
       _scrollView.onNav(dir);
     }
@@ -303,7 +303,7 @@ void WifiAnalyzerScreen::onBack()
 {
   if (_state == STATE_CLIENTS) {
     _stopClients();
-    _showScan();
+    _showScan((uint8_t)(_selectedAp + 1));
   } else {
     WiFi.scanDelete();
     if (_state == STATE_SCAN || _state == STATE_FILTER || _state == STATE_CHANNEL) _showMenu();
@@ -619,13 +619,15 @@ void WifiAnalyzerScreen::_rebuildScanItems()
   }
 }
 
-void WifiAnalyzerScreen::_showScan()
+void WifiAnalyzerScreen::_showScan(uint8_t selIdx)
 {
   _state = STATE_SCAN;
   strncpy(_title, "Scanner", sizeof(_title));
 
   _rebuildScanItems();
-  setItems(_scanItems, (_stationMode ? _stationCount : _entryCount) + 1);
+  uint8_t count = (_stationMode ? _stationCount : _entryCount) + 1;
+  if (selIdx >= count) selIdx = 0;
+  setItems(_scanItems, count, selIdx);        // keep the highlight on return from Details
 }
 
 void WifiAnalyzerScreen::_showClients(int index)

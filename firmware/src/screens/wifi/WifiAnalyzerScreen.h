@@ -101,7 +101,7 @@ private:
   StationEntry _stations[MAX_STATIONS] = {};
   int _stationCount = 0;
   void _doScan();
-  void _showScan();
+  void _showScan(uint8_t selIdx = 0);
   void _showClients(int index);
   void _stopClients();
   void _refreshClients(bool force);
