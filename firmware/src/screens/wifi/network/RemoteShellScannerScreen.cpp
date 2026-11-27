@@ -194,6 +194,7 @@ void RemoteShellScannerScreen::_scan()
 
   _state = STATE_SCANNING;
   _resultCount = 0;
+  _detailResultIndex = 0;                 // fresh scan starts the highlight at the top
   memset(_results, 0, sizeof(_results));
 
   render();
@@ -345,7 +346,8 @@ void RemoteShellScannerScreen::_showResults()
     };
   }
 
-  setItems(_resultItems, _resultCount);
+  setItems(_resultItems, _resultCount,
+           (_detailResultIndex < _resultCount) ? _detailResultIndex : 0);  // keep the highlight
 }
 
 void RemoteShellScannerScreen::_showDetails(uint8_t index)
