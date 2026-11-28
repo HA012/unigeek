@@ -479,7 +479,6 @@ void ST25R3916Screen::onInit() {
   render();
   ProgressView::init();
   ProgressView::progress("Starting ST25R3916...", 30);
-  ProgressView::finish();
 #if defined(DEVICE_HAS_ST25R3916)
   ST25R3916Backend probe;
   const bool present = st25Begin(probe, _interface);
@@ -490,6 +489,7 @@ void ST25R3916Screen::onInit() {
     return;
   }
 #endif
+  ProgressView::finish();
   _showMenu();
 }
 

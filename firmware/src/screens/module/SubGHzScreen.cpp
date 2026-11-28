@@ -62,6 +62,7 @@ void SubGHzScreen::onInit() {
     return;
   }
 
+  strcpy(_titleBuf, _titlePrefix());   // title the "Starting CC1101..." screen
   render();
   ProgressView::init();
   ProgressView::progress("Starting CC1101...", 30);
