@@ -1979,13 +1979,19 @@ uint16_t Ctap2::_handleLargeBlobs(const uint8_t* req, uint16_t reqLen,
 
   // ── 0x01 get ─────────────────────────────────────────────────────────
   if (haveGet) {
-    static uint8_t blob[CredentialStore::kMaxLargeBlobLen];
+    // Transient scratch: allocate on demand rather than keep a permanently
+    // resident .bss buffer, so the kMaxLargeBlobLen staging area only costs
+    // internal SRAM while a largeBlob read is actually in flight.
+    uint8_t* blob = (uint8_t*)malloc(CredentialStore::kMaxLargeBlobLen);
+    if (!blob) return statusOnly(out, CTAP2_ERR_PROCESSING);
     size_t blobLen = 0;
-    if (!CredentialStore::getLargeBlob(blob, sizeof(blob), &blobLen)) {
+    if (!CredentialStore::getLargeBlob(blob, CredentialStore::kMaxLargeBlobLen, &blobLen)) {
       WA_LOG("LB get: storage read failed");
+      free(blob);
       return statusOnly(out, CTAP2_ERR_PROCESSING);
     }
     if (offset > blobLen) {
+      free(blob);
       return statusOnly(out, CTAP2_ERR_INVALID_OPTION);
     }
     size_t available = blobLen - (size_t)offset;
@@ -1996,6 +2002,7 @@ uint16_t Ctap2::_handleLargeBlobs(const uint8_t* req, uint16_t reqLen,
     w.beginMap(1);
       w.putUint(0x01);
       w.putBytes(blob + offset, want);
+    free(blob);
     if (!w.ok()) return statusOnly(out, CTAP2_ERR_PROCESSING);
     WA_LOG("LB get: offset=%lu len=%u (of %u total)",
            (unsigned long)offset, (unsigned)want, (unsigned)blobLen);
@@ -2011,7 +2018,9 @@ uint16_t Ctap2::_handleLargeBlobs(const uint8_t* req, uint16_t reqLen,
     //                              uint32(offset) || sha256(setBuf)), 16)
     // …but historical hosts (libfido2) compute it over a simpler structure.
     // Match what we already do for CM/ACfg: hash 0xFF×32 || cmd || offset(LE) || data.
-    static uint8_t macIn[32 + 1 + 4 + CredentialStore::kMaxLargeBlobLen + 16];
+    const size_t kMacInLen = 32 + 1 + 4 + CredentialStore::kMaxLargeBlobLen + 16;
+    uint8_t* macIn = (uint8_t*)malloc(kMacInLen);
+    if (!macIn) return statusOnly(out, CTAP2_ERR_PROCESSING);
     size_t off = 0;
     memset(macIn + off, 0xFF, 32); off += 32;
     macIn[off++] = (uint8_t)CTAP2_LARGE_BLOBS;
@@ -2020,10 +2029,14 @@ uint16_t Ctap2::_handleLargeBlobs(const uint8_t* req, uint16_t reqLen,
     macIn[off++] = (uint8_t)((offset >>  8) & 0xFF);
     macIn[off++] = (uint8_t)((offset >> 16) & 0xFF);
     macIn[off++] = (uint8_t)((offset >> 24) & 0xFF);
-    if (off + setLen > sizeof(macIn))
+    if (off + setLen > kMacInLen) {
+      free(macIn);
       return statusOnly(out, CTAP2_ERR_REQUEST_TOO_LARGE);
+    }
     memcpy(macIn + off, setBuf, setLen); off += setLen;
-    if (!verifyPinUvAuthParam(protocol, macIn, off, pinUvAuthParam, pupLen)) {
+    bool lbMacOk = verifyPinUvAuthParam(protocol, macIn, off, pinUvAuthParam, pupLen);
+    free(macIn);
+    if (!lbMacOk) {
       WA_LOG("LB set: pinUvAuthParam mismatch");
       return statusOnly(out, CTAP2_ERR_PIN_AUTH_INVALID);
     }
